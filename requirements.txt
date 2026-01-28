@@ -1,0 +1,4 @@
+numpy
+Pillow
+pillow-heif
+rawpy
