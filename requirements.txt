@@ -2,3 +2,4 @@ numpy
 Pillow
 pillow-heif
 rawpy
+PySide6
