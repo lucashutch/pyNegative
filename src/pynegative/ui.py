@@ -276,6 +276,13 @@ class EditorWidget(QtWidgets.QWidget):
         self.save_timer.setSingleShot(True)
         self.save_timer.timeout.connect(self._auto_save_sidecar)
 
+        # Throttled Render Timer (30 FPS)
+        self.render_timer = QtCore.QTimer()
+        self.render_timer.setSingleShot(True)
+        self.render_timer.timeout.connect(self._on_render_timer_timeout)
+        self._render_pending = False
+        self._is_rendering_locked = False
+
         self._init_ui()
 
     def _init_ui(self):
@@ -566,8 +573,37 @@ class EditorWidget(QtWidgets.QWidget):
         self.lbl_info.setText(f"Loaded: {self.raw_path.name}{is_proxy}")
 
     def request_update(self):
-        if self.base_img_preview is not None:
-            self.update_preview()
+        """
+        Requests an image redraw. Uses a throttled timer to maintain 30 FPS
+        and keep the UI responsive during slider movements.
+        """
+        if self.base_img_preview is None:
+            return
+
+        self._render_pending = True
+
+        if not self._is_rendering_locked:
+            self._process_pending_update()
+
+    def _process_pending_update(self):
+        """Processes the actual redraw and manages the throttle lockout."""
+        if not self._render_pending or self.base_img_preview is None:
+            return
+
+        # Perform the actual update
+        self.update_preview()
+        self._render_pending = False
+
+        # Lock rendering for 33ms (30 FPS)
+        self._is_rendering_locked = True
+        self.render_timer.start(33) # 33ms interval for throttle
+
+    def _on_render_timer_timeout(self):
+        """Called when the 33ms throttle window expires."""
+        self._is_rendering_locked = False
+        # If another update was requested during the lockout, process it now
+        if self._render_pending:
+            self._process_pending_update()
 
     def update_preview(self):
         if self.base_img_preview is None: return
