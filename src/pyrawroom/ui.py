@@ -352,9 +352,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.thread_pool = QtCore.QThreadPool()
 
+        # Central Widget & Layout
+        central_widget = QtWidgets.QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QtWidgets.QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Top Bar (Tabs)
+        self._setup_top_bar(main_layout)
+
         # Stack
         self.stack = QtWidgets.QStackedWidget()
-        self.setCentralWidget(self.stack)
+        main_layout.addWidget(self.stack)
 
         # Views
         self.gallery = GalleryWidget(self.thread_pool)
@@ -366,23 +376,71 @@ class MainWindow(QtWidgets.QMainWindow):
         # Signals
         self.gallery.imageSelected.connect(self.open_editor)
 
-        # Setup Menu
+        # Setup Menu (File operations only)
         self._create_menu()
+
+        # Start in Gallery
+        self.switch_to_gallery()
+
+    def _setup_top_bar(self, parent_layout):
+        bar_frame = QtWidgets.QFrame()
+        bar_frame.setStyleSheet("""
+            QFrame { background-color: #2b2b2b; border-bottom: 1px solid #3d3d3d; }
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                color: #888;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 10px 20px;
+            }
+            QPushButton:checked {
+                color: #fff;
+                border-bottom: 2px solid #dcdcdc;
+            }
+            QPushButton:hover { color: #ccc; }
+        """)
+        bar_layout = QtWidgets.QHBoxLayout(bar_frame)
+        bar_layout.setContentsMargins(10, 0, 10, 0)
+
+        # Buttongroup for exclusivity logic is manual here for styling flexibility
+        self.btn_gallery = QtWidgets.QPushButton("GALLERY")
+        self.btn_gallery.setCheckable(True)
+        self.btn_gallery.clicked.connect(self.switch_to_gallery)
+
+        self.btn_edit = QtWidgets.QPushButton("EDIT")
+        self.btn_edit.setCheckable(True)
+        self.btn_edit.clicked.connect(self.switch_to_edit)
+
+        bar_layout.addWidget(self.btn_gallery)
+        bar_layout.addWidget(self.btn_edit)
+        bar_layout.addStretch() # Push left
+
+        parent_layout.addWidget(bar_frame)
 
     def _create_menu(self):
         menubar = self.menuBar()
         file_menu = menubar.addMenu("File")
 
-        open_folder_act = QtGui.QAction("Open Gallery", self)
-        open_folder_act.triggered.connect(self.show_gallery)
+        # Removed view switching actions from menu
+
+        open_folder_act = QtGui.QAction("Open Folder...", self)
+        open_folder_act.triggered.connect(self.gallery.browse_folder)
         file_menu.addAction(open_folder_act)
 
-        open_file_act = QtGui.QAction("Open File", self)
+        open_file_act = QtGui.QAction("Open File...", self)
         open_file_act.triggered.connect(self.open_single_file)
         file_menu.addAction(open_file_act)
 
-    def show_gallery(self):
+    def switch_to_gallery(self):
         self.stack.setCurrentWidget(self.gallery)
+        self.btn_gallery.setChecked(True)
+        self.btn_edit.setChecked(False)
+
+    def switch_to_edit(self):
+        self.stack.setCurrentWidget(self.editor)
+        self.btn_gallery.setChecked(False)
+        self.btn_edit.setChecked(True)
 
     def open_editor(self, path):
         # Determine folder from path
@@ -395,7 +453,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.editor.current_folder != folder:
             self.editor.load_carousel_folder(folder)
 
-        self.stack.setCurrentWidget(self.editor)
+        if self.editor.current_folder != folder:
+            self.editor.load_carousel_folder(folder)
+
+        self.switch_to_edit()
 
     def open_single_file(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open RAW", "", f"RAW ({' '.join(['*'+e for e in pyrawroom.SUPPORTED_EXTS])})")
