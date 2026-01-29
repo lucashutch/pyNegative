@@ -366,8 +366,11 @@ class PyRawEditorApp(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.critical(self, "Error", str(e))
 
 
-if __name__ == "__main__":
+def main():
     app = QtWidgets.QApplication(sys.argv)
     editor_app = PyRawEditorApp()
     editor_app.show()
     sys.exit(app.exec())
+
+if __name__ == "__main__":
+    main()
