@@ -15,7 +15,6 @@ class GalleryWidget(QtWidgets.QWidget):
         self.current_folder = None
         self.settings = QtCore.QSettings("pyNegative", "Gallery")
         self._init_ui()
-        self._load_last_folder()
 
     def _init_ui(self):
         self.main_layout = QtWidgets.QVBoxLayout(self)

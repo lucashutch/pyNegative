@@ -50,6 +50,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # Start in Gallery
         self.switch_to_gallery()
 
+        # Load initial folder
+        self.gallery._load_last_folder()
+
     def _load_stylesheet(self):
         """Load the QSS stylesheet from file."""
         # Find style.qss in the parent package (src/pynegative)
