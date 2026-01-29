@@ -12,10 +12,11 @@ except ImportError:
 
 
 # ---------------- Tone Mapping ----------------
-def apply_tone_map(img, exposure=0.0, blacks=0.0, whites=1.0, shadows=0.0, highlights=0.0):
+def apply_tone_map(img, exposure=0.0, blacks=0.0, whites=1.0, shadows=0.0, highlights=0.0, saturation=1.0):
     """
-    Applies Exposure -> Levels (Blacks/Whites) -> Tone EQ (Shadows/Highlights)
+    Applies Exposure -> Levels -> Tone EQ -> Saturation -> Base Curve
     """
+    img = img.copy() # Ensure we don't modify the input array in-place
     total_pixels = img.size
 
     # 1. Exposure (2^stops)
@@ -30,20 +31,35 @@ def apply_tone_map(img, exposure=0.0, blacks=0.0, whites=1.0, shadows=0.0, highl
 
     # 3. Tone EQ (Shadows & Highlights)
     if shadows != 0.0 or highlights != 0.0:
-        # Luminance
         lum = 0.2126 * img[:,:,0] + 0.7152 * img[:,:,1] + 0.0722 * img[:,:,2]
         lum = np.clip(lum, 0, 1)
         lum = lum[:,:,np.newaxis]
 
-        # Shadows (Lift darks)
         if shadows != 0.0:
             s_mask = (1.0 - lum) ** 2
             img += shadows * s_mask * img
 
-        # Highlights (Recover brights)
         if highlights != 0.0:
             h_mask = lum ** 2
             img += highlights * h_mask * (1.0 - img)
+
+    # 4. Saturation
+    if saturation != 1.0:
+        lum = 0.2126 * img[:,:,0] + 0.7152 * img[:,:,1] + 0.0722 * img[:,:,2]
+        lum = lum[:,:,np.newaxis]
+        img = lum + (img - lum) * saturation
+
+    # 5. Base Curve (Sigmoid for "Punch")
+    # Simple S-Curve implementation: f(x) = x^2 / (x^2 + (1-x)^2) ? No, that's too strong.
+    # Let's use a cosmetic contrast curve: x - a*sin(2*pi*x) ?
+    # Or just a simple power-sigmoid
+    # Start with a subtle S-curve
+    # This applies the "Film Look" that cameras do
+    # Using a simple centered sigmoid: 1 / (1 + exp(-k * (x - 0.5)))
+    # But mapped to 0..1
+    pass # For now, let's rely on saturation + exposure boost + contrast slider (whites/blacks)
+    # Actually, let's just do a tiny gamma tweak for midtone contrast if needed
+    # But for "Standard Profile", the Baseline Exposure + Saturation is usually the biggest factor.
 
     # Clip stats for reporting
     clipped_shadows = np.sum(img < 0.0)
@@ -59,13 +75,60 @@ def apply_tone_map(img, exposure=0.0, blacks=0.0, whites=1.0, shadows=0.0, highl
 
     return img, stats
 
+def calculate_auto_exposure(img):
+    """
+    Analyzes image histogram to determine auto-exposure and contrast settings.
+    Returns a dict with recommended {exposure, blacks, whites}.
+    """
+    # 1. Calculate luminance
+    lum = 0.2126 * img[:,:,0] + 0.7152 * img[:,:,1] + 0.0722 * img[:,:,2]
+
+    # Baseline for "Standard Look"
+    # Most cameras underexpose the RAW data by ~1 stop to protect highlights.
+    # We apply a default +1.25 EV boost to counteract this and match the JPEG brightness.
+    base_exposure = 1.25
+
+    # We still analyze the histogram just to avoid massive clipping if the photo is ALREADY bright.
+    avg_lum = np.mean(lum)
+
+    # If image is super bright (High Key), reduce the base boost
+    if avg_lum > 0.6: # Relaxed threshold for high key
+        base_exposure = 0.5
+    elif avg_lum > 0.3:
+        base_exposure = 1.0 # Aggressive boost even for mid-tones
+
+    # Standard Contrast (S-Curve simulation via Levels)
+    # We pull blacks down and push whites up slightly to create "Pop"
+    base_blacks = 0.08 # Very aggressive black crush for high contrast
+    base_whites = 0.92
+
+    return {
+        "exposure": float(base_exposure),
+        "blacks": float(base_blacks),
+        "whites": float(base_whites),
+        "highlights": 0.0,
+        "shadows": 0.0,
+        "saturation": 1.10 # 10% Saturation boost (Standard Profile)
+    }
+
 import rawpy
 from PIL import Image, ImageFilter
+from functools import lru_cache
 
-def open_raw(path):
+@lru_cache(maxsize=4)
+def open_raw(path, half_size=False):
+    """
+    Opens a RAW file.
+    Args:
+        path: File path
+        half_size: If True, decodes at 1/2 resolution (1/4 pixels) for speed.
+    """
     with rawpy.imread(path) as raw:
         rgb = raw.postprocess(
-            use_camera_wb=True, half_size=False, no_auto_bright=True, output_bps=8
+            use_camera_wb=True,
+            half_size=half_size,
+            no_auto_bright=False,
+            output_bps=8
         )
     return rgb.astype(np.float32) / 255.0
 

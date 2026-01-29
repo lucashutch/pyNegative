@@ -57,6 +57,24 @@ class TestApplyToneMap:
         expected = np.clip(expected, 0.0, 1.0)
         np.testing.assert_array_almost_equal(result, expected)
 
+    def test_saturation_adjustment(self):
+        """Test saturation adjustment"""
+        # Partially saturated color [0.5, 0.2, 0.2]
+        img = np.array([[[0.5, 0.2, 0.2]]], dtype=np.float32)
+
+        # Desaturate to 0 (should become grayscale)
+        result, _ = pyrawroom.apply_tone_map(img, saturation=0.0)
+
+        # Lum: 0.5*0.2126 + 0.2*0.7152 + 0.2*0.0722 = 0.26378
+        expected_gray = 0.26378
+        np.testing.assert_array_almost_equal(result, np.array([[[expected_gray, expected_gray, expected_gray]]], dtype=np.float32))
+
+        # Oversaturate (2.0)
+        # R should become: 0.26378 + (0.5 - 0.26378) * 2 = 0.73622
+        result, _ = pyrawroom.apply_tone_map(img, saturation=2.0)
+        assert result[0,0,0] > 0.6
+        assert result[0,0,1] < 0.2
+
     def test_shadows_highlights(self):
         """Test shadows and highlights tone adjustments"""
         img = np.array([
@@ -94,6 +112,29 @@ class TestApplyToneMap:
 
         assert result.shape == img.shape
         assert np.all(np.isfinite(result))
+
+
+class TestAutoExposure:
+    """Tests for the calculate_auto_exposure function"""
+
+    def test_basic_calculation(self):
+        """Test that it returns expected keys"""
+        img = np.random.rand(10, 10, 3).astype(np.float32)
+        settings = pyrawroom.calculate_auto_exposure(img)
+
+        assert "exposure" in settings
+        assert "blacks" in settings
+        assert "whites" in settings
+        assert "saturation" in settings
+
+    def test_high_key_detection(self):
+        """Test exposure reduction for bright images"""
+        # Bright image (white)
+        img = np.ones((10, 10, 3), dtype=np.float32)
+        settings = pyrawroom.calculate_auto_exposure(img)
+
+        # Should have lower base boost than default (usually 1.25)
+        assert settings["exposure"] < 1.0
 
 
 class TestSharpenImage:

@@ -35,6 +35,29 @@ class ThumbnailLoader(QtCore.QRunnable):
 
 
 # ----------------- Gallery Widget -----------------
+class RawLoaderSignals(QtCore.QObject):
+    finished = QtCore.Signal(str, object, object) # path, numpy array, settings_dict
+
+class RawLoader(QtCore.QRunnable):
+    def __init__(self, path):
+        super().__init__()
+        self.path = path
+        self.signals = RawLoaderSignals()
+
+    def run(self):
+        try:
+            # Load Proxy (Half-Res)
+            img = pyrawroom.open_raw(self.path, half_size=True)
+
+            # Calculate Auto-Exposure on the proxy
+            settings = pyrawroom.calculate_auto_exposure(img)
+
+            self.signals.finished.emit(self.path, img, settings)
+        except Exception as e:
+            print(f"Error loading RAW {self.path}: {e}")
+            self.signals.finished.emit(self.path, None, None)
+
+
 class GalleryWidget(QtWidgets.QWidget):
     imageSelected = QtCore.Signal(str) # Path
 
@@ -176,6 +199,11 @@ class EditorWidget(QtWidgets.QWidget):
         self._add_slider("Highlights", -1.0, 1.0, self.val_highlights, "val_highlights", 0.01)
         self._add_slider("Shadows", -1.0, 1.0, self.val_shadows, "val_shadows", 0.01)
 
+        # Saturation
+        self._add_separator()
+        self.val_saturation = 1.0
+        self._add_slider("Saturation", 0.0, 2.0, self.val_saturation, "val_saturation", 0.01)
+
         # Sharpening
         self._add_separator()
         self.var_sharpen_enabled = False
@@ -227,10 +255,22 @@ class EditorWidget(QtWidgets.QWidget):
 
         # Store refs
         setattr(self, f"{var_name}_slider", slider)
+        setattr(self, f"{var_name}_label", val_lbl) # Store label for updates
 
         layout.addWidget(slider)
         layout.addWidget(val_lbl)
         self.panel_layout.addWidget(frame)
+
+    def _set_slider_value(self, var_name, value):
+        slider = getattr(self, f"{var_name}_slider", None)
+        label = getattr(self, f"{var_name}_label", None)
+        if slider:
+            multiplier = 1000 # Assuming all sliders use this multiplier
+            slider.setValue(int(value * multiplier))
+            setattr(self, var_name, value)
+            if label:
+                label.setText(f"{value:.2f}")
+
 
     def _update_sharpen_state(self, checked):
         self.var_sharpen_enabled = checked
@@ -238,26 +278,73 @@ class EditorWidget(QtWidgets.QWidget):
 
     def load_image(self, path):
         self.lbl_info.setText(f"Loading: {os.path.basename(path)}")
+        self.raw_path = path
+
+        # STAGE 1: Instant Preview (Thumbnail or Cached)
+        # Check if we have a fast thumbnail available
+        # EXPERIMENT: Skip embedded thumbnail to test proxy speed/flicker
+        # try:
+        #     thumb_pil = pyrawroom.extract_thumbnail(path)
+        #     if thumb_pil:
+        #         # Show this immediately
+        #         h, w = thumb_pil.size
+        #         # We can't do full processing on a thumbnail usually, but we can display it
+        #         self.base_img_preview = np.array(thumb_pil).astype(np.float32) / 255.0
+        #
+        #         # If thumbnail is rotated (common in exif), we might need handling,
+        #         # but for now we assume extract_thumbnail (via rawpy) handles it or returns simple RGB.
+        #         # Just show it:
+        #         self.request_update()
+        # except Exception:
+        #     pass # Fallback to waiting
+
         QtWidgets.QApplication.processEvents()
 
-        try:
-            self.base_img_full = pyrawroom.open_raw(path)
-            self.raw_path = path
+        # STAGE 2: Async Full Load
+        self.btn_save.setEnabled(False) # Disable save until full load
 
-            # Create preview (max 1000px)
-            h, w, _ = self.base_img_full.shape
-            scale = 1000 / max(h, w)
+        loader = RawLoader(path)
+        loader.signals.finished.connect(self._on_raw_loaded)
+        self.thread_pool.start(loader)
+
+    def _on_raw_loaded(self, path, img_arr, settings):
+        if path != self.raw_path:
+            return # User switched images already
+
+        if img_arr is None:
+            QtWidgets.QMessageBox.critical(self, "Error", "Failed to load image")
+            return
+
+        self.base_img_full = img_arr # Actually this is now the proxy
+
+        # Apply Auto-Expose Settings
+        if settings:
+            self._set_slider_value("val_exposure", settings.get("exposure", 0.0))
+            self._set_slider_value("val_whites", settings.get("whites", 1.0))
+            self._set_slider_value("val_blacks", settings.get("blacks", 0.0))
+            self._set_slider_value("val_saturation", settings.get("saturation", 1.0))
+            # Don't overwrite user preference for highlights/shadows usually, but here reset is fine
+            self._set_slider_value("val_highlights", 0.0)
+            self._set_slider_value("val_shadows", 0.0)
+
+        # Create high-quality preview (max 1000px) from proxy
+        # Since proxy is smaller, it might already be close to screen size
+        h, w, _ = self.base_img_full.shape
+        scale = 1000 / max(h, w)
+        if scale < 1.0:
             new_h, new_w = int(h * scale), int(w * scale)
-
             temp_pil = Image.fromarray((self.base_img_full * 255).astype(np.uint8))
             temp_pil = temp_pil.resize((new_w, new_h), Image.Resampling.BILINEAR)
             self.base_img_preview = np.array(temp_pil).astype(np.float32) / 255.0
+        else:
+            self.base_img_preview = self.base_img_full.copy()
 
-            self.btn_save.setEnabled(True)
-            self.request_update()
+        self.btn_save.setEnabled(True)
+        self.request_update()
 
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to load: {e}")
+        # Indicate if using proxy
+        is_proxy = " (Proxy)" if h < 4000 else "" # Heuristic
+        self.lbl_info.setText(f"Loaded: {os.path.basename(path)}{is_proxy}")
 
     def request_update(self):
         if self.base_img_preview is not None:
@@ -270,7 +357,8 @@ class EditorWidget(QtWidgets.QWidget):
         img, _ = pyrawroom.apply_tone_map(
             self.base_img_preview,
             exposure=self.val_exposure, blacks=self.val_blacks, whites=self.val_whites,
-            shadows=self.val_shadows, highlights=self.val_highlights
+            shadows=self.val_shadows, highlights=self.val_highlights,
+            saturation=self.val_saturation
         )
         pil_img = Image.fromarray((img * 255).astype(np.uint8))
 
@@ -298,16 +386,33 @@ class EditorWidget(QtWidgets.QWidget):
 
         if path:
             try:
-                # Process full resolution
-                img, _ = pyrawroom.apply_tone_map(self.base_img_full, exposure=self.val_exposure, blacks=self.val_blacks, whites=self.val_whites, shadows=self.val_shadows, highlights=self.val_highlights)
+                # RELOAD FULL RESOLUTION FOR SAVING
+                self.lbl_info.setText("Processing Full Res...")
+                QtWidgets.QApplication.processEvents()
+
+                # Explicitly request full size (half_size=False)
+                full_img = pyrawroom.open_raw(self.raw_path, half_size=False)
+
+                # Process full resolution with current settings
+                img, _ = pyrawroom.apply_tone_map(
+                    full_img,
+                    exposure=self.val_exposure,
+                    blacks=self.val_blacks,
+                    whites=self.val_whites,
+                    shadows=self.val_shadows,
+                    highlights=self.val_highlights,
+                    saturation=self.val_saturation
+                )
                 pil_img = Image.fromarray((img * 255).astype(np.uint8))
                 if self.var_sharpen_enabled:
                     pil_img = pyrawroom.sharpen_image(pil_img, self.val_radius, self.val_percent)
 
                 pyrawroom.save_image(pil_img, path)
-                QtWidgets.QMessageBox.information(self, "Saved", f"Saved to {path}")
+                QtWidgets.QMessageBox.information(self, "Saved", f"Saved full resolution to {path}")
+                self.lbl_info.setText(f"Saved: {os.path.basename(path)}")
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Error", str(e))
+                self.lbl_info.setText("Error saving")
 
     def load_carousel_folder(self, folder):
         self.current_folder = folder

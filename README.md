@@ -71,7 +71,7 @@ pytest
 Track planned features and project goals.
 
 ### User Requested Features
-- [ ] **Gallery View**: Browse all photos in a folder in a grid or one-by-one.
+- [x] **Gallery View**: Browse all photos in a folder in a grid or one-by-one.
 - [ ] **Sidecar Files**: Store edit settings in sidecars natively next to raw originals.
 - [ ] **Zoom Support**: Zoom into photos during editing for fine control.
 - [ ] **Rating System**: Rate photos with stars; store in sidecars/metadata.
@@ -79,6 +79,7 @@ Track planned features and project goals.
 - [ ] **Gallery Filtering**: Filter shown images by rating/metadata.
 - [ ] **Sync Settings**: Copy/paste edit changes from one photo to others.
 - [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
+- [ ] **Reset slider double click**: add double click to restore default values on a slider
 
 ### AI Suggested Additions
 - [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
