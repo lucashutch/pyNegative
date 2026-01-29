@@ -4,6 +4,7 @@ import json
 import numpy as np
 from PIL import Image, ImageQt
 from PySide6 import QtWidgets, QtGui, QtCore
+from PySide6.QtCore import Qt, Signal, Slot
 
 from . import core as pynegative
 
@@ -260,6 +261,128 @@ class ResetableSlider(QtWidgets.QSlider):
         super().mouseDoubleClickEvent(event)
 
 
+class ZoomableGraphicsView(QtWidgets.QGraphicsView):
+    zoomChanged = Signal(float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setRenderHint(QtGui.QPainter.Antialiasing)
+        self.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
+        self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        self.setResizeAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.setBackgroundBrush(QtGui.QBrush(QtGui.QColor("#1a1a1a")))
+
+        self._scene = QtWidgets.QGraphicsScene(self)
+        self.setScene(self._scene)
+
+        self._pixmap_item = QtWidgets.QGraphicsPixmapItem()
+        self._scene.addItem(self._pixmap_item)
+
+        self._current_zoom = 1.0
+        self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
+
+    def set_pixmap(self, pixmap):
+        self._pixmap_item.setPixmap(pixmap)
+        self._scene.setSceneRect(QtCore.QRectF(pixmap.rect()))
+
+    def reset_zoom(self):
+        self.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
+        self._current_zoom = self.transform().m11()
+        self.zoomChanged.emit(self._current_zoom)
+
+    def set_zoom(self, scale):
+        self._current_zoom = scale
+        self.setTransform(QtGui.QTransform.fromScale(scale, scale))
+        self.zoomChanged.emit(self._current_zoom)
+
+    def wheelEvent(self, event):
+        if self._pixmap_item.pixmap().isNull():
+            return
+
+        # Only zoom if mouse is over the image
+        pos = self.mapToScene(event.position().toPoint())
+        if not self._pixmap_item.contains(pos):
+            super().wheelEvent(event)
+            return
+
+        angle = event.angleDelta().y()
+        factor = 1.1 if angle > 0 else 0.9
+
+        new_zoom = self._current_zoom * factor
+        # Range 50% to 400% (0.5 to 4.0)
+        if 0.5 <= new_zoom <= 4.0:
+            self.set_zoom(new_zoom)
+
+        event.accept()
+
+class ZoomControls(QtWidgets.QFrame):
+    zoomChanged = Signal(float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ZoomControls")
+        self.layout = QtWidgets.QHBoxLayout(self)
+        self.layout.setContentsMargins(10, 5, 10, 5)
+        self.layout.setSpacing(10)
+
+        # Slider (50 to 400)
+        self.slider = QtWidgets.QSlider(Qt.Horizontal)
+        self.slider.setRange(50, 400)
+        self.slider.setValue(100)
+        self.slider.setFixedWidth(120)
+        self.slider.valueChanged.connect(self._on_slider_changed)
+        self.layout.addWidget(self.slider)
+
+        # Percentage Box
+        self.spin = QtWidgets.QSpinBox()
+        self.spin.setRange(50, 400)
+        self.spin.setValue(100)
+        self.spin.setSuffix("%")
+        self.spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.spin.setAlignment(Qt.AlignCenter)
+        self.spin.setFixedWidth(60)
+        self.spin.valueChanged.connect(self._on_spin_changed)
+        self.layout.addWidget(self.spin)
+
+        self.setStyleSheet("""
+            QFrame#ZoomControls {
+                background-color: rgba(36, 36, 36, 0.8);
+                border-radius: 8px;
+                border: 1px solid #404040;
+            }
+            QSpinBox {
+                background-color: #1a1a1a;
+                border: 1px solid #303030;
+                border-radius: 4px;
+                color: #e5e5e5;
+            }
+        """)
+
+    def _on_slider_changed(self, val):
+        self.spin.blockSignals(True)
+        self.spin.setValue(val)
+        self.spin.blockSignals(False)
+        self.zoomChanged.emit(val / 100.0)
+
+    def _on_spin_changed(self, val):
+        self.slider.blockSignals(True)
+        self.slider.setValue(val)
+        self.slider.blockSignals(False)
+        self.zoomChanged.emit(val / 100.0)
+
+    def update_zoom(self, scale):
+        val = int(scale * 100)
+        self.slider.blockSignals(True)
+        self.spin.blockSignals(True)
+        self.slider.setValue(val)
+        self.spin.setValue(val)
+        self.slider.blockSignals(False)
+        self.spin.blockSignals(False)
+
+
 # ----------------- Editor Widget -----------------
 class EditorWidget(QtWidgets.QWidget):
     def __init__(self, thread_pool):
@@ -303,14 +426,21 @@ class EditorWidget(QtWidgets.QWidget):
         self.canvas_frame.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         main_layout.addWidget(self.canvas_frame)
 
-        self.canvas_label = QtWidgets.QLabel()
-        self.canvas_label.setObjectName("CanvasLabel")
-        self.canvas_label.setAlignment(QtCore.Qt.AlignCenter)
+        # View replaced with ZoomableGraphicsView
+        self.view = ZoomableGraphicsView()
 
-        canvas_layout = QtWidgets.QVBoxLayout(self.canvas_frame)
-        canvas_layout.addWidget(self.canvas_label)
+        # Layout for canvas + zoom controls
+        self.canvas_container = QtWidgets.QGridLayout(self.canvas_frame)
+        self.canvas_container.setContentsMargins(0, 0, 0, 0)
+        self.canvas_container.addWidget(self.view, 0, 0)
 
-        self.canvas_label.installEventFilter(self)
+        # Zoom Controls (Bottom Right overlay)
+        self.zoom_ctrl = ZoomControls()
+        self.zoom_ctrl.zoomChanged.connect(self.view.set_zoom)
+        self.view.zoomChanged.connect(self.zoom_ctrl.update_zoom)
+
+        self.canvas_container.addWidget(self.zoom_ctrl, 0, 0, Qt.AlignBottom | Qt.AlignRight)
+        self.zoom_ctrl.setContentsMargins(0, 0, 20, 20)
 
         # Carousel (Bottom)
         self.carousel = HorizontalListWidget()
@@ -324,14 +454,15 @@ class EditorWidget(QtWidgets.QWidget):
         self.carousel.setIconSize(QtCore.QSize(100, 100))
         self.carousel.setSpacing(5)
         self.carousel.itemClicked.connect(self._on_carousel_item_clicked)
-        canvas_layout.addWidget(self.carousel)
+        self.canvas_container.addWidget(self.carousel, 1, 0)
 
         self._setup_controls()
 
-    def eventFilter(self, watched, event):
-        if watched == self.canvas_label and event.type() == QtCore.QEvent.Type.Resize:
-            self.update_preview()
-        return super().eventFilter(watched, event)
+    def resizeEvent(self, event):
+        # Auto-fit image if newly loaded or frame changed size
+        if self.base_img_preview is not None and not self.view.transform().m11() > 0.0:
+             self.view.reset_zoom()
+        super().resizeEvent(event)
 
     def _setup_controls(self):
         # Wrap everything in a scroll area just in case
@@ -553,10 +684,10 @@ class EditorWidget(QtWidgets.QWidget):
             self._set_slider_value("val_percent", settings.get("sharpen_percent", 150))
             self._set_slider_value("val_denoise", settings.get("de_noise", 0))
 
-        # Create high-quality preview (max 1000px) from proxy
-        # Since proxy is smaller, it might already be close to screen size
+        # Create high-quality preview (max 2048px) from proxy
+        # Increased size for better zoom quality (Stage 2)
         h, w, _ = self.base_img_full.shape
-        scale = 1000 / max(h, w)
+        scale = 2048 / max(h, w)
         if scale < 1.0:
             new_h, new_w = int(h * scale), int(w * scale)
             temp_pil = Image.fromarray((self.base_img_full * 255).astype(np.uint8))
@@ -567,6 +698,9 @@ class EditorWidget(QtWidgets.QWidget):
 
         self.btn_save.setEnabled(True)
         self.request_update()
+
+        # Center image on load
+        QtCore.QTimer.singleShot(100, self.view.reset_zoom)
 
         # Indicate if using proxy
         is_proxy = " (Proxy)" if h < 4000 else "" # Heuristic
@@ -624,16 +758,10 @@ class EditorWidget(QtWidgets.QWidget):
                 pil_img = pynegative.de_noise_image(pil_img, self.val_denoise)
 
         # Display
+        # We no longer scale manually; QGraphicsView handles it.
         q_img = ImageQt.ImageQt(pil_img)
         pixmap = QtGui.QPixmap.fromImage(q_img)
-
-        if not self.canvas_label.size().isEmpty():
-            pixmap = pixmap.scaled(
-                self.canvas_label.size(),
-                QtCore.Qt.KeepAspectRatio,
-                QtCore.Qt.SmoothTransformation
-            )
-        self.canvas_label.setPixmap(pixmap)
+        self.view.set_pixmap(pixmap)
 
     def save_file(self):
         if self.base_img_full is None: return

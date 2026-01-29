@@ -76,11 +76,13 @@ Track planned features and project goals.
 - [x] **Carousel View**: edit carousel should scroll horizontally
 - [x] **Udate edit sliders** Edit sliders should be: Exposure, Contrast, Blacks, Whites, Shadows, Highlights, and Sharpening, with the sharpening section being in a new sub-section under details, where there should also be a de-noise option.
 - [x] **Slider responsiveness**: Improve the responsiveness of the sliders. currently whenever the slider is changed it re-draws the image. instead only redraw the image at a set rate, eg 5fps or 10 fps.
-- [ ] **Zoom Support**: Zoom into photos during editing for fine control.
+- [x] **Zoom Support**: Zoom into photos during editing for fine control.
+- [ ] **Full size preview in gallery**: Allow the user ot get a full size preview of the image in the gallery view.
 - [ ] **Rating System**: Rate photos with stars; store in sidecars/metadata. Filter shown images by rating/metadata.
 - [ ] **Batch Export**: Select and process multiple files at once.
 - [ ] **Sync Settings**: Copy/paste edit changes from one photo to others.
 - [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
+- [ ] **Misc UI Improvements**: misc ui improvements, eg moving the open folder button after a folder is already open.
 - [x] **Reset slider double click**: add double click to restore default values on a slider
 
 ### AI Suggested Additions
