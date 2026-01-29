@@ -2,10 +2,12 @@ from pathlib import Path
 from PySide6 import QtWidgets, QtGui, QtCore
 from .. import core as pynegative
 from .loaders import ThumbnailLoader
-from .widgets import StarRatingWidget, GalleryItemDelegate
+from .widgets import StarRatingWidget, GalleryItemDelegate, GalleryListWidget
+import pynegative
 
 class GalleryWidget(QtWidgets.QWidget):
-    imageSelected = QtCore.Signal(str) # Path
+    imageSelected = QtCore.Signal(str)
+    ratingChanged = QtCore.Signal(str, int)
 
     def __init__(self, thread_pool):
         super().__init__()
@@ -61,7 +63,7 @@ class GalleryWidget(QtWidgets.QWidget):
         grid_layout.addLayout(top_bar)
 
         # Grid View
-        self.list_widget = QtWidgets.QListWidget()
+        self.list_widget = GalleryListWidget()
         self.list_widget.setObjectName("GalleryGrid")
         self.list_widget.setViewMode(QtWidgets.QListView.IconMode)
         self.list_widget.setIconSize(QtCore.QSize(180, 180))
@@ -69,6 +71,7 @@ class GalleryWidget(QtWidgets.QWidget):
         self.list_widget.setSpacing(10)
         self.list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.list_widget.setItemDelegate(GalleryItemDelegate(self.list_widget))
+        self.list_widget.model().dataChanged.connect(self._on_rating_changed)
         grid_layout.addWidget(self.list_widget)
 
         self.stack.addWidget(self.grid_container)
@@ -175,6 +178,21 @@ class GalleryWidget(QtWidgets.QWidget):
     def _on_item_double_clicked(self, item):
         path = item.data(QtCore.Qt.UserRole)
         self.imageSelected.emit(path)
+
+    def _on_rating_changed(self, top_left_index, bottom_right_index):
+        if top_left_index != bottom_right_index:
+            return
+        
+        item = self.list_widget.itemFromIndex(top_left_index)
+        if item:
+            path_str = item.data(QtCore.Qt.UserRole)
+            rating = item.data(QtCore.Qt.UserRole + 1)
+            
+            settings = pynegative.load_sidecar(path_str) or {}
+            settings['rating'] = rating
+            pynegative.save_sidecar(path_str, settings)
+            
+            self.ratingChanged.emit(path_str, rating)
 
     def get_current_image_list(self):
         paths = []
