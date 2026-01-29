@@ -5,6 +5,7 @@ from .zoomablegraphicsview import ZoomableGraphicsView
 from .zoomcontrols import ZoomControls
 from .starrating import StarRatingWidget
 from .galleryitemdelegate import GalleryItemDelegate
+from .gallerylistwidget import GalleryListWidget
 
 __all__ = [
     "HorizontalListWidget",
@@ -14,4 +15,5 @@ __all__ = [
     "ZoomControls",
     "StarRatingWidget",
     "GalleryItemDelegate",
+    "GalleryListWidget",
 ]

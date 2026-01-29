@@ -249,6 +249,10 @@ class EditorWidget(QtWidgets.QWidget):
         setattr(self, var_name, value)
 
 
+    def update_rating_for_path(self, path, rating):
+        if self.raw_path and str(self.raw_path) == path:
+            self.star_rating_widget.set_rating(rating)
+
     def _on_rating_changed(self, rating):
         self.current_rating = rating
         self.save_timer.start(500)
