@@ -2,9 +2,13 @@ from pathlib import Path
 from PySide6 import QtWidgets, QtGui, QtCore
 from .. import core as pynegative
 from .loaders import ThumbnailLoader
+from .widgets import StarRatingWidget, GalleryItemDelegate, GalleryListWidget
+import pynegative
 
 class GalleryWidget(QtWidgets.QWidget):
-    imageSelected = QtCore.Signal(str) # Path
+    imageSelected = QtCore.Signal(str)
+    ratingChanged = QtCore.Signal(str, int)
+    imageListChanged = QtCore.Signal(list)
 
     def __init__(self, thread_pool):
         super().__init__()
@@ -12,7 +16,6 @@ class GalleryWidget(QtWidgets.QWidget):
         self.current_folder = None
         self.settings = QtCore.QSettings("pyNegative", "Gallery")
         self._init_ui()
-        self._load_last_folder()
 
     def _init_ui(self):
         self.main_layout = QtWidgets.QVBoxLayout(self)
@@ -35,20 +38,18 @@ class GalleryWidget(QtWidgets.QWidget):
 
         # Top Bar (only visible when folder is loaded)
         top_bar = QtWidgets.QHBoxLayout()
-        self.btn_open_folder = QtWidgets.QPushButton("Open Folder")
-        self.btn_open_folder.clicked.connect(self.browse_folder)
-        top_bar.addWidget(self.btn_open_folder)
-        top_bar.addStretch()
         grid_layout.addLayout(top_bar)
 
         # Grid View
-        self.list_widget = QtWidgets.QListWidget()
+        self.list_widget = GalleryListWidget()
         self.list_widget.setObjectName("GalleryGrid")
         self.list_widget.setViewMode(QtWidgets.QListView.IconMode)
         self.list_widget.setIconSize(QtCore.QSize(180, 180))
         self.list_widget.setResizeMode(QtWidgets.QListView.Adjust)
         self.list_widget.setSpacing(10)
         self.list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self.list_widget.setItemDelegate(GalleryItemDelegate(self.list_widget))
+        self.list_widget.model().dataChanged.connect(self._on_rating_changed)
         grid_layout.addWidget(self.list_widget)
 
         self.stack.addWidget(self.grid_container)
@@ -110,12 +111,30 @@ class GalleryWidget(QtWidgets.QWidget):
         # Switch to grid view
         self.stack.setCurrentWidget(self.grid_container)
 
-        # Find raw files
         files = [f for f in self.current_folder.iterdir() if f.is_file() and f.suffix.lower() in pynegative.SUPPORTED_EXTS]
 
+        # The filter widgets are now in MainWindow, so we need to get the values from there.
+        # This is a bit of a hack. A better way would be to pass the filter values
+        # into load_folder, or use a shared model.
+        main_window = self.window()
+        filter_mode = main_window.filter_combo.currentText()
+        filter_rating = main_window.filter_rating_widget.rating()
+
         for path in files:
+            sidecar_settings = pynegative.load_sidecar(path)
+            rating = sidecar_settings.get("rating", 0) if sidecar_settings else 0
+
+            if filter_rating > 0:
+                if filter_mode == "Match" and rating != filter_rating:
+                    continue
+                if filter_mode == "Less" and rating >= filter_rating:
+                    continue
+                if filter_mode == "Greater" and rating <= filter_rating:
+                    continue
+
             item = QtWidgets.QListWidgetItem(path.name)
             item.setData(QtCore.Qt.UserRole, str(path))
+            item.setData(QtCore.Qt.UserRole + 1, rating)
             # Set placeholder icon
             item.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon))
             self.list_widget.addItem(item)
@@ -124,6 +143,15 @@ class GalleryWidget(QtWidgets.QWidget):
             loader = ThumbnailLoader(path)
             loader.signals.finished.connect(self._on_thumbnail_loaded)
             self.thread_pool.start(loader)
+
+        self.imageListChanged.emit(self.get_current_image_list())
+
+    def _apply_filter(self):
+        if self.current_folder:
+            self.load_folder(self.current_folder)
+
+    def apply_filter_from_main(self):
+        self._apply_filter()
 
     def _on_thumbnail_loaded(self, path, pixmap):
         # find the item with this path
@@ -137,3 +165,33 @@ class GalleryWidget(QtWidgets.QWidget):
     def _on_item_double_clicked(self, item):
         path = item.data(QtCore.Qt.UserRole)
         self.imageSelected.emit(path)
+
+    def _on_rating_changed(self, top_left_index, bottom_right_index):
+        if top_left_index != bottom_right_index:
+            return
+        
+        item = self.list_widget.itemFromIndex(top_left_index)
+        if item:
+            path_str = item.data(QtCore.Qt.UserRole)
+            rating = item.data(QtCore.Qt.UserRole + 1)
+            
+            settings = pynegative.load_sidecar(path_str) or {}
+            settings['rating'] = rating
+            pynegative.save_sidecar(path_str, settings)
+            
+            self.ratingChanged.emit(path_str, rating)
+
+    def get_current_image_list(self):
+        paths = []
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            paths.append(item.data(QtCore.Qt.UserRole))
+        return paths
+
+    def update_rating_for_item(self, path, rating):
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if item.data(QtCore.Qt.UserRole) == path:
+                item.setData(QtCore.Qt.UserRole + 1, rating)
+                self.list_widget.update(self.list_widget.visualItemRect(item))
+                break

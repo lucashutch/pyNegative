@@ -214,6 +214,10 @@ def save_sidecar(raw_path, settings):
     sidecar_path = get_sidecar_path(raw_path)
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Ensure rating is present
+    if "rating" not in settings:
+        settings["rating"] = 0
+
     data = {
         "version": "1.0",
         "last_modified": time.time(),
@@ -236,7 +240,11 @@ def load_sidecar(raw_path):
     try:
         with open(sidecar_path, 'r') as f:
             data = json.load(f)
-            return data.get("settings")
+            settings = data.get("settings")
+            if settings:
+                if "rating" not in settings:
+                    settings["rating"] = 0
+            return settings
     except Exception as e:
         print(f"Error loading sidecar {sidecar_path}: {e}")
         return None
