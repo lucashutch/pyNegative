@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 import numpy as np
+from pathlib import Path
+import json
+import time
 
 SUPPORTED_EXTS = (".cr3", ".CR3", ".cr2", ".CR2", ".dng", ".DNG")
 
@@ -120,9 +123,10 @@ def open_raw(path, half_size=False):
     """
     Opens a RAW file.
     Args:
-        path: File path
+        path: File path (str or Path)
         half_size: If True, decodes at 1/2 resolution (1/4 pixels) for speed.
     """
+    path = str(path)  # rawpy requires str
     with rawpy.imread(path) as raw:
         rgb = raw.postprocess(
             use_camera_wb=True,
@@ -138,6 +142,7 @@ def extract_thumbnail(path):
     Falls back to a fast, half-size RAW conversion if no thumbnail exists.
     Returns a PIL Image or None on failure.
     """
+    path = str(path)  # rawpy requires str
     try:
         with rawpy.imread(path) as raw:
             try:
@@ -165,16 +170,74 @@ def extract_thumbnail(path):
 
 def sharpen_image(pil_img, radius, percent):
     return pil_img.filter(
-        ImageFilter.UnsharpMask(radius=radius, percent=percent)
+        ImageFilter.UnsharpMask(radius=float(radius), percent=int(percent))
     )
 
 def save_image(pil_img, output_path, quality=95):
-    fmt = output_path.split('.')[-1].lower()
-    if fmt == "jpeg" or fmt == "jpg":
+    output_path = Path(output_path)
+    fmt = output_path.suffix.lower()
+    if fmt in (".jpeg", ".jpg"):
         pil_img.save(output_path, quality=quality)
-    elif fmt == "heif" or fmt == "heic":
+    elif fmt in (".heif", ".heic"):
         if not HEIF_SUPPORTED:
             raise RuntimeError("HEIF requested but pillow-heif not installed.")
         pil_img.save(output_path, format="HEIF", quality=quality)
     else:
         raise ValueError(f"Unsupported format: {fmt}")
+
+
+# ---------------- Sidecar Files ----------------
+SIDECAR_DIR = ".pyRawRoom"
+
+def get_sidecar_path(raw_path):
+    """
+    Returns the Path object to the sidecar JSON file for a given RAW file.
+    Sidecars are stored in a hidden .pyRawRoom directory local to the image.
+    """
+    raw_path = Path(raw_path)
+    return raw_path.parent / SIDECAR_DIR / f"{raw_path.name}.json"
+
+def save_sidecar(raw_path, settings):
+    """
+    Saves edit settings to a JSON sidecar file.
+    """
+    sidecar_path = get_sidecar_path(raw_path)
+    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = {
+        "version": "1.0",
+        "last_modified": time.time(),
+        "raw_path": str(raw_path),
+        "settings": settings
+    }
+
+    with open(sidecar_path, 'w') as f:
+        json.dump(data, f, indent=4)
+
+def load_sidecar(raw_path):
+    """
+    Loads edit settings from a JSON sidecar file if it exists.
+    Returns the settings dict or None.
+    """
+    sidecar_path = get_sidecar_path(raw_path)
+    if not sidecar_path.exists():
+        return None
+
+    try:
+        with open(sidecar_path, 'r') as f:
+            data = json.load(f)
+            return data.get("settings")
+    except Exception as e:
+        print(f"Error loading sidecar {sidecar_path}: {e}")
+        return None
+
+def rename_sidecar(old_raw_path, new_raw_path):
+    """
+    Renames a sidecar file when the original RAW is moved/renamed.
+    """
+    old_sidecar = get_sidecar_path(old_raw_path)
+    new_sidecar = get_sidecar_path(new_raw_path)
+
+    if old_sidecar.exists():
+        new_sidecar.parent.mkdir(parents=True, exist_ok=True)
+        old_sidecar.rename(new_sidecar)

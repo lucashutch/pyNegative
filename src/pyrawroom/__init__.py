@@ -5,6 +5,8 @@ from .core import (
     calculate_auto_exposure,
     sharpen_image,
     save_image,
+    save_sidecar,
+    load_sidecar,
     SUPPORTED_EXTS,
     HEIF_SUPPORTED
 )
@@ -16,6 +18,8 @@ __all__ = [
     "calculate_auto_exposure",
     "sharpen_image",
     "save_image",
+    "save_sidecar",
+    "load_sidecar",
     "SUPPORTED_EXTS",
     "HEIF_SUPPORTED"
 ]

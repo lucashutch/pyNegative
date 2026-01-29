@@ -72,7 +72,7 @@ Track planned features and project goals.
 
 ### User Requested Features
 - [x] **Gallery View**: Browse all photos in a folder in a grid or one-by-one.
-- [ ] **Sidecar Files**: Store edit settings in sidecars natively next to raw originals.
+- [x] **Sidecar Files**: Store edit settings in sidecars natively next to raw originals.
 - [ ] **Zoom Support**: Zoom into photos during editing for fine control.
 - [ ] **Rating System**: Rate photos with stars; store in sidecars/metadata.
 - [ ] **Batch Export**: Select and process multiple files at once.
