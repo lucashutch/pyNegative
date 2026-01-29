@@ -65,3 +65,24 @@ Run tests with:
 ```bash
 pytest
 ```
+
+## Roadmap / TODO
+
+Track planned features and project goals.
+
+### User Requested Features
+- [ ] **Gallery View**: Browse all photos in a folder in a grid or one-by-one.
+- [ ] **Sidecar Files**: Store edit settings in sidecars natively next to raw originals.
+- [ ] **Zoom Support**: Zoom into photos during editing for fine control.
+- [ ] **Rating System**: Rate photos with stars; store in sidecars/metadata.
+- [ ] **Batch Export**: Select and process multiple files at once.
+- [ ] **Gallery Filtering**: Filter shown images by rating/metadata.
+- [ ] **Sync Settings**: Copy/paste edit changes from one photo to others.
+- [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
+
+### AI Suggested Additions
+- [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
+- [ ] **Archival Export Preset**: Reduce storage footprint (e.g., 16-bit DNG or high-quality HEIF) while retaining latitude.
+- [ ] **Film Simulations / LUTs**: Apply built-in or custom Look-Up Tables.
+- [ ] **Virtual Copies**: Allow multiple different edits for a single RAW file.
+- [ ] **Batch Renaming**: Sequence-based renaming for folder exports.
