@@ -73,15 +73,14 @@ Track planned features and project goals.
 ### User Requested Features
 - [x] **Gallery View**: Browse all photos in a folder in a grid or one-by-one.
 - [x] **Sidecar Files**: Store edit settings in sidecars natively next to raw originals.
-- [ ] **Carousel View**: edit carousel should scroll horizontally
-- [ ] **Udate edit sliders** Edit sliders should be: Exposure, Contrast, Blacks, Whites, Shadows, Highlights, and Sharpening, with the sharpening section being in a new sub-section under details, where there should also be a de-noise option.
+- [x] **Carousel View**: edit carousel should scroll horizontally
+- [x] **Udate edit sliders** Edit sliders should be: Exposure, Contrast, Blacks, Whites, Shadows, Highlights, and Sharpening, with the sharpening section being in a new sub-section under details, where there should also be a de-noise option.
 - [ ] **Zoom Support**: Zoom into photos during editing for fine control.
-- [ ] **Rating System**: Rate photos with stars; store in sidecars/metadata.
+- [ ] **Rating System**: Rate photos with stars; store in sidecars/metadata. Filter shown images by rating/metadata.
 - [ ] **Batch Export**: Select and process multiple files at once.
-- [ ] **Gallery Filtering**: Filter shown images by rating/metadata.
 - [ ] **Sync Settings**: Copy/paste edit changes from one photo to others.
 - [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
-- [ ] **Reset slider double click**: add double click to restore default values on a slider
+- [x] **Reset slider double click**: add double click to restore default values on a slider
 
 ### AI Suggested Additions
 - [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
