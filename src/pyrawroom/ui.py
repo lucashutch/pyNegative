@@ -1,5 +1,5 @@
 import sys
-import os
+from pathlib import Path
 import json
 import numpy as np
 from PIL import Image, ImageQt
@@ -14,7 +14,7 @@ class ThumbnailLoaderSignals(QtCore.QObject):
 class ThumbnailLoader(QtCore.QRunnable):
     def __init__(self, path, size=200):
         super().__init__()
-        self.path = path
+        self.path = Path(path)
         self.size = size
         self.signals = ThumbnailLoaderSignals()
 
@@ -27,11 +27,11 @@ class ThumbnailLoader(QtCore.QRunnable):
                 pil_img.thumbnail((self.size, self.size))
                 q_image = ImageQt.ImageQt(pil_img)
                 pixmap = QtGui.QPixmap.fromImage(q_image)
-                self.signals.finished.emit(self.path, pixmap)
+                self.signals.finished.emit(str(self.path), pixmap)
             else:
-                self.signals.finished.emit(self.path, None)
+                self.signals.finished.emit(str(self.path), None)
         except Exception:
-            self.signals.finished.emit(self.path, None)
+            self.signals.finished.emit(str(self.path), None)
 
 
 # ----------------- Gallery Widget -----------------
@@ -41,7 +41,7 @@ class RawLoaderSignals(QtCore.QObject):
 class RawLoader(QtCore.QRunnable):
     def __init__(self, path):
         super().__init__()
-        self.path = path
+        self.path = Path(path)
         self.signals = RawLoaderSignals()
 
     def run(self):
@@ -58,10 +58,10 @@ class RawLoader(QtCore.QRunnable):
                 settings = pyrawroom.calculate_auto_exposure(img)
                 mode = "auto"
 
-            self.signals.finished.emit(self.path, img, settings)
+            self.signals.finished.emit(str(self.path), img, settings)
         except Exception as e:
             print(f"Error loading RAW {self.path}: {e}")
-            self.signals.finished.emit(self.path, None, None)
+            self.signals.finished.emit(str(self.path), None, None)
 
 
 class GalleryWidget(QtWidgets.QWidget):
@@ -99,16 +99,15 @@ class GalleryWidget(QtWidgets.QWidget):
             self.load_folder(folder)
 
     def load_folder(self, folder):
-        self.current_folder = folder
+        self.current_folder = Path(folder)
         self.list_widget.clear()
 
         # Find raw files
-        files = [f for f in os.listdir(folder) if any(f.endswith(ext) for ext in pyrawroom.SUPPORTED_EXTS)]
+        files = [f for f in self.current_folder.iterdir() if f.is_file() and f.suffix.lower() in pyrawroom.SUPPORTED_EXTS]
 
-        for f in files:
-            path = os.path.join(folder, f)
-            item = QtWidgets.QListWidgetItem(os.path.basename(f))
-            item.setData(QtCore.Qt.UserRole, path)
+        for path in files:
+            item = QtWidgets.QListWidgetItem(path.name)
+            item.setData(QtCore.Qt.UserRole, str(path))
             # Set placeholder icon
             item.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon))
             self.list_widget.addItem(item)
@@ -310,7 +309,8 @@ class EditorWidget(QtWidgets.QWidget):
         pyrawroom.save_sidecar(self.raw_path, settings)
 
     def load_image(self, path):
-        self.lbl_info.setText(f"Loading: {os.path.basename(path)}")
+        path = Path(path)
+        self.lbl_info.setText(f"Loading: {path.name}")
         self.raw_path = path
 
         # STAGE 1: Instant Preview (Thumbnail or Cached)
@@ -383,7 +383,7 @@ class EditorWidget(QtWidgets.QWidget):
 
         # Indicate if using proxy
         is_proxy = " (Proxy)" if h < 4000 else "" # Heuristic
-        self.lbl_info.setText(f"Loaded: {os.path.basename(path)}{is_proxy}")
+        self.lbl_info.setText(f"Loaded: {self.raw_path.name}{is_proxy}")
 
     def request_update(self):
         if self.base_img_preview is not None:
@@ -419,11 +419,12 @@ class EditorWidget(QtWidgets.QWidget):
     def save_file(self):
         if self.base_img_full is None: return
 
-        input_dir = os.path.dirname(self.raw_path)
-        default_name = os.path.splitext(os.path.basename(self.raw_path))[0] + ".jpg"
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save", os.path.join(input_dir, default_name), "JPEG (*.jpg);;HEIF (*.heic)")
+        input_dir = self.raw_path.parent
+        default_name = self.raw_path.with_suffix(".jpg").name
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save", str(input_dir / default_name), "JPEG (*.jpg);;HEIF (*.heic)")
 
         if path:
+            path = Path(path)
             try:
                 # RELOAD FULL RESOLUTION FOR SAVING
                 self.lbl_info.setText("Processing Full Res...")
@@ -448,22 +449,20 @@ class EditorWidget(QtWidgets.QWidget):
 
                 pyrawroom.save_image(pil_img, path)
                 QtWidgets.QMessageBox.information(self, "Saved", f"Saved full resolution to {path}")
-                self.lbl_info.setText(f"Saved: {os.path.basename(path)}")
+                self.lbl_info.setText(f"Saved: {path.name}")
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Error", str(e))
                 self.lbl_info.setText("Error saving")
 
     def load_carousel_folder(self, folder):
-        self.current_folder = folder
+        self.current_folder = Path(folder)
         self.carousel.clear()
 
-        files = [f for f in os.listdir(folder) if any(f.endswith(ext) for ext in pyrawroom.SUPPORTED_EXTS)]
-        files.sort()
+        files = sorted([f for f in self.current_folder.iterdir() if f.is_file() and f.suffix.lower() in pyrawroom.SUPPORTED_EXTS])
 
-        for f in files:
-            path = os.path.join(folder, f)
-            item = QtWidgets.QListWidgetItem(os.path.basename(f))
-            item.setData(QtCore.Qt.UserRole, path)
+        for path in files:
+            item = QtWidgets.QListWidgetItem(path.name)
+            item.setData(QtCore.Qt.UserRole, str(path))
             item.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon))
             self.carousel.addItem(item)
 

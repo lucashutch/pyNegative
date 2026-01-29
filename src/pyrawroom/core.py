@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
-import os
+from pathlib import Path
 import json
 import time
 
@@ -123,9 +123,10 @@ def open_raw(path, half_size=False):
     """
     Opens a RAW file.
     Args:
-        path: File path
+        path: File path (str or Path)
         half_size: If True, decodes at 1/2 resolution (1/4 pixels) for speed.
     """
+    path = str(path)  # rawpy requires str
     with rawpy.imread(path) as raw:
         rgb = raw.postprocess(
             use_camera_wb=True,
@@ -141,6 +142,7 @@ def extract_thumbnail(path):
     Falls back to a fast, half-size RAW conversion if no thumbnail exists.
     Returns a PIL Image or None on failure.
     """
+    path = str(path)  # rawpy requires str
     try:
         with rawpy.imread(path) as raw:
             try:
@@ -172,10 +174,11 @@ def sharpen_image(pil_img, radius, percent):
     )
 
 def save_image(pil_img, output_path, quality=95):
-    fmt = output_path.split('.')[-1].lower()
-    if fmt == "jpeg" or fmt == "jpg":
+    output_path = Path(output_path)
+    fmt = output_path.suffix.lower()
+    if fmt in (".jpeg", ".jpg"):
         pil_img.save(output_path, quality=quality)
-    elif fmt == "heif" or fmt == "heic":
+    elif fmt in (".heif", ".heic"):
         if not HEIF_SUPPORTED:
             raise RuntimeError("HEIF requested but pillow-heif not installed.")
         pil_img.save(output_path, format="HEIF", quality=quality)
@@ -188,28 +191,23 @@ SIDECAR_DIR = ".pyRawRoom"
 
 def get_sidecar_path(raw_path):
     """
-    Returns the absolute path to the sidecar JSON file for a given RAW file.
+    Returns the Path object to the sidecar JSON file for a given RAW file.
     Sidecars are stored in a hidden .pyRawRoom directory local to the image.
     """
-    dir_name = os.path.dirname(raw_path)
-    base_name = os.path.basename(raw_path)
-    sidecar_dir = os.path.join(dir_name, SIDECAR_DIR)
-    return os.path.join(sidecar_dir, f"{base_name}.json")
+    raw_path = Path(raw_path)
+    return raw_path.parent / SIDECAR_DIR / f"{raw_path.name}.json"
 
 def save_sidecar(raw_path, settings):
     """
     Saves edit settings to a JSON sidecar file.
     """
     sidecar_path = get_sidecar_path(raw_path)
-    sidecar_dir = os.path.dirname(sidecar_path)
-
-    if not os.path.exists(sidecar_dir):
-        os.makedirs(sidecar_dir, exist_ok=True)
+    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
 
     data = {
         "version": "1.0",
         "last_modified": time.time(),
-        "raw_path": raw_path,
+        "raw_path": str(raw_path),
         "settings": settings
     }
 
@@ -222,7 +220,7 @@ def load_sidecar(raw_path):
     Returns the settings dict or None.
     """
     sidecar_path = get_sidecar_path(raw_path)
-    if not os.path.exists(sidecar_path):
+    if not sidecar_path.exists():
         return None
 
     try:
@@ -240,8 +238,6 @@ def rename_sidecar(old_raw_path, new_raw_path):
     old_sidecar = get_sidecar_path(old_raw_path)
     new_sidecar = get_sidecar_path(new_raw_path)
 
-    if os.path.exists(old_sidecar):
-        new_dir = os.path.dirname(new_sidecar)
-        if not os.path.exists(new_dir):
-            os.makedirs(new_dir, exist_ok=True)
-        os.rename(old_sidecar, new_sidecar)
+    if old_sidecar.exists():
+        new_sidecar.parent.mkdir(parents=True, exist_ok=True)
+        old_sidecar.rename(new_sidecar)
