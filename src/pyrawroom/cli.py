@@ -6,7 +6,7 @@ import shutil
 import argparse
 from PIL import Image
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import pyrawroom
+from . import core as pyrawroom
 
 # ---------------- Conversion ----------------
 def convert_to_image(
