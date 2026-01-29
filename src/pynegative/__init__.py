@@ -1,3 +1,4 @@
+from . import core
 from .core import (
     apply_tone_map,
     open_raw,
@@ -5,6 +6,7 @@ from .core import (
     calculate_auto_exposure,
     sharpen_image,
     save_image,
+    de_noise_image,
     save_sidecar,
     load_sidecar,
     SUPPORTED_EXTS,
@@ -18,6 +20,7 @@ __all__ = [
     "calculate_auto_exposure",
     "sharpen_image",
     "save_image",
+    "de_noise_image",
     "save_sidecar",
     "load_sidecar",
     "SUPPORTED_EXTS",
