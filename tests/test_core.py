@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for pyrawroom.py"""
+"""Unit tests for pynegative.py"""
 import pytest
 import numpy as np
 from PIL import Image
@@ -7,8 +7,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pyrawroom
-
+import pynegative
 
 class TestApplyToneMap:
     """Tests for the apply_tone_map function"""
@@ -21,7 +20,7 @@ class TestApplyToneMap:
             [[0.3, 0.3, 0.3], [0.9, 0.9, 0.9]]
         ], dtype=np.float32)
 
-        result, stats = pyrawroom.apply_tone_map(img)
+        result, stats = pynegative.apply_tone_map(img)
 
         # Result should be equal to input (within float precision)
         np.testing.assert_array_almost_equal(result, img)
@@ -31,7 +30,7 @@ class TestApplyToneMap:
         """Test exposure adjustment (+1 stop)"""
         img = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
         # +1 stop should double values
-        result, _ = pyrawroom.apply_tone_map(img, exposure=1.0)
+        result, _ = pynegative.apply_tone_map(img, exposure=1.0)
         np.testing.assert_array_almost_equal(result, np.array([[[1.0, 1.0, 1.0]]], dtype=np.float32))
 
     def test_blacks_whites_adjustment(self):
@@ -42,7 +41,7 @@ class TestApplyToneMap:
         ], dtype=np.float32)
 
         # Pull blacks to 0.1, whites to 0.9
-        result, _ = pyrawroom.apply_tone_map(img, blacks=0.1, whites=0.9)
+        result, _ = pynegative.apply_tone_map(img, blacks=0.1, whites=0.9)
 
         # 0.5 -> (0.5-0.1)/0.8 = 0.4/0.8 = 0.5 (Mid stays mid)
         # 0.0 -> (0.0-0.1)/0.8 = -0.125 -> clipped to 0
@@ -55,7 +54,7 @@ class TestApplyToneMap:
         """Test shadows and highlights tone adjustments"""
         img = np.array([[[0.2, 0.2, 0.2], [0.8, 0.8, 0.8]]], dtype=np.float32)
         # Increase shadows, decrease highlights
-        result, _ = pyrawroom.apply_tone_map(img, shadows=0.2, highlights=-0.2)
+        result, _ = pynegative.apply_tone_map(img, shadows=0.2, highlights=-0.2)
 
         # Shadows (0.2) should be boosted
         assert result[0,0,0] > 0.2
@@ -65,14 +64,14 @@ class TestApplyToneMap:
     def test_clipping_statistics(self):
         """Test that clipping statistics are calculated correctly"""
         img = np.array([[[1.5, -0.5, 0.5]]], dtype=np.float32)
-        _, stats = pyrawroom.apply_tone_map(img)
+        _, stats = pynegative.apply_tone_map(img)
         assert stats["pct_highlights_clipped"] > 0.0
         assert stats["pct_shadows_clipped"] > 0.0
 
     def test_clipping(self):
         """Test that values are clipped to [0, 1]"""
         img = np.array([[[1.5, -0.5, 0.5]]], dtype=np.float32)
-        result, stats = pyrawroom.apply_tone_map(img)
+        result, stats = pynegative.apply_tone_map(img)
         assert np.all(result >= 0.0)
         assert np.all(result <= 1.0)
         assert stats["pct_highlights_clipped"] > 0
@@ -84,14 +83,14 @@ class TestApplyToneMap:
         img = np.array([[[0.5, 0.2, 0.2]]], dtype=np.float32)
 
         # Desaturate to 0 (should become grayscale)
-        result, _ = pyrawroom.apply_tone_map(img, saturation=0.0)
+        result, _ = pynegative.apply_tone_map(img, saturation=0.0)
 
         # Luminance for [0.5, 0.2, 0.2] is 0.5*0.2126 + 0.2*0.7152 + 0.2*0.0722 = 0.26378
         expected_gray = 0.26378
         np.testing.assert_array_almost_equal(result, np.array([[[expected_gray, expected_gray, expected_gray]]], dtype=np.float32))
 
         # Oversaturate
-        result, _ = pyrawroom.apply_tone_map(img, saturation=2.0)
+        result, _ = pynegative.apply_tone_map(img, saturation=2.0)
         # Manual check: lum + (img-lum)*2 = 0.26378 + (img-0.26378)*2
         # R: 0.26378 + (0.5-0.26378)*2 = 0.26378 + 0.23622*2 = 0.73622
         expected_r = 0.73622
@@ -101,7 +100,7 @@ class TestApplyToneMap:
         """Test that the function handles edge cases like blacks == whites"""
         img = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
         # This should not raise a division by zero error
-        result, _ = pyrawroom.apply_tone_map(img, blacks=0.5, whites=0.5)
+        result, _ = pynegative.apply_tone_map(img, blacks=0.5, whites=0.5)
         assert np.all(np.isfinite(result))
 
 
@@ -111,7 +110,7 @@ class TestCalculateAutoExposure:
     def test_basic_calculation(self):
         """Test that it returns expected keys"""
         img = np.random.rand(10, 10, 3).astype(np.float32)
-        settings = pyrawroom.calculate_auto_exposure(img)
+        settings = pynegative.calculate_auto_exposure(img)
         assert "exposure" in settings
         assert "blacks" in settings
         assert "whites" in settings
@@ -120,7 +119,7 @@ class TestCalculateAutoExposure:
     def test_normal_image(self):
         # Middle gray image
         img = np.full((10, 10, 3), 0.18, dtype=np.float32)
-        settings = pyrawroom.calculate_auto_exposure(img)
+        settings = pynegative.calculate_auto_exposure(img)
 
         assert "exposure" in settings
         assert "blacks" in settings
@@ -130,11 +129,11 @@ class TestCalculateAutoExposure:
     def test_bright_image(self):
         # Very bright image
         img = np.full((10, 10, 3), 0.8, dtype=np.float32)
-        settings = pyrawroom.calculate_auto_exposure(img)
+        settings = pynegative.calculate_auto_exposure(img)
 
         # Should have less boost than normal
         normal_img = np.full((10, 10, 3), 0.18, dtype=np.float32)
-        normal_settings = pyrawroom.calculate_auto_exposure(normal_img)
+        normal_settings = pynegative.calculate_auto_exposure(normal_img)
         assert settings["exposure"] < normal_settings["exposure"]
 
 
@@ -146,7 +145,7 @@ class TestSharpening:
         # Create a simple PIL image
         pil_img = Image.new('RGB', (10, 10), color=(128, 128, 128))
 
-        result = pyrawroom.sharpen_image(pil_img, radius=2.0, percent=100)
+        result = pynegative.sharpen_image(pil_img, radius=2.0, percent=100)
 
         # Should return a PIL Image
         assert isinstance(result, Image.Image)
@@ -159,7 +158,7 @@ class TestSharpening:
 
         # UI passes these as floats from division
         try:
-            pyrawroom.sharpen_image(pil_img, radius=2.5, percent=150.0)
+            pynegative.sharpen_image(pil_img, radius=2.5, percent=150.0)
         except TypeError as e:
             pytest.fail(f"sharpen_image failed with floats: {e}")
 
@@ -173,7 +172,7 @@ class TestSaveImage:
             pil_img = Image.new('RGB', (10, 10), color=(255, 0, 0))
             output_path = tmpdir / "test.jpg"
 
-            pyrawroom.save_image(pil_img, output_path)
+            pynegative.save_image(pil_img, output_path)
             assert output_path.exists()
 
     def test_save_heif_not_supported(self):
@@ -183,17 +182,17 @@ class TestSaveImage:
             output_path = tmpdir / "test.heic"
 
             # Mock HEIF_SUPPORTED to False
-            with patch.object(pyrawroom.core, 'HEIF_SUPPORTED', False):
+            with patch.object(pynegative.core, 'HEIF_SUPPORTED', False):
                 with pytest.raises(RuntimeError, match="HEIF requested but pillow-heif not installed"):
-                    pyrawroom.save_image(pil_img, output_path)
+                    pynegative.save_image(pil_img, output_path)
 
 class TestSidecars:
     """Tests for sidecar file logic"""
 
     def test_sidecar_path(self):
         raw_path = Path("/tmp/test.dng")
-        expected = Path("/tmp/.pyRawRoom/test.dng.json")
-        assert pyrawroom.core.get_sidecar_path(raw_path) == expected
+        expected = Path("/tmp/.pyNegative/test.dng.json")
+        assert pynegative.core.get_sidecar_path(raw_path) == expected
 
     def test_save_load_sidecar(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -201,14 +200,14 @@ class TestSidecars:
             raw_path = tmpdir / "test.dng"
             settings = {"exposure": 1.5, "blacks": 0.05}
 
-            pyrawroom.save_sidecar(raw_path, settings)
+            pynegative.save_sidecar(raw_path, settings)
 
             # Check file exists
-            sidecar_path = pyrawroom.core.get_sidecar_path(raw_path)
+            sidecar_path = pynegative.core.get_sidecar_path(raw_path)
             assert sidecar_path.exists()
 
             # Load and verify
-            loaded = pyrawroom.load_sidecar(raw_path)
+            loaded = pynegative.load_sidecar(raw_path)
             assert loaded == settings
 
     def test_rename_sidecar(self):
@@ -218,16 +217,16 @@ class TestSidecars:
             new_raw = tmpdir / "new.dng"
             settings = {"exposure": 1.5}
 
-            pyrawroom.save_sidecar(old_raw, settings)
-            old_sidecar = pyrawroom.core.get_sidecar_path(old_raw)
+            pynegative.save_sidecar(old_raw, settings)
+            old_sidecar = pynegative.core.get_sidecar_path(old_raw)
             assert old_sidecar.exists()
 
-            pyrawroom.core.rename_sidecar(old_raw, new_raw)
+            pynegative.core.rename_sidecar(old_raw, new_raw)
 
-            new_sidecar = pyrawroom.core.get_sidecar_path(new_raw)
+            new_sidecar = pynegative.core.get_sidecar_path(new_raw)
             assert new_sidecar.exists()
             assert not old_sidecar.exists()
 
             # Verify data survived
-            loaded = pyrawroom.load_sidecar(new_raw)
+            loaded = pynegative.load_sidecar(new_raw)
             assert loaded == settings
