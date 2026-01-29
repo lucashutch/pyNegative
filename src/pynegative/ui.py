@@ -4,6 +4,7 @@ import json
 import numpy as np
 from PIL import Image, ImageQt
 from PySide6 import QtWidgets, QtGui, QtCore
+from PySide6.QtCore import Qt, Signal, Slot
 
 from . import core as pynegative
 
@@ -260,6 +261,174 @@ class ResetableSlider(QtWidgets.QSlider):
         super().mouseDoubleClickEvent(event)
 
 
+class ZoomableGraphicsView(QtWidgets.QGraphicsView):
+    zoomChanged = Signal(float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setRenderHint(QtGui.QPainter.Antialiasing)
+        self.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
+        self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        self.setResizeAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.setBackgroundBrush(QtGui.QBrush(QtGui.QColor("#1a1a1a")))
+
+        self._scene = QtWidgets.QGraphicsScene(self)
+        self.setScene(self._scene)
+
+        # Background item (Low-res 1000-1500px, GPU scaled)
+        self._bg_item = QtWidgets.QGraphicsPixmapItem()
+        self._scene.addItem(self._bg_item)
+        self._bg_item.setZValue(0)
+
+        # Foreground item (High-res ROI patch)
+        self._fg_item = QtWidgets.QGraphicsPixmapItem()
+        self._scene.addItem(self._fg_item)
+        self._fg_item.setZValue(1)
+
+        self._current_zoom = 1.0
+        self._is_fitting = True
+        self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
+
+        # Signal for redraw on pan
+        self.horizontalScrollBar().valueChanged.connect(self._sync_view)
+        self.verticalScrollBar().valueChanged.connect(self._sync_view)
+
+    def _sync_view(self):
+        if not self._is_fitting:
+            self.zoomChanged.emit(self._current_zoom)
+
+    def set_pixmaps(self, bg_pix, full_w, full_h, roi_pix=None, roi_x=0, roi_y=0, roi_w=0, roi_h=0):
+        """Unified update for both layers to ensure alignment."""
+        # 1. Update Background
+        self._bg_item.setPixmap(bg_pix)
+        if bg_pix.width() > 0:
+            s_w = full_w / bg_pix.width()
+            s_h = full_h / bg_pix.height()
+            self._bg_item.setTransform(QtGui.QTransform.fromScale(s_w, s_h))
+
+        # 2. Update Scene Rect
+        self._scene.setSceneRect(0, 0, full_w, full_h)
+
+        # 3. Update ROI
+        if roi_pix:
+            self._fg_item.setPixmap(roi_pix)
+            self._fg_item.setPos(roi_x, roi_y)
+            # GPU Scale ROI if it was processed at lower resolution for performance
+            if roi_w > 0 and roi_pix.width() > 0:
+                rs_w = roi_w / roi_pix.width()
+                rs_h = roi_h / roi_pix.height()
+                self._fg_item.setTransform(QtGui.QTransform.fromScale(rs_w, rs_h))
+            else:
+                self._fg_item.setTransform(QtGui.QTransform())
+            self._fg_item.show()
+        else:
+            self._fg_item.hide()
+
+    def reset_zoom(self):
+        if self._bg_item.pixmap().isNull() and self._scene.sceneRect().isEmpty():
+             return
+        self.fitInView(self._scene.sceneRect(), Qt.KeepAspectRatio)
+        self._current_zoom = self.transform().m11()
+        self._is_fitting = True
+        self.zoomChanged.emit(self._current_zoom)
+
+    def set_zoom(self, scale, manual=True):
+        if manual:
+            self._is_fitting = False
+        self._current_zoom = scale
+        self.setTransform(QtGui.QTransform.fromScale(scale, scale))
+        self.zoomChanged.emit(self._current_zoom)
+
+    def wheelEvent(self, event):
+        if self._scene.sceneRect().isEmpty():
+            return
+
+        # Zoom everywhere in the view for a better feel,
+        # unless you specifically want to limit it to the image bounds.
+        angle = event.angleDelta().y()
+        factor = 1.1 if angle > 0 else 0.9
+
+        # Calculate new zoom relative to current actual transform
+        # in case _current_zoom got out of sync
+        self._current_zoom = self.transform().m11()
+        new_zoom = self._current_zoom * factor
+
+        # Clamp to 50% - 400% range
+        new_zoom = max(0.5, min(new_zoom, 4.0))
+
+        if new_zoom != self._current_zoom:
+            self.set_zoom(new_zoom, manual=True)
+
+        event.accept()
+
+class ZoomControls(QtWidgets.QFrame):
+    zoomChanged = Signal(float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ZoomControls")
+        self.layout = QtWidgets.QHBoxLayout(self)
+        self.layout.setContentsMargins(10, 5, 10, 5)
+        self.layout.setSpacing(10)
+
+        # Slider (50 to 400)
+        self.slider = QtWidgets.QSlider(Qt.Horizontal)
+        self.slider.setRange(50, 400)
+        self.slider.setValue(100)
+        self.slider.setFixedWidth(120)
+        self.slider.valueChanged.connect(self._on_slider_changed)
+        self.layout.addWidget(self.slider)
+
+        # Percentage Box
+        self.spin = QtWidgets.QSpinBox()
+        self.spin.setRange(50, 400)
+        self.spin.setValue(100)
+        self.spin.setSuffix("%")
+        self.spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.spin.setAlignment(Qt.AlignCenter)
+        self.spin.setFixedWidth(60)
+        self.spin.valueChanged.connect(self._on_spin_changed)
+        self.layout.addWidget(self.spin)
+
+        self.setStyleSheet("""
+            QFrame#ZoomControls {
+                background-color: rgba(36, 36, 36, 0.8);
+                border-radius: 8px;
+                border: 1px solid #404040;
+            }
+            QSpinBox {
+                background-color: #1a1a1a;
+                border: 1px solid #303030;
+                border-radius: 4px;
+                color: #e5e5e5;
+            }
+        """)
+
+    def _on_slider_changed(self, val):
+        self.spin.blockSignals(True)
+        self.spin.setValue(val)
+        self.spin.blockSignals(False)
+        self.zoomChanged.emit(val / 100.0)
+
+    def _on_spin_changed(self, val):
+        self.slider.blockSignals(True)
+        self.slider.setValue(val)
+        self.slider.blockSignals(False)
+        self.zoomChanged.emit(val / 100.0)
+
+    def update_zoom(self, scale):
+        val = int(scale * 100)
+        self.slider.blockSignals(True)
+        self.spin.blockSignals(True)
+        self.slider.setValue(val)
+        self.spin.setValue(val)
+        self.slider.blockSignals(False)
+        self.spin.blockSignals(False)
+
+
 # ----------------- Editor Widget -----------------
 class EditorWidget(QtWidgets.QWidget):
     def __init__(self, thread_pool):
@@ -267,8 +436,8 @@ class EditorWidget(QtWidgets.QWidget):
         self.thread_pool = thread_pool
         self.current_folder = None
         self.raw_path = None
-        self.base_img_full = None
-        self.base_img_preview = None
+        self.base_img_full = None  # The High-Res Proxy (e.g. 4000px)
+        self._base_img_uint8 = None # Cached uint8 version for resizing
         self.current_qpixmap = None
 
         # Auto-save timer
@@ -303,14 +472,24 @@ class EditorWidget(QtWidgets.QWidget):
         self.canvas_frame.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         main_layout.addWidget(self.canvas_frame)
 
-        self.canvas_label = QtWidgets.QLabel()
-        self.canvas_label.setObjectName("CanvasLabel")
-        self.canvas_label.setAlignment(QtCore.Qt.AlignCenter)
+        # View replaced with ZoomableGraphicsView
+        self.view = ZoomableGraphicsView()
 
-        canvas_layout = QtWidgets.QVBoxLayout(self.canvas_frame)
-        canvas_layout.addWidget(self.canvas_label)
+        # Layout for canvas + zoom controls
+        self.canvas_container = QtWidgets.QGridLayout(self.canvas_frame)
+        self.canvas_container.setContentsMargins(0, 0, 0, 0)
+        self.canvas_container.addWidget(self.view, 0, 0)
 
-        self.canvas_label.installEventFilter(self)
+        # Zoom Controls (Bottom Right overlay)
+        self.zoom_ctrl = ZoomControls()
+        self.zoom_ctrl.zoomChanged.connect(lambda z: self.view.set_zoom(z, manual=True))
+        self.view.zoomChanged.connect(self.zoom_ctrl.update_zoom)
+
+        # Trigger ROI re-render when zoom or pan changes
+        self.view.zoomChanged.connect(self.request_update)
+
+        self.canvas_container.addWidget(self.zoom_ctrl, 0, 0, Qt.AlignBottom | Qt.AlignRight)
+        self.zoom_ctrl.setContentsMargins(0, 0, 20, 20)
 
         # Carousel (Bottom)
         self.carousel = HorizontalListWidget()
@@ -324,14 +503,17 @@ class EditorWidget(QtWidgets.QWidget):
         self.carousel.setIconSize(QtCore.QSize(100, 100))
         self.carousel.setSpacing(5)
         self.carousel.itemClicked.connect(self._on_carousel_item_clicked)
-        canvas_layout.addWidget(self.carousel)
+        self.canvas_container.addWidget(self.carousel, 1, 0)
 
         self._setup_controls()
 
-    def eventFilter(self, watched, event):
-        if watched == self.canvas_label and event.type() == QtCore.QEvent.Type.Resize:
-            self.update_preview()
-        return super().eventFilter(watched, event)
+    def resizeEvent(self, event):
+        # Auto-fit image if in fitting mode
+        # Using hasattr check to be absolutely safe against racing AttributeErrors
+        if hasattr(self, 'base_img_full') and self.base_img_full is not None:
+            if getattr(self.view, '_is_fitting', False):
+                 self.view.reset_zoom()
+        super().resizeEvent(event)
 
     def _setup_controls(self):
         # Wrap everything in a scroll area just in case
@@ -533,8 +715,6 @@ class EditorWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.critical(self, "Error", "Failed to load image")
             return
 
-        self.base_img_full = img_arr # Actually this is now the proxy
-
         # Apply Auto-Expose Settings
         if settings:
             self._set_slider_value("val_exposure", settings.get("exposure", 0.0))
@@ -553,31 +733,27 @@ class EditorWidget(QtWidgets.QWidget):
             self._set_slider_value("val_percent", settings.get("sharpen_percent", 150))
             self._set_slider_value("val_denoise", settings.get("de_noise", 0))
 
-        # Create high-quality preview (max 1000px) from proxy
-        # Since proxy is smaller, it might already be close to screen size
-        h, w, _ = self.base_img_full.shape
-        scale = 1000 / max(h, w)
-        if scale < 1.0:
-            new_h, new_w = int(h * scale), int(w * scale)
-            temp_pil = Image.fromarray((self.base_img_full * 255).astype(np.uint8))
-            temp_pil = temp_pil.resize((new_w, new_h), Image.Resampling.BILINEAR)
-            self.base_img_preview = np.array(temp_pil).astype(np.float32) / 255.0
-        else:
-            self.base_img_preview = self.base_img_full.copy()
+        self.base_img_full = img_arr # The half-res proxy
+
+        # Clear caches for the new image
+        self._base_img_uint8 = None
+        if hasattr(self, '_img_render_base'):
+            del self._img_render_base
 
         self.btn_save.setEnabled(True)
         self.request_update()
 
-        # Indicate if using proxy
-        is_proxy = " (Proxy)" if h < 4000 else "" # Heuristic
-        self.lbl_info.setText(f"Loaded: {self.raw_path.name}{is_proxy}")
+        # Request a fit once the UI settles
+        QtCore.QTimer.singleShot(50, self.view.reset_zoom)
+        QtCore.QTimer.singleShot(200, self.view.reset_zoom)
+
+        self.lbl_info.setText(f"Loaded: {self.raw_path.name}")
 
     def request_update(self):
         """
-        Requests an image redraw. Uses a throttled timer to maintain 30 FPS
-        and keep the UI responsive during slider movements.
+        Requests an image redraw. Uses a throttled timer to maintain 30 FPS.
         """
-        if self.base_img_preview is None:
+        if self.base_img_full is None:
             return
 
         self._render_pending = True
@@ -587,7 +763,7 @@ class EditorWidget(QtWidgets.QWidget):
 
     def _process_pending_update(self):
         """Processes the actual redraw and manages the throttle lockout."""
-        if not self._render_pending or self.base_img_preview is None:
+        if not self._render_pending or self.base_img_full is None:
             return
 
         # Perform the actual update
@@ -606,34 +782,99 @@ class EditorWidget(QtWidgets.QWidget):
             self._process_pending_update()
 
     def update_preview(self):
-        if self.base_img_preview is None: return
+        if self.base_img_full is None: return
 
-        # Process
-        img, _ = pynegative.apply_tone_map(
-            self.base_img_preview,
+        # Strategy: Single-Layer Dynamic ROI
+        # 1. Determine the viewport size
+        # 2. If zoomed out (Fit), process a 1500px global image.
+        # 3. If zoomed in, process a crop matching the viewport size from base_img_full.
+
+        full_h, full_w, _ = self.base_img_full.shape
+        zoom_scale = self.view.transform().m11()
+        vw, vh = self.view.viewport().width(), self.view.viewport().height()
+
+        # Calculate fit scale
+        fit_scale = 1.0
+        if vw > 0 and vh > 0:
+            fit_scale = min(vw / full_w, vh / full_h)
+
+        is_zoomed_in = not self.view._is_fitting and (zoom_scale > fit_scale * 1.01 or zoom_scale > 0.99)
+
+        # --- Part 1: Global Background ---
+        # Cache the 1500px base
+        if self._base_img_uint8 is None:
+            self._base_img_uint8 = (self.base_img_full * 255).astype(np.uint8)
+
+        scale = 1500 / max(full_h, full_w)
+        target_h, target_w = int(full_h * scale), int(full_w * scale)
+        if not hasattr(self, '_img_render_base') or self._img_render_base.shape[0] != target_h:
+            temp_pil = Image.fromarray(self._base_img_uint8)
+            temp_pil = temp_pil.resize((target_w, target_h), Image.Resampling.BILINEAR)
+            self._img_render_base = np.array(temp_pil).astype(np.float32) / 255.0
+
+        # Process Background
+        processed_bg, _ = pynegative.apply_tone_map(
+            self._img_render_base,
             exposure=self.val_exposure, contrast=self.val_contrast,
             blacks=self.val_blacks, whites=self.val_whites,
             shadows=self.val_shadows, highlights=self.val_highlights,
             saturation=self.val_saturation
         )
-        pil_img = Image.fromarray((img * 255).astype(np.uint8))
+        processed_bg *= 255
+        pil_bg = Image.fromarray(processed_bg.astype(np.uint8))
+        pix_bg = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_bg))
 
-        if self.var_sharpen_enabled:
-            pil_img = pynegative.sharpen_image(pil_img, self.val_radius, self.val_percent)
-            if self.val_denoise > 0:
-                pil_img = pynegative.de_noise_image(pil_img, self.val_denoise)
+        # --- Part 2: Detail ROI (Only if zoomed in) ---
+        pix_roi, roi_x, roi_y, roi_w, roi_h = None, 0, 0, 0, 0
+        if is_zoomed_in:
+            roi = self.view.mapToScene(self.view.viewport().rect()).boundingRect()
+            ix_min = max(0, int(roi.left()))
+            ix_max = min(full_w, int(roi.right()))
+            iy_min = max(0, int(roi.top()))
+            iy_max = min(full_h, int(roi.bottom()))
 
-        # Display
-        q_img = ImageQt.ImageQt(pil_img)
-        pixmap = QtGui.QPixmap.fromImage(q_img)
+            rw = ix_max - ix_min
+            rh = iy_max - iy_min
 
-        if not self.canvas_label.size().isEmpty():
-            pixmap = pixmap.scaled(
-                self.canvas_label.size(),
-                QtCore.Qt.KeepAspectRatio,
-                QtCore.Qt.SmoothTransformation
-            )
-        self.canvas_label.setPixmap(pixmap)
+            if rw > 10 and rh > 10:
+                # Performance Cap: Max 1.5 million pixels for real-time ROI
+                MAX_REALTIME_PIXELS = 1_500_000
+                current_pixels = rw * rh
+
+                crop = self.base_img_full[iy_min:iy_max, ix_min:ix_max]
+
+                if current_pixels > MAX_REALTIME_PIXELS:
+                    # Scale down for processing, then GPU upscale later
+                    p_scale = (MAX_REALTIME_PIXELS / current_pixels) ** 0.5
+                    p_w, p_h = int(rw * p_scale), int(rh * p_scale)
+
+                    pil_crop = Image.fromarray((crop * 255).astype(np.uint8))
+                    pil_crop = pil_crop.resize((p_w, p_h), Image.Resampling.BILINEAR)
+                    crop_to_proc = np.array(pil_crop).astype(np.float32) / 255.0
+                else:
+                    crop_to_proc = crop
+
+                processed_roi, _ = pynegative.apply_tone_map(
+                    crop_to_proc,
+                    exposure=self.val_exposure, contrast=self.val_contrast,
+                    blacks=self.val_blacks, whites=self.val_whites,
+                    shadows=self.val_shadows, highlights=self.val_highlights,
+                    saturation=self.val_saturation
+                )
+                processed_roi *= 255
+                pil_roi = Image.fromarray(processed_roi.astype(np.uint8))
+
+                if self.var_sharpen_enabled:
+                    pil_roi = pynegative.sharpen_image(pil_roi, self.val_radius, self.val_percent)
+                    if self.val_denoise > 0:
+                        pil_roi = pynegative.de_noise_image(pil_roi, self.val_denoise)
+
+                pix_roi = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_roi))
+                roi_x, roi_y = ix_min, iy_min
+                roi_w, roi_h = rw, rh
+
+        # --- Final Update ---
+        self.view.set_pixmaps(pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h)
 
     def save_file(self):
         if self.base_img_full is None: return
