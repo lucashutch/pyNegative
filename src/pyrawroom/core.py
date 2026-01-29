@@ -44,7 +44,7 @@ def apply_tone_map(img, exposure=0.0, blacks=0.0, whites=1.0, shadows=0.0, highl
         if highlights != 0.0:
             h_mask = lum ** 2
             img += highlights * h_mask * (1.0 - img)
-    
+
     # Clip stats for reporting
     clipped_shadows = np.sum(img < 0.0)
     clipped_highlights = np.sum(img > 1.0)
@@ -68,6 +68,37 @@ def open_raw(path):
             use_camera_wb=True, half_size=False, no_auto_bright=True, output_bps=8
         )
     return rgb.astype(np.float32) / 255.0
+
+def extract_thumbnail(path):
+    """
+    Attempts to extract an embedded thumbnail.
+    Falls back to a fast, half-size RAW conversion if no thumbnail exists.
+    Returns a PIL Image or None on failure.
+    """
+    try:
+        with rawpy.imread(path) as raw:
+            try:
+                thumb = raw.extract_thumb()
+            except rawpy.LibRawNoThumbnailError:
+                thumb = None
+
+            # If we found a JPEG thumbnail
+            if thumb and thumb.format == rawpy.ThumbFormat.JPEG:
+                from io import BytesIO
+                return Image.open(BytesIO(thumb.data))
+
+            # Fallback: fast postprocess (half_size=True is very fast)
+            rgb = raw.postprocess(
+                use_camera_wb=True,
+                half_size=True,  # 1/4 resolution
+                no_auto_bright=True,
+                output_bps=8
+            )
+            return Image.fromarray(rgb)
+
+    except Exception as e:
+        print(f"Error extracting thumbnail for {path}: {e}")
+        return None
 
 def sharpen_image(pil_img, radius, percent):
     return pil_img.filter(
