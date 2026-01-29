@@ -1,183 +1,96 @@
 #!/usr/bin/env python3
-import rawpy
+import sys
+from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor
+import pyrawroom
 import numpy as np
-import os
-import shutil
-import argparse
 from PIL import Image
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from . import core as pyrawroom
 
-# ---------------- Conversion ----------------
-def convert_to_image(
-    input_path,
-    output_path,
-    fmt="jpeg",
-    quality=95,
-    exposure=0.0,
-    blacks=0.0,
-    whites=1.0,
-    shadows=0.0,
-    highlights=0.0,
-    sharpen=False,
-    sharpen_radius=2,
-    sharpen_percent=150,
-    print_info=True,
-):
-    img = pyrawroom.open_raw(input_path)
+def process_file_cli(input_path, output_dir, fmt, quality):
+    """
+    Worker function for CLI batch processing.
+    """
+    try:
+        input_path = Path(input_path)
+        output_dir = Path(output_dir)
 
-    img_transformed, stats = pyrawroom.apply_tone_map(
-        img,
-        exposure=exposure,
-        blacks=blacks,
-        whites=whites,
-        shadows=shadows,
-        highlights=highlights
-    )
+        # 1. Load RAW
+        img = pyrawroom.open_raw(input_path)
 
-    rgb_out = (img_transformed * 255).astype(np.uint8)
-    pil_img = Image.fromarray(rgb_out)
+        # 2. Check for sidecar or calculate auto-exposure
+        settings = pyrawroom.load_sidecar(input_path)
+        if not settings:
+            settings = pyrawroom.calculate_auto_exposure(img)
 
-    if sharpen:
-        pil_img = pyrawroom.sharpen_image(pil_img, sharpen_radius, sharpen_percent)
+        # 3. Apply settings
+        processed, _ = pyrawroom.apply_tone_map(
+            img,
+            exposure=settings.get("exposure", 0.0),
+            blacks=settings.get("blacks", 0.0),
+            whites=settings.get("whites", 1.0),
+            shadows=settings.get("shadows", 0.0),
+            highlights=settings.get("highlights", 0.0),
+            saturation=settings.get("saturation", 1.0)
+        )
 
-    pyrawroom.save_image(pil_img, output_path, quality)
+        # 4. Save
+        pil_img = Image.fromarray((processed * 255).astype("uint8"))
 
-    if print_info:
-        print(f"{os.path.basename(input_path)}:")
-        print(f"  Exp: {exposure}, Blk: {blacks}, Wht: {whites}, Shd: {shadows}, Hgh: {highlights}")
-        print(f"  Clipped: Shadows {stats['pct_shadows_clipped']:.2f}%, Highlights {stats['pct_highlights_clipped']:.2f}%")
-        print(f"Saved: {output_path}\n")
+        out_filename = input_path.with_suffix(f".{fmt.lower()}").name
+        out_path = output_dir / out_filename
 
-    return stats
+        pyrawroom.save_image(pil_img, out_path, quality=quality)
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 
-# ---------------- Move RAW ----------------
-def move_raw_file(input_file, move_dir):
-    os.makedirs(move_dir, exist_ok=True)
-    dest_path = os.path.join(move_dir, os.path.basename(input_file))
-    shutil.move(input_file, dest_path)
-    print(f"Moved RAW to: {dest_path}")
+def run_batch(input_dir, output_dir=None, fmt="JPG", quality=90, workers=4):
+    input_dir = Path(input_dir)
+    if not input_dir.is_dir():
+        print(f"Error: {input_dir} is not a directory.")
+        return
 
+    # Find RAW files
+    raw_files = sorted([f for f in input_dir.iterdir() if f.suffix.lower() in pyrawroom.SUPPORTED_EXTS])
 
-# ---------------- Process a single file (wrapper) ----------------
-def process_file_wrapper(args):
-    # unpack args
-    (
-        input_file, out_path, fmt, quality,
-        exposure, blacks, whites, shadows, highlights,
-        sharpen, s_rad, s_per,
-        move_raw, move_dir
-    ) = args
+    if not raw_files:
+        print(f"No RAW files found in {input_dir}")
+        return
 
-    result = convert_to_image(
-        input_file, out_path, fmt, quality,
-        exposure, blacks, whites, shadows, highlights,
-        sharpen, s_rad, s_per,
-        print_info=False
-    )
+    if output_dir:
+        output_dir = Path(output_dir)
+    else:
+        output_dir = input_dir / "converted"
 
-    if move_raw:
-        move_raw_file(input_file, move_dir)
-    return os.path.basename(input_file), result
+    output_dir.mkdir(parents=True, exist_ok=True)
 
+    print(f"Converting {len(raw_files)} files to {fmt}...")
 
-# ---------------- Process Directory ----------------
-def process_directory(
-    input_dir,
-    output_dir=None,
-    fmt="jpeg",
-    quality=95,
-    move_raw=False,
-    move_dir=None,
-    exposure=0.0,
-    blacks=0.0,
-    whites=1.0,
-    shadows=0.0,
-    highlights=0.0,
-    sharpen=False,
-    sharpen_radius=2,
-    sharpen_percent=150,
-    max_workers=None,
-):
-    if not os.path.isdir(input_dir):
-        raise NotADirectoryError(f"Not a directory: {input_dir}")
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = []
+        for file_path in raw_files:
+            futures.append(executor.submit(process_file_cli, file_path, output_dir, fmt, quality))
 
-    raw_files = [f for f in os.listdir(input_dir) if f.lower().endswith(pyrawroom.SUPPORTED_EXTS)]
-    print(f"Found {len(raw_files)} RAW file(s) in {input_dir}.")
+        for i, future in enumerate(futures):
+            success, error = future.result()
+            base = raw_files[i].name
+            if success:
+                print(f"[{i+1}/{len(raw_files)}] {base} -> Done")
+            else:
+                print(f"[{i+1}/{len(raw_files)}] {base} -> Error: {error}")
 
-    if not raw_files: return
-
-    if not output_dir: output_dir = input_dir
-    os.makedirs(output_dir, exist_ok=True)
-
-    if move_raw and not move_dir:
-        move_dir = os.path.join(input_dir, "converted")
-
-    tasks = []
-    for f in raw_files:
-        input_file = os.path.join(input_dir, f)
-        base_name = os.path.splitext(f)[0] + "." + fmt.lower()
-        out_path = os.path.join(output_dir, base_name)
-
-        tasks.append((
-            input_file, out_path, fmt, quality,
-            exposure, blacks, whites, shadows, highlights,
-            sharpen, sharpen_radius, sharpen_percent,
-            move_raw, move_dir
-        ))
-
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(process_file_wrapper, t): t[0] for t in tasks}
-        for i, future in enumerate(as_completed(futures), start=1):
-            fname, _ = future.result()
-            print(f"Completed {i}/{len(raw_files)}: {fname}")
-
-
-# ---------------- Main ----------------
 def main():
-    parser = argparse.ArgumentParser(description="RAW to JPEG/HEIF with Tone Mapping.")
-    parser.add_argument("input_dir", help="Input directory")
-    parser.add_argument("-o", "--output", help="Output directory")
-    parser.add_argument("-f", "--format", choices=["jpeg", "heif"], default="jpeg", help="Output format")
-    parser.add_argument("-q", "--quality", type=int, default=95, help="Quality (0-100)")
-
-    # Tone Mapping
-    parser.add_argument("--exposure", type=float, default=0.0, help="Exposure bias in Stops (e.g. 1.0, -2.0)")
-    parser.add_argument("--whites", type=float, default=1.0, help="White point scale (Contrast). Default 1.0")
-    parser.add_argument("--blacks", type=float, default=0.0, help="Black point offset. Default 0.0")
-    parser.add_argument("--shadows", type=float, default=0.0, help="Shadow lift (-1.0 to 1.0)")
-    parser.add_argument("--highlights", type=float, default=0.0, help="Highlight recovery (-1.0 to 1.0). Negative recovers.")
-
-    # Sharpening
-    parser.add_argument("--sharpen", action="store_true", help="Apply sharpening")
-    parser.add_argument("--sharpen-radius", type=float, default=2, help="Sharpen radius")
-    parser.add_argument("--sharpen-percent", type=int, default=150, help="Sharpen strength")
-
-    # Files
-    parser.add_argument("--move-raw", action="store_true", help="Move original RAWs")
-    parser.add_argument("--move-dir", help="Move destination")
-    parser.add_argument("--workers", type=int, default=None, help="Parallel workers")
+    import argparse
+    parser = argparse.ArgumentParser(description="pyRawRoom Batch Converter")
+    parser.add_argument("input", help="Input directory")
+    parser.add_argument("-o", "--output", help="Output directory (default: input/converted)")
+    parser.add_argument("-f", "--format", default="JPG", help="Output format (JPG or HEIF)")
+    parser.add_argument("-q", "--quality", type=int, default=90, help="JPEG/HEIF quality (1-100)")
+    parser.add_argument("-j", "--jobs", type=int, default=4, help="Number of parallel jobs")
 
     args = parser.parse_args()
-
-    process_directory(
-        args.input_dir,
-        args.output,
-        args.format,
-        args.quality,
-        move_raw=args.move_raw,
-        move_dir=args.move_dir,
-        exposure=args.exposure,
-        blacks=args.blacks,
-        whites=args.whites,
-        shadows=args.shadows,
-        highlights=args.highlights,
-        sharpen=args.sharpen,
-        sharpen_radius=args.sharpen_radius,
-        sharpen_percent=args.sharpen_percent,
-        max_workers=args.workers,
-    )
+    run_batch(args.input, args.output, args.format, args.quality, args.jobs)
 
 if __name__ == "__main__":
     main()
