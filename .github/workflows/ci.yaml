@@ -17,6 +17,11 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -e ".[test]"
+        # Install xvfb for headless GUI testing
+        sudo apt-get update
+        sudo apt-get install -y xvfb libglx-mesa0 libegl1-mesa-dev libxkbcommon0
 
     - name: Run tests
-      run: pytest -v
+      run: xvfb-run -a pytest -v
+      env:
+        QT_QPA_PLATFORM: offscreen

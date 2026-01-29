@@ -64,8 +64,6 @@ Track planned features and project goals.
 
 Based on recent project growth, the following areas would benefit from expanded unit testing:
 
-1.  **Sidecar File Management (`src/pynegative/core.py`)**: Ensure settings (rating, tone, etc.) are correctly saved to and loaded from JSON sidecar files, including handling of defaults and corrupted files. (Ease: Easiest)
-2.  **Star Rating Widget (`src/pynegative/ui/widgets/starrating.py`)**: Test the interactive UI component to verify `set_rating`, mouse events, and `ratingChanged` signal emissions. (Ease: Easy)
-3.  **Image Adjustment Logic (`src/pynegative/core.py`)**: Test core functions like `apply_tone_map` and `sharpen_image` with known inputs to assert that the output image data is mathematically correct. (Ease: Medium)
-4.  **Gallery Filtering Logic (`src/pynegative/ui/gallery.py`)**: Mock a file system with sidecars to test and assert that the gallery correctly filters images based on different rating criteria. (Ease: Hard)
-5.  **Editor Rendering and Throttling (`src/pynegative/ui/editor.py`)**: Test the asynchronous `QTimer`-based rendering loop to ensure updates are correctly throttled and processed, preventing UI lag. (Ease: Hardest)
+1.  **Image Adjustment Logic (`src/pynegative/core.py`)**: Test core functions like `apply_tone_map` and `sharpen_image` with known inputs to assert that the output image data is mathematically correct. (Ease: Medium)
+2.  **Gallery Filtering Logic (`src/pynegative/ui/gallery.py`)**: Mock a file system with sidecars to test and assert that the gallery correctly filters images based on different rating criteria. (Ease: Hard)
+3.  **Editor Rendering and Throttling (`src/pynegative/ui/editor.py`)**: Test the asynchronous `QTimer`-based rendering loop to ensure updates are correctly throttled and processed, preventing UI lag. (Ease: Hardest)
