@@ -24,16 +24,16 @@ class MainWindow(QtWidgets.QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        # Views
+        self.gallery = GalleryWidget(self.thread_pool)
+        self.editor = EditorWidget(self.thread_pool)
+
         # Top Bar (Tabs)
         self._setup_top_bar(main_layout)
 
         # Stack
         self.stack = QtWidgets.QStackedWidget()
         main_layout.addWidget(self.stack)
-
-        # Views
-        self.gallery = GalleryWidget(self.thread_pool)
-        self.editor = EditorWidget(self.thread_pool)
 
         self.stack.addWidget(self.gallery)
         self.stack.addWidget(self.editor)
@@ -81,7 +81,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         bar_layout.addWidget(self.btn_gallery)
         bar_layout.addWidget(self.btn_edit)
-        bar_layout.addStretch() # Push left
+        bar_layout.addStretch()
+
+        self.btn_open_folder = QtWidgets.QPushButton("Open Folder")
+        self.btn_open_folder.setObjectName("OpenFolderButton")
+        self.btn_open_folder.clicked.connect(self.gallery.browse_folder)
+        bar_layout.addWidget(self.btn_open_folder)
+
 
         parent_layout.addWidget(bar_frame)
 
@@ -108,17 +114,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_edit.setChecked(True)
 
     def open_editor(self, path):
-        # Determine folder from path
-        path = Path(path)
-        folder = path.parent
-
-        # Load the image
-        self.editor.load_image(path)
-
-        # Update carousel if needed
-        if self.editor.current_folder != folder:
-            self.editor.load_carousel_folder(folder)
-
+        image_list = self.gallery.get_current_image_list()
+        self.editor.open(path, image_list=image_list)
         self.switch_to_edit()
 
     def open_single_file(self):

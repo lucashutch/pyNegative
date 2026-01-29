@@ -522,6 +522,22 @@ class EditorWidget(QtWidgets.QWidget):
             loader.signals.finished.connect(self._on_carousel_thumbnail_loaded)
             self.thread_pool.start(loader)
 
+    def set_carousel_images(self, image_list, current_path):
+        self.carousel.clear()
+        for path_str in image_list:
+            f = Path(path_str)
+            item = QtWidgets.QListWidgetItem(f.name)
+            item.setData(QtCore.Qt.UserRole, str(f))
+            item.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon))
+            self.carousel.addItem(item)
+            if f == current_path:
+                self.carousel.setCurrentItem(item)
+
+            # Async load thumbnail
+            loader = ThumbnailLoader(f, size=100)
+            loader.signals.finished.connect(self._on_carousel_thumbnail_loaded)
+            self.thread_pool.start(loader)
+
     def _on_carousel_thumbnail_loaded(self, path, pixmap):
         for i in range(self.carousel.count()):
             item = self.carousel.item(i)
@@ -535,3 +551,19 @@ class EditorWidget(QtWidgets.QWidget):
         # Avoid reloading if same image
         if Path(path) != self.raw_path:
             self.load_image(path)
+
+    def open(self, path, image_list=None):
+        if not isinstance(path, Path):
+            path = Path(path)
+
+        if image_list:
+            self.set_carousel_images(image_list, path)
+        else:
+            self.load_carousel_folder(path.parent)
+            for i in range(self.carousel.count()):
+                item = self.carousel.item(i)
+                if Path(item.data(QtCore.Qt.UserRole)) == path:
+                    self.carousel.setCurrentItem(item)
+                    break
+
+        self.load_image(path)

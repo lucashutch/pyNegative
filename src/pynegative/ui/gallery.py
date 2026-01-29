@@ -36,21 +36,27 @@ class GalleryWidget(QtWidgets.QWidget):
 
         # Top Bar (only visible when folder is loaded)
         top_bar = QtWidgets.QHBoxLayout()
-        self.btn_open_folder = QtWidgets.QPushButton("Open Folder")
-        self.btn_open_folder.clicked.connect(self.browse_folder)
-        top_bar.addWidget(self.btn_open_folder)
-        top_bar.addStretch()
-
+        
         # Filtering
-        top_bar.addWidget(QtWidgets.QLabel("Filter:"))
+        filter_layout = QtWidgets.QHBoxLayout()
+        filter_layout.setContentsMargins(0, 5, 0, 5)
+        filter_layout.setAlignment(QtCore.Qt.AlignVCenter)
+        filter_layout.addStretch()
+        
+        filter_label = QtWidgets.QLabel("Filter:")
+        filter_layout.addWidget(filter_label)
+
         self.filter_combo = QtWidgets.QComboBox()
-        self.filter_combo.addItems(["Exact Match", "Less Than or Equal", "Greater Than or Equal"])
+        self.filter_combo.addItems(["Match", "Greater", "Less"])
+        self.filter_combo.setCurrentText("Greater")
+        self.filter_combo.setMaximumWidth(120)
         self.filter_combo.currentIndexChanged.connect(self._apply_filter)
-        top_bar.addWidget(self.filter_combo)
+        filter_layout.addWidget(self.filter_combo)
 
         self.filter_rating_widget = StarRatingWidget()
         self.filter_rating_widget.ratingChanged.connect(self._apply_filter)
-        top_bar.addWidget(self.filter_rating_widget)
+        filter_layout.addWidget(self.filter_rating_widget)
+        top_bar.addLayout(filter_layout)
 
         grid_layout.addLayout(top_bar)
 
@@ -134,11 +140,11 @@ class GalleryWidget(QtWidgets.QWidget):
             rating = sidecar_settings.get("rating", 0) if sidecar_settings else 0
 
             if filter_rating > 0:
-                if filter_mode == "Exact Match" and rating != filter_rating:
+                if filter_mode == "Match" and rating != filter_rating:
                     continue
-                if filter_mode == "Less Than or Equal" and rating > filter_rating:
+                if filter_mode == "Less" and rating >= filter_rating:
                     continue
-                if filter_mode == "Greater Than or Equal" and rating < filter_rating:
+                if filter_mode == "Greater" and rating <= filter_rating:
                     continue
 
             item = QtWidgets.QListWidgetItem(path.name)
@@ -169,6 +175,13 @@ class GalleryWidget(QtWidgets.QWidget):
     def _on_item_double_clicked(self, item):
         path = item.data(QtCore.Qt.UserRole)
         self.imageSelected.emit(path)
+
+    def get_current_image_list(self):
+        paths = []
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            paths.append(item.data(QtCore.Qt.UserRole))
+        return paths
 
     def update_rating_for_item(self, path, rating):
         for i in range(self.list_widget.count()):
