@@ -78,6 +78,7 @@ Track planned features and project goals.
 - [x] **Slider responsiveness**: Improve the responsiveness of the sliders. currently whenever the slider is changed it re-draws the image. instead only redraw the image at a set rate, eg 5fps or 10 fps.
 - [x] **Zoom Support**: Zoom into photos during editing for fine control.
 - [ ] **Full size preview in gallery**: Allow the user ot get a full size preview of the image in the gallery view.
+- [ ] **Enable multi-threaded**: Enable multi-threded processing of the images in the edit view and gallery view.
 - [ ] **Rating System**: Rate photos with stars; store in sidecars/metadata. Filter shown images by rating/metadata.
 - [ ] **Batch Export**: Select and process multiple files at once.
 - [ ] **Sync Settings**: Copy/paste edit changes from one photo to others.

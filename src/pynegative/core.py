@@ -178,9 +178,17 @@ def sharpen_image(pil_img, radius, percent):
     )
 
 def de_noise_image(pil_img, radius):
-    """Simple de-noise using Median filter."""
-    if radius <= 0: return pil_img
-    return pil_img.filter(ImageFilter.MedianFilter(size=int(radius)))
+    """Simple de-noise using Median filter. Size must be odd >= 3."""
+    size = int(radius)
+    if size < 3:
+        if radius > 0: size = 3
+        else: return pil_img
+
+    # Ensure size is odd
+    if size % 2 == 0:
+        size += 1
+
+    return pil_img.filter(ImageFilter.MedianFilter(size=size))
 
 def save_image(pil_img, output_path, quality=95):
     output_path = Path(output_path)
