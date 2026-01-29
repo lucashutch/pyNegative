@@ -25,7 +25,6 @@ test = [
 ]
 
 [project.scripts]
-pyneg-batch = "pynegative.cli:main"
 pyneg-ui = "pynegative.ui:main"
 
 [tool.setuptools.packages.find]

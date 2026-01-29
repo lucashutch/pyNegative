@@ -57,16 +57,9 @@ def apply_tone_map(img, exposure=0.0, contrast=1.0, blacks=0.0, whites=1.0, shad
         img = lum + (img - lum) * saturation
 
     # 5. Base Curve (Sigmoid for "Punch")
-    # Simple S-Curve implementation: f(x) = x^2 / (x^2 + (1-x)^2) ? No, that's too strong.
-    # Let's use a cosmetic contrast curve: x - a*sin(2*pi*x) ?
-    # Or just a simple power-sigmoid
-    # Start with a subtle S-curve
-    # This applies the "Film Look" that cameras do
-    # Using a simple centered sigmoid: 1 / (1 + exp(-k * (x - 0.5)))
-    # But mapped to 0..1
-    pass # For now, let's rely on saturation + exposure boost + contrast slider (whites/blacks)
-    # Actually, let's just do a tiny gamma tweak for midtone contrast if needed
-    # But for "Standard Profile", the Baseline Exposure + Saturation is usually the biggest factor.
+    # TBD: Implementation of cosmetic contrast curves/S-curves.
+    # For now, relying on saturation + exposure boost + contrast slider.
+
 
     # Clip stats for reporting
     clipped_shadows = np.sum(img < 0.0)
