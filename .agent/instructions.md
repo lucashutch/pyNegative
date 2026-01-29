@@ -1,6 +1,6 @@
 # Project Instructions for AI Agents
 
-These are the core engineering standards and operational rules for the `pyRawRoom` project. Please follow these strictly.
+These are the core engineering standards and operational rules for the `pyNegative` project. Please follow these strictly.
 
 ## Git Workflow
 - **Never push to `main`**: All changes must be made on a feature branch.
@@ -14,7 +14,7 @@ These are the core engineering standards and operational rules for the `pyRawRoo
 
 ## Project Structure
 - This project follows the `src-layout`.
-- Core logic: `src/pyrawroom/core.py`
-- CLI: `src/pyrawroom/cli.py`
-- UI: `src/pyrawroom/ui.py`
+- Core logic: `src/pynegative/core.py`
+- CLI: `src/pynegative/cli.py`
+- UI: `src/pynegative/ui.py`
 - Tests: `tests/`

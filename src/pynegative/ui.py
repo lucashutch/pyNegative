@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image, ImageQt
 from PySide6 import QtWidgets, QtGui, QtCore
 
-from . import core as pyrawroom
+from . import core as pynegative
 
 # ----------------- Async Thumbnail Loader -----------------
 class ThumbnailLoaderSignals(QtCore.QObject):
@@ -21,7 +21,7 @@ class ThumbnailLoader(QtCore.QRunnable):
     def run(self):
         try:
             # use the optimized extract_thumbnail from core
-            pil_img = pyrawroom.extract_thumbnail(self.path)
+            pil_img = pynegative.extract_thumbnail(self.path)
             if pil_img:
                 # Resize for thumbnail grid
                 pil_img.thumbnail((self.size, self.size))
@@ -47,15 +47,15 @@ class RawLoader(QtCore.QRunnable):
     def run(self):
         try:
             # 1. Load Proxy (Half-Res)
-            img = pyrawroom.open_raw(self.path, half_size=True)
+            img = pynegative.open_raw(self.path, half_size=True)
 
             # 2. Check for Sidecar Settings
-            settings = pyrawroom.load_sidecar(self.path)
+            settings = pynegative.load_sidecar(self.path)
             mode = "sidecar"
 
             # 3. Fallback to Auto-Exposure
             if not settings:
-                settings = pyrawroom.calculate_auto_exposure(img)
+                settings = pynegative.calculate_auto_exposure(img)
                 mode = "auto"
 
             self.signals.finished.emit(str(self.path), img, settings)
@@ -71,7 +71,7 @@ class GalleryWidget(QtWidgets.QWidget):
         super().__init__()
         self.thread_pool = thread_pool
         self.current_folder = None
-        self.settings = QtCore.QSettings("pyRawRoom", "Gallery")
+        self.settings = QtCore.QSettings("pyNegative", "Gallery")
         self._init_ui()
         self._load_last_folder()
 
@@ -172,7 +172,7 @@ class GalleryWidget(QtWidgets.QWidget):
         self.stack.setCurrentWidget(self.grid_container)
 
         # Find raw files
-        files = [f for f in self.current_folder.iterdir() if f.is_file() and f.suffix.lower() in pyrawroom.SUPPORTED_EXTS]
+        files = [f for f in self.current_folder.iterdir() if f.is_file() and f.suffix.lower() in pynegative.SUPPORTED_EXTS]
 
         for path in files:
             item = QtWidgets.QListWidgetItem(path.name)
@@ -503,7 +503,7 @@ class EditorWidget(QtWidgets.QWidget):
             "sharpen_percent": self.val_percent,
             "de_noise": self.val_denoise
         }
-        pyrawroom.save_sidecar(self.raw_path, settings)
+        pynegative.save_sidecar(self.raw_path, settings)
 
     def load_image(self, path):
         path = Path(path)
@@ -573,7 +573,7 @@ class EditorWidget(QtWidgets.QWidget):
         if self.base_img_preview is None: return
 
         # Process
-        img, _ = pyrawroom.apply_tone_map(
+        img, _ = pynegative.apply_tone_map(
             self.base_img_preview,
             exposure=self.val_exposure, contrast=self.val_contrast,
             blacks=self.val_blacks, whites=self.val_whites,
@@ -583,9 +583,9 @@ class EditorWidget(QtWidgets.QWidget):
         pil_img = Image.fromarray((img * 255).astype(np.uint8))
 
         if self.var_sharpen_enabled:
-            pil_img = pyrawroom.sharpen_image(pil_img, self.val_radius, self.val_percent)
+            pil_img = pynegative.sharpen_image(pil_img, self.val_radius, self.val_percent)
             if self.val_denoise > 0:
-                pil_img = pyrawroom.de_noise_image(pil_img, self.val_denoise)
+                pil_img = pynegative.de_noise_image(pil_img, self.val_denoise)
 
         # Display
         q_img = ImageQt.ImageQt(pil_img)
@@ -614,10 +614,10 @@ class EditorWidget(QtWidgets.QWidget):
                 QtWidgets.QApplication.processEvents()
 
                 # Explicitly request full size (half_size=False)
-                full_img = pyrawroom.open_raw(self.raw_path, half_size=False)
+                full_img = pynegative.open_raw(self.raw_path, half_size=False)
 
                 # Process full resolution with current settings
-                img, _ = pyrawroom.apply_tone_map(
+                img, _ = pynegative.apply_tone_map(
                     full_img,
                     exposure=self.val_exposure,
                     contrast=self.val_contrast,
@@ -629,11 +629,11 @@ class EditorWidget(QtWidgets.QWidget):
                 )
                 pil_img = Image.fromarray((img * 255).astype(np.uint8))
                 if self.var_sharpen_enabled:
-                    pil_img = pyrawroom.sharpen_image(pil_img, self.val_radius, self.val_percent)
+                    pil_img = pynegative.sharpen_image(pil_img, self.val_radius, self.val_percent)
                     if self.val_denoise > 0:
-                        pil_img = pyrawroom.de_noise_image(pil_img, self.val_denoise)
+                        pil_img = pynegative.de_noise_image(pil_img, self.val_denoise)
 
-                pyrawroom.save_image(pil_img, path)
+                pynegative.save_image(pil_img, path)
                 QtWidgets.QMessageBox.information(self, "Saved", f"Saved full resolution to {path}")
                 self.lbl_info.setText(f"Saved: {path.name}")
             except Exception as e:
@@ -644,7 +644,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.current_folder = Path(folder)
         self.carousel.clear()
 
-        files = sorted([f for f in self.current_folder.iterdir() if f.is_file() and f.suffix.lower() in pyrawroom.SUPPORTED_EXTS])
+        files = sorted([f for f in self.current_folder.iterdir() if f.is_file() and f.suffix.lower() in pynegative.SUPPORTED_EXTS])
 
         for path in files:
             item = QtWidgets.QListWidgetItem(path.name)
@@ -676,7 +676,7 @@ class EditorWidget(QtWidgets.QWidget):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("pyRawRoom")
+        self.setWindowTitle("pyNegative")
         self.resize(1000, 700)
 
         self.thread_pool = QtCore.QThreadPool()
@@ -785,7 +785,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.switch_to_edit()
 
     def open_single_file(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open RAW", "", f"RAW ({' '.join(['*'+e for e in pyrawroom.SUPPORTED_EXTS])})")
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open RAW", "", f"RAW ({' '.join(['*'+e for e in pynegative.SUPPORTED_EXTS])})")
         if path:
             self.open_editor(path)
 

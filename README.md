@@ -1,4 +1,4 @@
-# pyRawRoom
+# pyNegative
 
 A collection of Python tools for processing RAW image files, now organized as a proper Python package.
 
@@ -6,8 +6,8 @@ A collection of Python tools for processing RAW image files, now organized as a 
 
 ```bash
 # Clone the repository
-git clone https://github.com/lucashutch/pyRawRoom.git
-cd pyRawRoom
+git clone https://github.com/lucashutch/pyNegative.git
+cd pyNegative
 
 # Install in editable mode
 pip install -e .
@@ -18,7 +18,7 @@ pip install -e ".[test]"
 
 ## Tools
 
-### UI Editor (`pyraw-ui`)
+### UI Editor (`pyneg-ui`)
 
 A graphical user interface (GUI) for interactively editing RAW files.
 
@@ -29,10 +29,10 @@ A graphical user interface (GUI) for interactively editing RAW files.
 
 Run with:
 ```bash
-pyraw-ui
+pyneg-ui
 ```
 
-### Batch Processor (`pyraw-batch`)
+### Batch Processor (`pyneg-batch`)
 
 A command-line tool for batch processing RAW files.
 
@@ -43,15 +43,15 @@ A command-line tool for batch processing RAW files.
 
 Run with:
 ```bash
-pyraw-batch /path/to/raws -o /path/to/output
+pyneg-batch /path/to/raws -o /path/to/output
 ```
 
 ## Project Structure
 
 ```text
-pyRawRoom/
+pyNegative/
 ├── src/
-│   └── pyrawroom/          # Core package
+│   └── pynegative/          # Core package
 │       ├── core.py         # Image processing logic
 │       ├── cli.py          # Batch CLI
 │       └── ui.py           # PySide6 GUI
