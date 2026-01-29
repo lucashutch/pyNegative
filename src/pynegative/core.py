@@ -196,12 +196,12 @@ def save_image(pil_img, output_path, quality=95):
 
 
 # ---------------- Sidecar Files ----------------
-SIDECAR_DIR = ".pyRawRoom"
+SIDECAR_DIR = ".pyNegative"
 
 def get_sidecar_path(raw_path):
     """
     Returns the Path object to the sidecar JSON file for a given RAW file.
-    Sidecars are stored in a hidden .pyRawRoom directory local to the image.
+    Sidecars are stored in a hidden .pyNegative directory local to the image.
     """
     raw_path = Path(raw_path)
     return raw_path.parent / SIDECAR_DIR / f"{raw_path.name}.json"

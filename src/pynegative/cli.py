@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
-import pyrawroom
+import pynegative
 import numpy as np
 from PIL import Image
 
@@ -15,15 +15,15 @@ def process_file_cli(input_path, output_dir, fmt, quality):
         output_dir = Path(output_dir)
 
         # 1. Load RAW
-        img = pyrawroom.open_raw(input_path)
+        img = pynegative.open_raw(input_path)
 
         # 2. Check for sidecar or calculate auto-exposure
-        settings = pyrawroom.load_sidecar(input_path)
+        settings = pynegative.load_sidecar(input_path)
         if not settings:
-            settings = pyrawroom.calculate_auto_exposure(img)
+            settings = pynegative.calculate_auto_exposure(img)
 
         # 3. Apply settings
-        processed, _ = pyrawroom.apply_tone_map(
+        processed, _ = pynegative.apply_tone_map(
             img,
             exposure=settings.get("exposure", 0.0),
             blacks=settings.get("blacks", 0.0),
@@ -39,7 +39,7 @@ def process_file_cli(input_path, output_dir, fmt, quality):
         out_filename = input_path.with_suffix(f".{fmt.lower()}").name
         out_path = output_dir / out_filename
 
-        pyrawroom.save_image(pil_img, out_path, quality=quality)
+        pynegative.save_image(pil_img, out_path, quality=quality)
         return True, None
     except Exception as e:
         return False, str(e)
@@ -52,7 +52,7 @@ def run_batch(input_dir, output_dir=None, fmt="JPG", quality=90, workers=4):
         return
 
     # Find RAW files
-    raw_files = sorted([f for f in input_dir.iterdir() if f.suffix.lower() in pyrawroom.SUPPORTED_EXTS])
+    raw_files = sorted([f for f in input_dir.iterdir() if f.suffix.lower() in pynegative.SUPPORTED_EXTS])
 
     if not raw_files:
         print(f"No RAW files found in {input_dir}")
@@ -82,7 +82,7 @@ def run_batch(input_dir, output_dir=None, fmt="JPG", quality=90, workers=4):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="pyRawRoom Batch Converter")
+    parser = argparse.ArgumentParser(description="pyNegative Batch Converter")
     parser.add_argument("input", help="Input directory")
     parser.add_argument("-o", "--output", help="Output directory (default: input/converted)")
     parser.add_argument("-f", "--format", default="JPG", help="Output format (JPG or HEIF)")
