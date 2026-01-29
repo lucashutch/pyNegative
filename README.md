@@ -75,6 +75,7 @@ Track planned features and project goals.
 - [x] **Sidecar Files**: Store edit settings in sidecars natively next to raw originals.
 - [x] **Carousel View**: edit carousel should scroll horizontally
 - [x] **Udate edit sliders** Edit sliders should be: Exposure, Contrast, Blacks, Whites, Shadows, Highlights, and Sharpening, with the sharpening section being in a new sub-section under details, where there should also be a de-noise option.
+- [x] **Slider responsiveness**: Improve the responsiveness of the sliders. currently whenever the slider is changed it re-draws the image. instead only redraw the image at a set rate, eg 5fps or 10 fps.
 - [ ] **Zoom Support**: Zoom into photos during editing for fine control.
 - [ ] **Rating System**: Rate photos with stars; store in sidecars/metadata. Filter shown images by rating/metadata.
 - [ ] **Batch Export**: Select and process multiple files at once.
