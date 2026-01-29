@@ -73,6 +73,8 @@ Track planned features and project goals.
 ### User Requested Features
 - [x] **Gallery View**: Browse all photos in a folder in a grid or one-by-one.
 - [x] **Sidecar Files**: Store edit settings in sidecars natively next to raw originals.
+- [ ] **Carousel View**: edit carousel should scroll horizontally
+- [ ] **Udate edit sliders** Edit sliders should be: Exposure, Contrast, Blacks, Whites, Shadows, Highlights, and Sharpening, with the sharpening section being in a new sub-section under details, where there should also be a de-noise option.
 - [ ] **Zoom Support**: Zoom into photos during editing for fine control.
 - [ ] **Rating System**: Rate photos with stars; store in sidecars/metadata.
 - [ ] **Batch Export**: Select and process multiple files at once.

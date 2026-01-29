@@ -100,7 +100,7 @@ QLabel#InfoLabel {
 /* ========== Sliders ========== */
 QSlider {
     background-color: transparent;
-    min-height: 40px;
+    min-height: 24px;
 }
 
 QSlider::groove:horizontal {

@@ -200,6 +200,20 @@ class GalleryWidget(QtWidgets.QWidget):
         self.imageSelected.emit(path)
 
 
+# ----------------- Custom Widgets -----------------
+class HorizontalListWidget(QtWidgets.QListWidget):
+    """A ListWidget that scrolls horizontally with the mouse wheel."""
+    def wheelEvent(self, event):
+        if event.angleDelta().y():
+            # Scroll horizontally instead of vertically
+            delta = event.angleDelta().y()
+            # Most mice return 120 per notch. We apply a small multiplier for speed.
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta)
+            event.accept()
+        else:
+            super().wheelEvent(event)
+
+
 # ----------------- Editor Widget -----------------
 class EditorWidget(QtWidgets.QWidget):
     def __init__(self, thread_pool):
@@ -224,9 +238,10 @@ class EditorWidget(QtWidgets.QWidget):
         # --- Left Panel (Controls) ---
         self.panel = QtWidgets.QFrame()
         self.panel.setObjectName("EditorPanel")
-        self.panel.setContentsMargins(10, 10, 10, 10)
-        self.panel.setFixedWidth(350)
+        self.panel.setFixedWidth(280)
         self.panel_layout = QtWidgets.QVBoxLayout(self.panel)
+        self.panel_layout.setContentsMargins(10, 10, 10, 10)
+        self.panel_layout.setSpacing(2)
         main_layout.addWidget(self.panel)
 
         # --- Canvas (Right Side) ---
@@ -245,11 +260,14 @@ class EditorWidget(QtWidgets.QWidget):
         self.canvas_label.installEventFilter(self)
 
         # Carousel (Bottom)
-        self.carousel = QtWidgets.QListWidget()
+        self.carousel = HorizontalListWidget()
         self.carousel.setObjectName("Carousel")
         self.carousel.setViewMode(QtWidgets.QListView.IconMode)
         self.carousel.setFlow(QtWidgets.QListView.LeftToRight) # Horizontal
-        self.carousel.setFixedHeight(120)
+        self.carousel.setWrapping(False)
+        self.carousel.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.carousel.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.carousel.setFixedHeight(145)
         self.carousel.setIconSize(QtCore.QSize(100, 100))
         self.carousel.setSpacing(5)
         self.carousel.itemClicked.connect(self._on_carousel_item_clicked)
@@ -267,29 +285,28 @@ class EditorWidget(QtWidgets.QWidget):
         self.lbl_info.setObjectName("InfoLabel")
         self.lbl_info.setWordWrap(True)
         self.panel_layout.addWidget(self.lbl_info)
-        self.panel_layout.addSpacing(10)
+        self.panel_layout.addSpacing(5)
 
         # Tone Controls
         self.val_exposure = 0.0
         self.val_whites = 1.0
         self.val_blacks = 0.0
         self._add_slider("Exposure", -4.0, 4.0, self.val_exposure, "val_exposure", 0.01)
-        self._add_slider("Contrast (Whites)", 0.5, 2.0, self.val_whites, "val_whites", 0.01)
+        self._add_slider("Whites", 0.5, 2.0, self.val_whites, "val_whites", 0.01)
         self._add_slider("Blacks", -0.2, 0.2, self.val_blacks, "val_blacks", 0.001)
 
-        self._add_separator()
         self.val_highlights = 0.0
         self.val_shadows = 0.0
         self._add_slider("Highlights", -1.0, 1.0, self.val_highlights, "val_highlights", 0.01)
         self._add_slider("Shadows", -1.0, 1.0, self.val_shadows, "val_shadows", 0.01)
 
         # Saturation
-        self._add_separator()
+        self._add_separator(10)
         self.val_saturation = 1.0
         self._add_slider("Saturation", 0.0, 2.0, self.val_saturation, "val_saturation", 0.01)
 
         # Sharpening
-        self._add_separator()
+        self._add_separator(10)
         self.var_sharpen_enabled = False
         self.sharpen_checkbox = QtWidgets.QCheckBox("Enable Sharpening")
         self.sharpen_checkbox.toggled.connect(self._update_sharpen_state)
@@ -297,8 +314,8 @@ class EditorWidget(QtWidgets.QWidget):
 
         self.val_radius = 2.0
         self.val_percent = 150
-        self._add_slider("Sharpen Radius", 0.5, 5.0, self.val_radius, "val_radius", 0.01)
-        self._add_slider("Sharpen Amount", 0, 300, self.val_percent, "val_percent", 1)
+        self._add_slider("Radius", 0.5, 5.0, self.val_radius, "val_radius", 0.01)
+        self._add_slider("Amount", 0, 300, self.val_percent, "val_percent", 1)
 
         # Save Button
         self._add_separator(20)
@@ -320,15 +337,22 @@ class EditorWidget(QtWidgets.QWidget):
     def _add_slider(self, label_text, min_val, max_val, default, var_name, step_size):
         frame = QtWidgets.QFrame()
         layout = QtWidgets.QVBoxLayout(frame)
-        layout.addWidget(QtWidgets.QLabel(label_text))
+        layout.setContentsMargins(0, 2, 0, 2)
+        layout.setSpacing(0)
+
+        # Top row: Label and Value
+        row = QtWidgets.QHBoxLayout()
+        lbl = QtWidgets.QLabel(label_text)
+        val_lbl = QtWidgets.QLabel(f"{default:.2f}")
+        val_lbl.setAlignment(QtCore.Qt.AlignRight)
+        row.addWidget(lbl)
+        row.addWidget(val_lbl)
+        layout.addLayout(row)
 
         slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         multiplier = 1000
         slider.setRange(int(min_val * multiplier), int(max_val * multiplier))
         slider.setValue(int(default * multiplier))
-
-        val_lbl = QtWidgets.QLabel(f"{default:.2f}")
-        val_lbl.setAlignment(QtCore.Qt.AlignRight)
 
         def on_change(val):
             actual = val / multiplier
@@ -346,7 +370,6 @@ class EditorWidget(QtWidgets.QWidget):
         setattr(self, f"{var_name}_label", val_lbl) # Store label for updates
 
         layout.addWidget(slider)
-        layout.addWidget(val_lbl)
         self.panel_layout.addWidget(frame)
 
     def _set_slider_value(self, var_name, value):
@@ -387,27 +410,8 @@ class EditorWidget(QtWidgets.QWidget):
         self.lbl_info.setText(f"Loading: {path.name}")
         self.raw_path = path
 
-        # STAGE 1: Instant Preview (Thumbnail or Cached)
-        # Check if we have a fast thumbnail available
-        # EXPERIMENT: Skip embedded thumbnail to test proxy speed/flicker
-        # try:
-        #     thumb_pil = pyrawroom.extract_thumbnail(path)
-        #     if thumb_pil:
-        #         # Show this immediately
-        #         h, w = thumb_pil.size
-        #         # We can't do full processing on a thumbnail usually, but we can display it
-        #         self.base_img_preview = np.array(thumb_pil).astype(np.float32) / 255.0
-        #
-        #         # If thumbnail is rotated (common in exif), we might need handling,
-        #         # but for now we assume extract_thumbnail (via rawpy) handles it or returns simple RGB.
-        #         # Just show it:
-        #         self.request_update()
-        # except Exception:
-        #     pass # Fallback to waiting
-
         QtWidgets.QApplication.processEvents()
 
-        # STAGE 2: Async Full Load
         self.btn_save.setEnabled(False) # Disable save until full load
 
         loader = RawLoader(path)
@@ -565,7 +569,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("pyRawRoom")
-        self.resize(1200, 800)
+        self.resize(1000, 700)
 
         self.thread_pool = QtCore.QThreadPool()
 
