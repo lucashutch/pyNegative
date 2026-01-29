@@ -1,10 +1,24 @@
 # pyRawRoom
 
-A collection of Python tools for processing RAW image files.
+A collection of Python tools for processing RAW image files, now organized as a proper Python package.
+
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/lucashutch/pyRawRoom.git
+cd pyRawRoom
+
+# Install in editable mode
+pip install -e .
+
+# Or install with test dependencies
+pip install -e ".[test]"
+```
 
 ## Tools
 
-### `pyrawroom_gui.py`
+### UI Editor (`pyraw-ui`)
 
 A graphical user interface (GUI) for interactively editing RAW files.
 
@@ -13,7 +27,12 @@ A graphical user interface (GUI) for interactively editing RAW files.
 - Sharpening controls.
 - Save edits as a JSON sidecar file.
 
-### `pyraw_batch.py`
+Run with:
+```bash
+pyraw-ui
+```
+
+### Batch Processor (`pyraw-batch`)
 
 A command-line tool for batch processing RAW files.
 
@@ -22,6 +41,27 @@ A command-line tool for batch processing RAW files.
 - Process a whole directory of RAW files in parallel.
 - Move original RAW files to a separate directory after conversion.
 
-## Library
+Run with:
+```bash
+pyraw-batch /path/to/raws -o /path/to/output
+```
 
-The core processing logic is shared in the `pyrawroom.py` library.
+## Project Structure
+
+```text
+pyRawRoom/
+├── src/
+│   └── pyrawroom/          # Core package
+│       ├── core.py         # Image processing logic
+│       ├── cli.py          # Batch CLI
+│       └── ui.py           # PySide6 GUI
+├── tests/                  # Unit tests
+└── pyproject.toml          # Build system & dependencies
+```
+
+## Development
+
+Run tests with:
+```bash
+pytest
+```
