@@ -1,6 +1,6 @@
 # pyNegative
 
-A collection of Python tools for processing RAW image files, now organized as a proper Python package.
+A modern, cross-platform desktop application for photographers, offering a fast and intuitive GUI to non-destructively edit, rate, and export RAW files.
 
 ## Installation
 
@@ -16,48 +16,27 @@ pip install -e .
 pip install -e ".[test]"
 ```
 
-## Tools
+## Features
+
+### Core Functionality
+-   **Non-destructive Editing**: Edits are stored in JSON sidecar files (`.xmp`) alongside the original RAW files.
+-   **RAW Image Processing**: Adjustments for exposure, contrast, blacks, whites, shadows, highlights, sharpening, and de-noise.
 
 ### UI Editor (`pyneg-ui`)
-
 A graphical user interface (GUI) for interactively editing RAW files.
+-   **Interactive Editing**: Live preview of changes as adjustments are made.
+-   **Comprehensive Adjustments**: Sliders for fine-tuning exposure, contrast, blacks, whites, shadows, highlights, sharpening, and de-noise.
+-   **Zoom Support**: Zoom into photos for precise control during editing.
+-   **Responsive Sliders**: Optimized performance for smooth slider interactions.
+-   **Quick Reset**: Double-click sliders to reset them to their default values.
+-   **Image Carousel**: Horizontal carousel for easy navigation through images in a folder.
+-   **Integrated Rating System**: Assign star ratings (1-5) to photos directly within the editor.
+-   **Dynamic Carousel Sync**: Editor's image carousel automatically updates and synchronizes with gallery filters.
 
-- Live preview of changes.
-- Adjust exposure, contrast, blacks, whites, shadows, and highlights.
-- Sharpening controls.
-- Save edits as a JSON sidecar file.
-
-Run with:
-```bash
-pyneg-ui
-```
-
-### Batch Processor (`pyneg-batch`)
-
-A command-line tool for batch processing RAW files.
-
-- Convert RAW files to JPEG or HEIF.
-- Apply tone mapping and sharpening.
-- Process a whole directory of RAW files in parallel.
-- Move original RAW files to a separate directory after conversion.
-
-Run with:
-```bash
-pyneg-batch /path/to/raws -o /path/to/output
-```
-
-## Project Structure
-
-```text
-pyNegative/
-├── src/
-│   └── pynegative/          # Core package
-│       ├── core.py         # Image processing logic
-│       ├── cli.py          # Batch CLI
-│       └── ui.py           # PySide6 GUI
-├── tests/                  # Unit tests
-└── pyproject.toml          # Build system & dependencies
-```
+### Gallery View
+-   **Grid Browsing**: Browse images in a folder in a responsive grid layout.
+-   **Star Rating Display**: View assigned star ratings for each image thumbnail.
+-   **Rating-based Filtering**: Filter displayed images by star rating (match, greater than, or less than a specified rating).
 
 ## Development
 
@@ -70,25 +49,13 @@ pytest
 
 Track planned features and project goals.
 
-### User Requested Features
-- [x] **Gallery View**: Browse all photos in a folder in a grid or one-by-one.
-- [x] **Sidecar Files**: Store edit settings in sidecars natively next to raw originals.
-- [x] **Carousel View**: edit carousel should scroll horizontally
-- [x] **Udate edit sliders** Edit sliders should be: Exposure, Contrast, Blacks, Whites, Shadows, Highlights, and Sharpening, with the sharpening section being in a new sub-section under details, where there should also be a de-noise option.
-- [x] **Slider responsiveness**: Improve the responsiveness of the sliders. currently whenever the slider is changed it re-draws the image. instead only redraw the image at a set rate, eg 5fps or 10 fps.
-- [x] **Zoom Support**: Zoom into photos during editing for fine control.
-- [ ] **Full size preview in gallery**: Allow the user ot get a full size preview of the image in the gallery view.
-- [ ] **Enable multi-threaded**: Enable multi-threded processing of the images in the edit view and gallery view.
-- [ ] **Rating System**: Rate photos with stars; store in sidecars/metadata. Filter shown images by rating/metadata.
-- [ ] **Batch Export**: Select and process multiple files at once.
-- [ ] **Sync Settings**: Copy/paste edit changes from one photo to others.
-- [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
-- [ ] **Misc UI Improvements**: misc ui improvements, eg moving the open folder button after a folder is already open.
-- [x] **Reset slider double click**: add double click to restore default values on a slider
-
-### AI Suggested Additions
-- [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
-- [ ] **Archival Export Preset**: Reduce storage footprint (e.g., 16-bit DNG or high-quality HEIF) while retaining latitude.
-- [ ] **Film Simulations / LUTs**: Apply built-in or custom Look-Up Tables.
-- [ ] **Virtual Copies**: Allow multiple different edits for a single RAW file.
-- [ ] **Batch Renaming**: Sequence-based renaming for folder exports.
+-   [ ] **Full size preview in gallery**: Allow the user to get a full size preview of the image in the gallery view.
+-   [ ] **Enable multi-threaded**: Enable multi-threaded processing of the images in the edit view and gallery view.
+-   [ ] **Rework sharpening and denoise interface and performance**: Improve the UI and performance of sharpening and de-noise functionalities.
+-   [ ] **Batch Export**: Select and process multiple files at once.
+-   [ ] **Sync Settings**: Copy/paste edit changes from one photo to others.
+-   [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
+-   [ ] **Export Tab Feature**: Add a dedicated export tab to control what and how images are exported (e.g., format, quality, resizing, watermarks).
+-   [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
+-   [ ] **Archival Export Preset**: Reduce storage footprint (e.g., 16-bit DNG or high-quality HEIF) while retaining latitude.
+-   [ ] **Batch Renaming**: Sequence-based renaming for folder exports.
