@@ -71,36 +71,105 @@ class GalleryWidget(QtWidgets.QWidget):
         super().__init__()
         self.thread_pool = thread_pool
         self.current_folder = None
+        self.settings = QtCore.QSettings("pyRawRoom", "Gallery")
         self._init_ui()
+        self._load_last_folder()
 
     def _init_ui(self):
-        layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
 
-        # Top Bar
+        # Stack to switch between empty state and grid view
+        self.stack = QtWidgets.QStackedWidget()
+        self.main_layout.addWidget(self.stack)
+
+        # Empty State (shown when no folder is loaded)
+        self.empty_state = self._create_empty_state()
+        self.stack.addWidget(self.empty_state)
+
+        # Grid View Container
+        self.grid_container = QtWidgets.QWidget()
+        grid_layout = QtWidgets.QVBoxLayout(self.grid_container)
+        grid_layout.setContentsMargins(0, 0, 0, 0)
+        grid_layout.setSpacing(0)
+
+        # Top Bar (only visible when folder is loaded)
         top_bar = QtWidgets.QHBoxLayout()
         self.btn_open_folder = QtWidgets.QPushButton("Open Folder")
         self.btn_open_folder.clicked.connect(self.browse_folder)
         top_bar.addWidget(self.btn_open_folder)
         top_bar.addStretch()
-        layout.addLayout(top_bar)
+        grid_layout.addLayout(top_bar)
 
         # Grid View
         self.list_widget = QtWidgets.QListWidget()
+        self.list_widget.setObjectName("GalleryGrid")
         self.list_widget.setViewMode(QtWidgets.QListView.IconMode)
         self.list_widget.setIconSize(QtCore.QSize(180, 180))
         self.list_widget.setResizeMode(QtWidgets.QListView.Adjust)
         self.list_widget.setSpacing(10)
         self.list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
-        layout.addWidget(self.list_widget)
+        grid_layout.addWidget(self.list_widget)
+
+        self.stack.addWidget(self.grid_container)
+
+    def _create_empty_state(self):
+        """Create centered empty state with Open Folder button."""
+        empty_widget = QtWidgets.QWidget()
+        empty_layout = QtWidgets.QVBoxLayout(empty_widget)
+        empty_layout.setAlignment(QtCore.Qt.AlignCenter)
+
+        # Icon or placeholder
+        icon_label = QtWidgets.QLabel("📁")
+        icon_label.setAlignment(QtCore.Qt.AlignCenter)
+        icon_label.setStyleSheet("font-size: 64px; color: #666;")
+        empty_layout.addWidget(icon_label)
+
+        # Message
+        message = QtWidgets.QLabel("No folder opened")
+        message.setAlignment(QtCore.Qt.AlignCenter)
+        message.setStyleSheet("font-size: 18px; color: #a3a3a3; margin-top: 16px;")
+        empty_layout.addWidget(message)
+
+        # Open Folder Button
+        open_btn = QtWidgets.QPushButton("Open Folder")
+        open_btn.setObjectName("SaveButton")  # Use primary button style
+        open_btn.setMinimumWidth(200)
+        open_btn.clicked.connect(self.browse_folder)
+        empty_layout.addWidget(open_btn, alignment=QtCore.Qt.AlignCenter)
+        empty_layout.addSpacing(20)
+
+        return empty_widget
+
+    def _load_last_folder(self):
+        """Load and open the last used folder if available."""
+        last_folder = self.settings.value("last_folder", None)
+        if last_folder and Path(last_folder).exists():
+            self.load_folder(last_folder)
+        else:
+            # Show empty state
+            self.stack.setCurrentWidget(self.empty_state)
 
     def browse_folder(self):
-        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Open Folder")
+        # Start from last folder if available
+        start_dir = ""
+        if self.current_folder and self.current_folder.exists():
+            start_dir = str(self.current_folder)
+
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Open Folder", start_dir)
         if folder:
             self.load_folder(folder)
 
     def load_folder(self, folder):
         self.current_folder = Path(folder)
         self.list_widget.clear()
+
+        # Save to settings
+        self.settings.setValue("last_folder", str(self.current_folder))
+
+        # Switch to grid view
+        self.stack.setCurrentWidget(self.grid_container)
 
         # Find raw files
         files = [f for f in self.current_folder.iterdir() if f.is_file() and f.suffix.lower() in pyrawroom.SUPPORTED_EXTS]
@@ -154,6 +223,7 @@ class EditorWidget(QtWidgets.QWidget):
 
         # --- Left Panel (Controls) ---
         self.panel = QtWidgets.QFrame()
+        self.panel.setObjectName("EditorPanel")
         self.panel.setContentsMargins(10, 10, 10, 10)
         self.panel.setFixedWidth(350)
         self.panel_layout = QtWidgets.QVBoxLayout(self.panel)
@@ -161,12 +231,13 @@ class EditorWidget(QtWidgets.QWidget):
 
         # --- Canvas (Right Side) ---
         self.canvas_frame = QtWidgets.QFrame()
+        self.canvas_frame.setObjectName("CanvasFrame")
         self.canvas_frame.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         main_layout.addWidget(self.canvas_frame)
 
         self.canvas_label = QtWidgets.QLabel()
+        self.canvas_label.setObjectName("CanvasLabel")
         self.canvas_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.canvas_label.setStyleSheet("background-color: #2b2b2b;")
 
         canvas_layout = QtWidgets.QVBoxLayout(self.canvas_frame)
         canvas_layout.addWidget(self.canvas_label)
@@ -175,6 +246,7 @@ class EditorWidget(QtWidgets.QWidget):
 
         # Carousel (Bottom)
         self.carousel = QtWidgets.QListWidget()
+        self.carousel.setObjectName("Carousel")
         self.carousel.setViewMode(QtWidgets.QListView.IconMode)
         self.carousel.setFlow(QtWidgets.QListView.LeftToRight) # Horizontal
         self.carousel.setFixedHeight(120)
@@ -192,6 +264,7 @@ class EditorWidget(QtWidgets.QWidget):
 
     def _setup_controls(self):
         self.lbl_info = QtWidgets.QLabel("No file loaded")
+        self.lbl_info.setObjectName("InfoLabel")
         self.lbl_info.setWordWrap(True)
         self.panel_layout.addWidget(self.lbl_info)
         self.panel_layout.addSpacing(10)
@@ -230,6 +303,7 @@ class EditorWidget(QtWidgets.QWidget):
         # Save Button
         self._add_separator(20)
         self.btn_save = QtWidgets.QPushButton("Save Result")
+        self.btn_save.setObjectName("SaveButton")
         self.btn_save.clicked.connect(self.save_file)
         self.btn_save.setEnabled(False)
         self.panel_layout.addWidget(self.btn_save)
@@ -495,6 +569,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.thread_pool = QtCore.QThreadPool()
 
+        # Load QSS Stylesheet
+        self._load_stylesheet()
+
         # Central Widget & Layout
         central_widget = QtWidgets.QWidget()
         self.setCentralWidget(central_widget)
@@ -525,33 +602,29 @@ class MainWindow(QtWidgets.QMainWindow):
         # Start in Gallery
         self.switch_to_gallery()
 
+    def _load_stylesheet(self):
+        """Load the QSS stylesheet from file."""
+        style_path = Path(__file__).parent / "styles.qss"
+        try:
+            with open(style_path, 'r') as f:
+                self.setStyleSheet(f.read())
+        except FileNotFoundError:
+            print(f"Warning: Stylesheet not found at {style_path}")
+
     def _setup_top_bar(self, parent_layout):
         bar_frame = QtWidgets.QFrame()
-        bar_frame.setStyleSheet("""
-            QFrame { background-color: #2b2b2b; border-bottom: 1px solid #3d3d3d; }
-            QPushButton {
-                background-color: transparent;
-                border: none;
-                color: #888;
-                font-size: 14px;
-                font-weight: bold;
-                padding: 10px 20px;
-            }
-            QPushButton:checked {
-                color: #fff;
-                border-bottom: 2px solid #dcdcdc;
-            }
-            QPushButton:hover { color: #ccc; }
-        """)
+        bar_frame.setObjectName("TopBar")
         bar_layout = QtWidgets.QHBoxLayout(bar_frame)
         bar_layout.setContentsMargins(10, 0, 10, 0)
 
         # Buttongroup for exclusivity logic is manual here for styling flexibility
         self.btn_gallery = QtWidgets.QPushButton("GALLERY")
+        self.btn_gallery.setObjectName("TabButton")
         self.btn_gallery.setCheckable(True)
         self.btn_gallery.clicked.connect(self.switch_to_gallery)
 
         self.btn_edit = QtWidgets.QPushButton("EDIT")
+        self.btn_edit.setObjectName("TabButton")
         self.btn_edit.setCheckable(True)
         self.btn_edit.clicked.connect(self.switch_to_edit)
 

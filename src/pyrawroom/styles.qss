@@ -1,0 +1,394 @@
+/* ========================================
+   pyRawRoom - Modern UI Stylesheet
+   ======================================== */
+
+/* ========== Color Palette ==========
+   Background: #1a1a1a, #242424, #2b2b2b
+   Surface: #303030, #353535
+   Accent: #6366f1, #8b5cf6
+   Text: #ffffff, #e5e5e5, #a3a3a3
+   Borders: #404040, #4a4a4a
+   Success: #10b981
+   ======================================== */
+
+/* ========== Global Styles ========== */
+QWidget {
+    background-color: #1a1a1a;
+    color: #e5e5e5;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+}
+
+QMainWindow {
+    background-color: #1a1a1a;
+}
+
+/* ========== Top Navigation Bar ========== */
+QFrame#TopBar {
+    background-color: #242424;
+    border: none;
+    border-bottom: 1px solid #404040;
+}
+
+QPushButton#TabButton {
+    background-color: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    color: #a3a3a3;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 12px 24px;
+    text-transform: uppercase;
+}
+
+QPushButton#TabButton:hover {
+    color: #e5e5e5;
+    background-color: rgba(99, 102, 241, 0.1);
+}
+
+QPushButton#TabButton:checked {
+    color: #ffffff;
+    border-bottom: 3px solid qlineargradient(
+        x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1,
+        stop:1 #8b5cf6
+    );
+}
+
+/* ========== Gallery View ========== */
+QListWidget#GalleryGrid {
+    background-color: #1a1a1a;
+    border: none;
+    outline: none;
+    padding: 16px;
+}
+
+QListWidget#GalleryGrid::item {
+    background-color: #242424;
+    border: 2px solid #303030;
+    border-radius: 8px;
+    padding: 8px;
+    margin: 4px;
+}
+
+QListWidget#GalleryGrid::item:hover {
+    border-color: #4a4a4a;
+    background-color: #2b2b2b;
+}
+
+QListWidget#GalleryGrid::item:selected {
+    border: 2px solid #6366f1;
+    background-color: #2b2b2b;
+}
+
+/* ========== Editor Panel ========== */
+QFrame#EditorPanel {
+    background-color: #242424;
+    border: none;
+    border-right: 1px solid #303030;
+    border-radius: 0px;
+}
+
+QLabel#InfoLabel {
+    color: #e5e5e5;
+    font-size: 13px;
+    padding: 8px;
+    background-color: transparent;
+}
+
+/* ========== Sliders ========== */
+QSlider {
+    background-color: transparent;
+    min-height: 40px;
+}
+
+QSlider::groove:horizontal {
+    background: qlineargradient(
+        x1:0, y1:0, x2:1, y2:0,
+        stop:0 #303030,
+        stop:1 #404040
+    );
+    height: 6px;
+    border-radius: 3px;
+}
+
+QSlider::handle:horizontal {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #8b5cf6,
+        stop:1 #6366f1
+    );
+    border: 2px solid #4a4a4a;
+    width: 18px;
+    height: 18px;
+    margin: -7px 0;
+    border-radius: 10px;
+}
+
+QSlider::handle:horizontal:hover {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #a78bfa,
+        stop:1 #818cf8
+    );
+    border: 2px solid #6366f1;
+}
+
+QSlider::handle:horizontal:pressed {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #c4b5fd,
+        stop:1 #a5b4fc
+    );
+}
+
+QSlider::sub-page:horizontal {
+    background: qlineargradient(
+        x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1,
+        stop:1 #8b5cf6
+    );
+    border-radius: 3px;
+}
+
+/* ========== Buttons ========== */
+QPushButton {
+    background-color: #303030;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    color: #e5e5e5;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 10px 20px;
+    min-height: 36px;
+}
+
+QPushButton:hover {
+    background-color: #353535;
+    border-color: #4a4a4a;
+}
+
+QPushButton:pressed {
+    background-color: #2b2b2b;
+}
+
+QPushButton:disabled {
+    background-color: #242424;
+    color: #666666;
+    border-color: #303030;
+}
+
+/* Primary Action Button */
+QPushButton#SaveButton {
+    background: qlineargradient(
+        x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1,
+        stop:1 #8b5cf6
+    );
+    border: none;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+QPushButton#SaveButton:hover {
+    background: qlineargradient(
+        x1:0, y1:0, x2:1, y2:0,
+        stop:0 #818cf8,
+        stop:1 #a78bfa
+    );
+}
+
+QPushButton#SaveButton:pressed {
+    background: qlineargradient(
+        x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4f46e5,
+        stop:1 #7c3aed
+    );
+}
+
+QPushButton#SaveButton:disabled {
+    background-color: #303030;
+    color: #666666;
+}
+
+/* ========== Checkboxes ========== */
+QCheckBox {
+    color: #e5e5e5;
+    spacing: 8px;
+    background-color: transparent;
+}
+
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 2px solid #404040;
+    background-color: #242424;
+}
+
+QCheckBox::indicator:hover {
+    border-color: #6366f1;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #6366f1;
+    border-color: #6366f1;
+    image: url(none); /* We'll use a simple fill instead of checkmark */
+}
+
+QCheckBox::indicator:checked:hover {
+    background-color: #818cf8;
+    border-color: #818cf8;
+}
+
+/* ========== Separators ========== */
+QFrame[frameShape="4"] { /* HLine */
+    background-color: #303030;
+    max-height: 1px;
+    border: none;
+}
+
+QFrame[frameShape="5"] { /* VLine */
+    background-color: #303030;
+    max-width: 1px;
+    border: none;
+}
+
+/* ========== Canvas Area ========== */
+QLabel#CanvasLabel {
+    background-color: #1a1a1a;
+    border: none;
+}
+
+QFrame#CanvasFrame {
+    background-color: #1a1a1a;
+    border: none;
+}
+
+/* ========== Carousel ========== */
+QListWidget#Carousel {
+    background-color: #242424;
+    border: none;
+    border-top: 2px solid #303030;
+    outline: none;
+    padding: 8px;
+}
+
+QListWidget#Carousel::item {
+    background-color: #2b2b2b;
+    border: 2px solid #353535;
+    border-radius: 6px;
+    padding: 4px;
+    margin: 2px;
+}
+
+QListWidget#Carousel::item:hover {
+    border-color: #4a4a4a;
+    background-color: #303030;
+}
+
+QListWidget#Carousel::item:selected {
+    border: 2px solid qlineargradient(
+        x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1,
+        stop:1 #8b5cf6
+    );
+    background-color: #303030;
+}
+
+/* ========== ScrollBars ========== */
+QScrollBar:vertical {
+    background-color: #1a1a1a;
+    width: 12px;
+    border: none;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #404040;
+    border-radius: 6px;
+    min-height: 30px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #4a4a4a;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    background-color: #1a1a1a;
+    height: 12px;
+    border: none;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #404040;
+    border-radius: 6px;
+    min-width: 30px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #4a4a4a;
+}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
+}
+
+/* ========== Menu Bar ========== */
+QMenuBar {
+    background-color: #242424;
+    color: #e5e5e5;
+    border-bottom: 1px solid #303030;
+    padding: 4px;
+}
+
+QMenuBar::item {
+    background-color: transparent;
+    padding: 6px 12px;
+    border-radius: 4px;
+}
+
+QMenuBar::item:selected {
+    background-color: #303030;
+}
+
+QMenu {
+    background-color: #242424;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+QMenu::item {
+    background-color: transparent;
+    color: #e5e5e5;
+    padding: 8px 24px;
+    border-radius: 4px;
+}
+
+QMenu::item:selected {
+    background-color: #303030;
+}
+
+/* ========== File Dialogs ========== */
+QFileDialog {
+    background-color: #242424;
+    color: #e5e5e5;
+}
+
+/* ========== Labels ========== */
+QLabel {
+    background-color: transparent;
+    color: #e5e5e5;
+}
+
+/* ========== Slider Value Labels ========== */
+QLabel[objectName*="label"] {
+    color: #a3a3a3;
+    font-size: 13px;
+    font-weight: 500;
+}
