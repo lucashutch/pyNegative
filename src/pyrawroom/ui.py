@@ -213,6 +213,52 @@ class HorizontalListWidget(QtWidgets.QListWidget):
         else:
             super().wheelEvent(event)
 
+class CollapsibleSection(QtWidgets.QWidget):
+    """A collapsible section with a header and a content area."""
+    def __init__(self, title, expanded=True, parent=None):
+        super().__init__(parent)
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
+
+        # Header
+        self.header = QtWidgets.QPushButton(title)
+        self.header.setObjectName("SectionHeader")
+        self.header.setCheckable(True)
+        self.header.setChecked(expanded)
+        self.header.clicked.connect(self.toggle)
+        self.layout.addWidget(self.header)
+
+        # Content Area
+        self.content = QtWidgets.QWidget()
+        self.content_layout = QtWidgets.QVBoxLayout(self.content)
+        self.content_layout.setContentsMargins(5, 5, 5, 5)
+        self.content_layout.setSpacing(2)
+        self.layout.addWidget(self.content)
+
+        if not expanded:
+            self.content.hide()
+
+    def toggle(self):
+        if self.header.isChecked():
+            self.content.show()
+        else:
+            self.content.hide()
+
+    def add_widget(self, widget):
+        self.content_layout.addWidget(widget)
+
+class ResetableSlider(QtWidgets.QSlider):
+    """A QSlider that resets to a default value on double-click."""
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.default_slider_value = 0
+
+    def mouseDoubleClickEvent(self, event):
+        self.setValue(self.default_slider_value)
+        # Trigger valueChanged signal explicitly if needed, but setValue does it
+        super().mouseDoubleClickEvent(event)
+
 
 # ----------------- Editor Widget -----------------
 class EditorWidget(QtWidgets.QWidget):
@@ -281,51 +327,74 @@ class EditorWidget(QtWidgets.QWidget):
         return super().eventFilter(watched, event)
 
     def _setup_controls(self):
+        # Wrap everything in a scroll area just in case
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.panel_layout.addWidget(scroll)
+
+        container = QtWidgets.QWidget()
+        self.controls_layout = QtWidgets.QVBoxLayout(container)
+        self.controls_layout.setContentsMargins(0, 0, 0, 0)
+        self.controls_layout.setSpacing(5)
+        scroll.setWidget(container)
+
         self.lbl_info = QtWidgets.QLabel("No file loaded")
         self.lbl_info.setObjectName("InfoLabel")
         self.lbl_info.setWordWrap(True)
-        self.panel_layout.addWidget(self.lbl_info)
-        self.panel_layout.addSpacing(5)
+        self.controls_layout.addWidget(self.lbl_info)
 
-        # Tone Controls
+        # --- Tone Section ---
+        self.tone_section = CollapsibleSection("TONE", expanded=True)
+        self.controls_layout.addWidget(self.tone_section)
+
         self.val_exposure = 0.0
+        self.val_contrast = 1.0
         self.val_whites = 1.0
         self.val_blacks = 0.0
-        self._add_slider("Exposure", -4.0, 4.0, self.val_exposure, "val_exposure", 0.01)
-        self._add_slider("Whites", 0.5, 2.0, self.val_whites, "val_whites", 0.01)
-        self._add_slider("Blacks", -0.2, 0.2, self.val_blacks, "val_blacks", 0.001)
-
         self.val_highlights = 0.0
         self.val_shadows = 0.0
-        self._add_slider("Highlights", -1.0, 1.0, self.val_highlights, "val_highlights", 0.01)
-        self._add_slider("Shadows", -1.0, 1.0, self.val_shadows, "val_shadows", 0.01)
 
-        # Saturation
-        self._add_separator(10)
+        self._add_slider("Exposure", -4.0, 4.0, self.val_exposure, "val_exposure", 0.01, self.tone_section)
+        self._add_slider("Contrast", 0.5, 2.0, self.val_contrast, "val_contrast", 0.01, self.tone_section)
+        self._add_slider("Highlights", -1.0, 1.0, self.val_highlights, "val_highlights", 0.01, self.tone_section)
+        self._add_slider("Shadows", -1.0, 1.0, self.val_shadows, "val_shadows", 0.01, self.tone_section)
+        self._add_slider("Whites", 0.5, 1.5, self.val_whites, "val_whites", 0.01, self.tone_section, flipped=True)
+        self._add_slider("Blacks", -0.2, 0.2, self.val_blacks, "val_blacks", 0.001, self.tone_section)
+
+        # --- Color Section ---
+        self.color_section = CollapsibleSection("COLOR", expanded=False)
+        self.controls_layout.addWidget(self.color_section)
+
         self.val_saturation = 1.0
-        self._add_slider("Saturation", 0.0, 2.0, self.val_saturation, "val_saturation", 0.01)
+        self._add_slider("Saturation", 0.0, 2.0, self.val_saturation, "val_saturation", 0.01, self.color_section)
 
-        # Sharpening
-        self._add_separator(10)
+        # --- Details Section ---
+        self.details_section = CollapsibleSection("DETAILS", expanded=False)
+        self.controls_layout.addWidget(self.details_section)
+
         self.var_sharpen_enabled = False
-        self.sharpen_checkbox = QtWidgets.QCheckBox("Enable Sharpening")
+        self.sharpen_checkbox = QtWidgets.QCheckBox("Enable Processing")
         self.sharpen_checkbox.toggled.connect(self._update_sharpen_state)
-        self.panel_layout.addWidget(self.sharpen_checkbox)
+        self.details_section.add_widget(self.sharpen_checkbox)
 
         self.val_radius = 2.0
         self.val_percent = 150
-        self._add_slider("Radius", 0.5, 5.0, self.val_radius, "val_radius", 0.01)
-        self._add_slider("Amount", 0, 300, self.val_percent, "val_percent", 1)
+        self.val_denoise = 0
+        self._add_slider("Sharpen Radius", 0.5, 5.0, self.val_radius, "val_radius", 0.01, self.details_section)
+        self._add_slider("Sharpen Amount", 0, 300, self.val_percent, "val_percent", 1, self.details_section)
+        self._add_slider("De-noise", 0, 5, self.val_denoise, "val_denoise", 1, self.details_section)
 
         # Save Button
-        self._add_separator(20)
+        self.controls_layout.addSpacing(10)
         self.btn_save = QtWidgets.QPushButton("Save Result")
         self.btn_save.setObjectName("SaveButton")
         self.btn_save.clicked.connect(self.save_file)
         self.btn_save.setEnabled(False)
-        self.panel_layout.addWidget(self.btn_save)
+        self.controls_layout.addWidget(self.btn_save)
 
-        self.panel_layout.addStretch()
+        self.controls_layout.addStretch()
 
     def _add_separator(self, spacing=10):
         line = QtWidgets.QFrame()
@@ -334,11 +403,14 @@ class EditorWidget(QtWidgets.QWidget):
         self.panel_layout.addWidget(line)
         if spacing: self.panel_layout.addSpacing(spacing)
 
-    def _add_slider(self, label_text, min_val, max_val, default, var_name, step_size):
+    def _add_slider(self, label_text, min_val, max_val, default, var_name, step_size, section=None, flipped=False):
         frame = QtWidgets.QFrame()
         layout = QtWidgets.QVBoxLayout(frame)
         layout.setContentsMargins(0, 2, 0, 2)
         layout.setSpacing(0)
+
+        # Store flip state for programmatic updates
+        setattr(self, f"{var_name}_flipped", flipped)
 
         # Top row: Label and Value
         row = QtWidgets.QHBoxLayout()
@@ -349,13 +421,20 @@ class EditorWidget(QtWidgets.QWidget):
         row.addWidget(val_lbl)
         layout.addLayout(row)
 
-        slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        slider = ResetableSlider(QtCore.Qt.Horizontal)
         multiplier = 1000
         slider.setRange(int(min_val * multiplier), int(max_val * multiplier))
+        # Default value on initial setup
+        slider.default_slider_value = int(default * multiplier)
         slider.setValue(int(default * multiplier))
 
         def on_change(val):
             actual = val / multiplier
+            if flipped:
+                # Map slider min..max to max..min
+                # Formula: actual = s_max + s_min - actual
+                actual = max_val + min_val - actual
+
             val_lbl.setText(f"{actual:.2f}")
             setattr(self, var_name, actual)
             self.request_update()
@@ -370,17 +449,36 @@ class EditorWidget(QtWidgets.QWidget):
         setattr(self, f"{var_name}_label", val_lbl) # Store label for updates
 
         layout.addWidget(slider)
-        self.panel_layout.addWidget(frame)
+        if section:
+            section.add_widget(frame)
+        else:
+            self.panel_layout.addWidget(frame)
 
     def _set_slider_value(self, var_name, value):
         slider = getattr(self, f"{var_name}_slider", None)
         label = getattr(self, f"{var_name}_label", None)
+        flipped = getattr(self, f"{var_name}_flipped", False)
+
         if slider:
-            multiplier = 1000 # Assuming all sliders use this multiplier
-            slider.setValue(int(value * multiplier))
-            setattr(self, var_name, value)
-            if label:
-                label.setText(f"{value:.2f}")
+            multiplier = 1000
+            if flipped:
+                # Need to find the min/max to calculate the flipped slider position
+                # But we can just use the vars passed to _add_slider if we stored them
+                # For now let's use the slider's own range
+                s_min = slider.minimum() / multiplier
+                s_max = slider.maximum() / multiplier
+                val_to_set = (s_max + s_min) - value
+                slider.setValue(int(val_to_set * multiplier))
+            else:
+                slider.setValue(int(value * multiplier))
+
+            # Since this is a programmatic update (likely from load),
+            # we also update the reset value.
+            slider.default_slider_value = slider.value()
+
+        if label:
+            label.setText(f"{value:.2f}")
+        setattr(self, var_name, value)
 
 
     def _update_sharpen_state(self, checked):
@@ -394,6 +492,7 @@ class EditorWidget(QtWidgets.QWidget):
 
         settings = {
             "exposure": self.val_exposure,
+            "contrast": self.val_contrast,
             "whites": self.val_whites,
             "blacks": self.val_blacks,
             "highlights": self.val_highlights,
@@ -401,7 +500,8 @@ class EditorWidget(QtWidgets.QWidget):
             "saturation": self.val_saturation,
             "sharpen_enabled": self.var_sharpen_enabled,
             "sharpen_radius": self.val_radius,
-            "sharpen_percent": self.val_percent
+            "sharpen_percent": self.val_percent,
+            "de_noise": self.val_denoise
         }
         pyrawroom.save_sidecar(self.raw_path, settings)
 
@@ -431,6 +531,7 @@ class EditorWidget(QtWidgets.QWidget):
         # Apply Auto-Expose Settings
         if settings:
             self._set_slider_value("val_exposure", settings.get("exposure", 0.0))
+            self._set_slider_value("val_contrast", settings.get("contrast", 1.0))
             self._set_slider_value("val_whites", settings.get("whites", 1.0))
             self._set_slider_value("val_blacks", settings.get("blacks", 0.0))
             self._set_slider_value("val_saturation", settings.get("saturation", 1.0))
@@ -443,6 +544,7 @@ class EditorWidget(QtWidgets.QWidget):
             self.var_sharpen_enabled = sharpen_on
             self._set_slider_value("val_radius", settings.get("sharpen_radius", 2.0))
             self._set_slider_value("val_percent", settings.get("sharpen_percent", 150))
+            self._set_slider_value("val_denoise", settings.get("de_noise", 0))
 
         # Create high-quality preview (max 1000px) from proxy
         # Since proxy is smaller, it might already be close to screen size
@@ -473,7 +575,8 @@ class EditorWidget(QtWidgets.QWidget):
         # Process
         img, _ = pyrawroom.apply_tone_map(
             self.base_img_preview,
-            exposure=self.val_exposure, blacks=self.val_blacks, whites=self.val_whites,
+            exposure=self.val_exposure, contrast=self.val_contrast,
+            blacks=self.val_blacks, whites=self.val_whites,
             shadows=self.val_shadows, highlights=self.val_highlights,
             saturation=self.val_saturation
         )
@@ -481,6 +584,8 @@ class EditorWidget(QtWidgets.QWidget):
 
         if self.var_sharpen_enabled:
             pil_img = pyrawroom.sharpen_image(pil_img, self.val_radius, self.val_percent)
+            if self.val_denoise > 0:
+                pil_img = pyrawroom.de_noise_image(pil_img, self.val_denoise)
 
         # Display
         q_img = ImageQt.ImageQt(pil_img)
@@ -515,6 +620,7 @@ class EditorWidget(QtWidgets.QWidget):
                 img, _ = pyrawroom.apply_tone_map(
                     full_img,
                     exposure=self.val_exposure,
+                    contrast=self.val_contrast,
                     blacks=self.val_blacks,
                     whites=self.val_whites,
                     shadows=self.val_shadows,
@@ -524,6 +630,8 @@ class EditorWidget(QtWidgets.QWidget):
                 pil_img = Image.fromarray((img * 255).astype(np.uint8))
                 if self.var_sharpen_enabled:
                     pil_img = pyrawroom.sharpen_image(pil_img, self.val_radius, self.val_percent)
+                    if self.val_denoise > 0:
+                        pil_img = pyrawroom.de_noise_image(pil_img, self.val_denoise)
 
                 pyrawroom.save_image(pil_img, path)
                 QtWidgets.QMessageBox.information(self, "Saved", f"Saved full resolution to {path}")

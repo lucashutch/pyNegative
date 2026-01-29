@@ -15,7 +15,7 @@ except ImportError:
 
 
 # ---------------- Tone Mapping ----------------
-def apply_tone_map(img, exposure=0.0, blacks=0.0, whites=1.0, shadows=0.0, highlights=0.0, saturation=1.0):
+def apply_tone_map(img, exposure=0.0, contrast=1.0, blacks=0.0, whites=1.0, shadows=0.0, highlights=0.0, saturation=1.0):
     """
     Applies Exposure -> Levels -> Tone EQ -> Saturation -> Base Curve
     """
@@ -25,6 +25,10 @@ def apply_tone_map(img, exposure=0.0, blacks=0.0, whites=1.0, shadows=0.0, highl
     # 1. Exposure (2^stops)
     if exposure != 0.0:
         img = img * (2**exposure)
+
+    # 1.5 Contrast (Symmetric around 0.5)
+    if contrast != 1.0:
+        img = (img - 0.5) * contrast + 0.5
 
     # 2. Levels (Blacks & Whites)
     if blacks != 0.0 or whites != 1.0:
@@ -172,6 +176,11 @@ def sharpen_image(pil_img, radius, percent):
     return pil_img.filter(
         ImageFilter.UnsharpMask(radius=float(radius), percent=int(percent))
     )
+
+def de_noise_image(pil_img, radius):
+    """Simple de-noise using Median filter."""
+    if radius <= 0: return pil_img
+    return pil_img.filter(ImageFilter.MedianFilter(size=int(radius)))
 
 def save_image(pil_img, output_path, quality=95):
     output_path = Path(output_path)
