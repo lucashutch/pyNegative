@@ -38,28 +38,6 @@ class GalleryWidget(QtWidgets.QWidget):
 
         # Top Bar (only visible when folder is loaded)
         top_bar = QtWidgets.QHBoxLayout()
-        
-        # Filtering
-        filter_layout = QtWidgets.QHBoxLayout()
-        filter_layout.setContentsMargins(0, 5, 0, 5)
-        filter_layout.setAlignment(QtCore.Qt.AlignVCenter)
-        filter_layout.addStretch()
-        
-        filter_label = QtWidgets.QLabel("Filter:")
-        filter_layout.addWidget(filter_label)
-
-        self.filter_combo = QtWidgets.QComboBox()
-        self.filter_combo.addItems(["Match", "Greater", "Less"])
-        self.filter_combo.setCurrentText("Greater")
-        self.filter_combo.setMaximumWidth(120)
-        self.filter_combo.currentIndexChanged.connect(self._apply_filter)
-        filter_layout.addWidget(self.filter_combo)
-
-        self.filter_rating_widget = StarRatingWidget()
-        self.filter_rating_widget.ratingChanged.connect(self._apply_filter)
-        filter_layout.addWidget(self.filter_rating_widget)
-        top_bar.addLayout(filter_layout)
-
         grid_layout.addLayout(top_bar)
 
         # Grid View
@@ -135,8 +113,12 @@ class GalleryWidget(QtWidgets.QWidget):
 
         files = [f for f in self.current_folder.iterdir() if f.is_file() and f.suffix.lower() in pynegative.SUPPORTED_EXTS]
 
-        filter_mode = self.filter_combo.currentText()
-        filter_rating = self.filter_rating_widget.rating()
+        # The filter widgets are now in MainWindow, so we need to get the values from there.
+        # This is a bit of a hack. A better way would be to pass the filter values
+        # into load_folder, or use a shared model.
+        main_window = self.window()
+        filter_mode = main_window.filter_combo.currentText()
+        filter_rating = main_window.filter_rating_widget.rating()
 
         for path in files:
             sidecar_settings = pynegative.load_sidecar(path)
@@ -165,6 +147,9 @@ class GalleryWidget(QtWidgets.QWidget):
     def _apply_filter(self):
         if self.current_folder:
             self.load_folder(self.current_folder)
+
+    def apply_filter_from_main(self):
+        self._apply_filter()
 
     def _on_thumbnail_loaded(self, path, pixmap):
         # find the item with this path

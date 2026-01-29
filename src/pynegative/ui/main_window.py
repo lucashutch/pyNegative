@@ -5,6 +5,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from .. import core as pynegative
 from .gallery import GalleryWidget
 from .editor import EditorWidget
+from .widgets import StarRatingWidget
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
@@ -83,6 +84,26 @@ class MainWindow(QtWidgets.QMainWindow):
         bar_layout.addWidget(self.btn_gallery)
         bar_layout.addWidget(self.btn_edit)
         bar_layout.addStretch()
+
+        # Filtering
+        filter_layout = QtWidgets.QHBoxLayout()
+        filter_layout.setContentsMargins(0, 5, 0, 5)
+        filter_layout.setAlignment(QtCore.Qt.AlignVCenter)
+        
+        filter_label = QtWidgets.QLabel("Filter:")
+        filter_layout.addWidget(filter_label)
+
+        self.filter_combo = QtWidgets.QComboBox()
+        self.filter_combo.addItems(["Match", "Greater", "Less"])
+        self.filter_combo.setCurrentText("Greater")
+        self.filter_combo.setMaximumWidth(120)
+        self.filter_combo.currentIndexChanged.connect(self.gallery.apply_filter_from_main)
+        filter_layout.addWidget(self.filter_combo)
+
+        self.filter_rating_widget = StarRatingWidget()
+        self.filter_rating_widget.ratingChanged.connect(self.gallery.apply_filter_from_main)
+        filter_layout.addWidget(self.filter_rating_widget)
+        bar_layout.addLayout(filter_layout)
 
         self.btn_open_folder = QtWidgets.QPushButton("Open Folder")
         self.btn_open_folder.setObjectName("OpenFolderButton")
