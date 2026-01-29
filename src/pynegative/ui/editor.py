@@ -6,9 +6,11 @@ from PySide6.QtCore import Qt
 
 from .. import core as pynegative
 from .loaders import ThumbnailLoader, RawLoader
-from .widgets import HorizontalListWidget, CollapsibleSection, ResetableSlider, ZoomableGraphicsView, ZoomControls
+from .widgets import HorizontalListWidget, CollapsibleSection, ResetableSlider, ZoomableGraphicsView, ZoomControls, StarRatingWidget
 
 class EditorWidget(QtWidgets.QWidget):
+    ratingChanged = QtCore.Signal(str, int)
+
     def __init__(self, thread_pool):
         super().__init__()
         self.thread_pool = thread_pool
@@ -17,6 +19,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.base_img_full = None  # The High-Res Proxy (e.g. 4000px)
         self._base_img_uint8 = None # Cached uint8 version for resizing
         self.current_qpixmap = None
+        self.current_rating = 0
 
         # Auto-save timer
         self.save_timer = QtCore.QTimer()
@@ -111,6 +114,13 @@ class EditorWidget(QtWidgets.QWidget):
         self.lbl_info.setObjectName("InfoLabel")
         self.lbl_info.setWordWrap(True)
         self.controls_layout.addWidget(self.lbl_info)
+
+        # --- Rating Section ---
+        self.rating_section = CollapsibleSection("RATING", expanded=True)
+        self.controls_layout.addWidget(self.rating_section)
+        self.star_rating_widget = StarRatingWidget()
+        self.star_rating_widget.ratingChanged.connect(self._on_rating_changed)
+        self.rating_section.add_widget(self.star_rating_widget)
 
         # --- Tone Section ---
         self.tone_section = CollapsibleSection("TONE", expanded=True)
@@ -239,6 +249,28 @@ class EditorWidget(QtWidgets.QWidget):
         setattr(self, var_name, value)
 
 
+    def clear(self):
+        self.raw_path = None
+        self.setWindowTitle("Editor")
+        self.current_settings = self._get_default_settings()
+        self.current_rating = 0
+        self.star_rating_widget.set_rating(0)
+        self.reset_sliders()
+        self.view.reset_zoom()
+        self.view.set_pixmaps(QtGui.QPixmap(), 0, 0)
+        self.carousel.clear()
+        self.controls_stack.setEnabled(False)
+
+    def update_rating_for_path(self, path, rating):
+        if self.raw_path and str(self.raw_path) == path:
+            self.star_rating_widget.set_rating(rating)
+
+    def _on_rating_changed(self, rating):
+        self.current_rating = rating
+        self.save_timer.start(500)
+        if self.raw_path:
+            self.ratingChanged.emit(str(self.raw_path), rating)
+
     def _update_sharpen_state(self, checked):
         self.var_sharpen_enabled = checked
         self.request_update()
@@ -249,6 +281,7 @@ class EditorWidget(QtWidgets.QWidget):
             return
 
         settings = {
+            "rating": self.current_rating,
             "exposure": self.val_exposure,
             "contrast": self.val_contrast,
             "whites": self.val_whites,
@@ -286,6 +319,8 @@ class EditorWidget(QtWidgets.QWidget):
 
         # Apply Auto-Expose Settings
         if settings:
+            self.current_rating = settings.get("rating", 0)
+            self.star_rating_widget.set_rating(self.current_rating)
             self._set_slider_value("val_exposure", settings.get("exposure", 0.0))
             self._set_slider_value("val_contrast", settings.get("contrast", 1.0))
             self._set_slider_value("val_whites", settings.get("whites", 1.0))
@@ -503,6 +538,22 @@ class EditorWidget(QtWidgets.QWidget):
             loader.signals.finished.connect(self._on_carousel_thumbnail_loaded)
             self.thread_pool.start(loader)
 
+    def set_carousel_images(self, image_list, current_path):
+        self.carousel.clear()
+        for path_str in image_list:
+            f = Path(path_str)
+            item = QtWidgets.QListWidgetItem(f.name)
+            item.setData(QtCore.Qt.UserRole, str(f))
+            item.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon))
+            self.carousel.addItem(item)
+            if f == current_path:
+                self.carousel.setCurrentItem(item)
+
+            # Async load thumbnail
+            loader = ThumbnailLoader(f, size=100)
+            loader.signals.finished.connect(self._on_carousel_thumbnail_loaded)
+            self.thread_pool.start(loader)
+
     def _on_carousel_thumbnail_loaded(self, path, pixmap):
         for i in range(self.carousel.count()):
             item = self.carousel.item(i)
@@ -516,3 +567,19 @@ class EditorWidget(QtWidgets.QWidget):
         # Avoid reloading if same image
         if Path(path) != self.raw_path:
             self.load_image(path)
+
+    def open(self, path, image_list=None):
+        if not isinstance(path, Path):
+            path = Path(path)
+
+        if image_list:
+            self.set_carousel_images(image_list, path)
+        else:
+            self.load_carousel_folder(path.parent)
+            for i in range(self.carousel.count()):
+                item = self.carousel.item(i)
+                if Path(item.data(QtCore.Qt.UserRole)) == path:
+                    self.carousel.setCurrentItem(item)
+                    break
+
+        self.load_image(path)

@@ -5,6 +5,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from .. import core as pynegative
 from .gallery import GalleryWidget
 from .editor import EditorWidget
+from .widgets import StarRatingWidget
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
@@ -24,6 +25,10 @@ class MainWindow(QtWidgets.QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        # Views
+        self.gallery = GalleryWidget(self.thread_pool)
+        self.editor = EditorWidget(self.thread_pool)
+
         # Top Bar (Tabs)
         self._setup_top_bar(main_layout)
 
@@ -31,21 +36,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stack = QtWidgets.QStackedWidget()
         main_layout.addWidget(self.stack)
 
-        # Views
-        self.gallery = GalleryWidget(self.thread_pool)
-        self.editor = EditorWidget(self.thread_pool)
-
         self.stack.addWidget(self.gallery)
         self.stack.addWidget(self.editor)
 
         # Signals
         self.gallery.imageSelected.connect(self.open_editor)
+        self.editor.ratingChanged.connect(self.gallery.update_rating_for_item)
+        self.gallery.ratingChanged.connect(self.editor.update_rating_for_path)
+        self.gallery.imageListChanged.connect(self._on_gallery_list_changed)
 
         # Setup Menu (File operations only)
         self._create_menu()
 
         # Start in Gallery
         self.switch_to_gallery()
+
+        # Load initial folder
+        self.gallery._load_last_folder()
 
     def _load_stylesheet(self):
         """Load the QSS stylesheet from file."""
@@ -80,7 +87,33 @@ class MainWindow(QtWidgets.QMainWindow):
 
         bar_layout.addWidget(self.btn_gallery)
         bar_layout.addWidget(self.btn_edit)
-        bar_layout.addStretch() # Push left
+        bar_layout.addStretch()
+
+        # Filtering
+        filter_layout = QtWidgets.QHBoxLayout()
+        filter_layout.setContentsMargins(0, 5, 0, 5)
+        filter_layout.setAlignment(QtCore.Qt.AlignVCenter)
+        
+        filter_label = QtWidgets.QLabel("Filter:")
+        filter_layout.addWidget(filter_label)
+
+        self.filter_combo = QtWidgets.QComboBox()
+        self.filter_combo.addItems(["Match", "Greater", "Less"])
+        self.filter_combo.setCurrentText("Greater")
+        self.filter_combo.setMaximumWidth(120)
+        self.filter_combo.currentIndexChanged.connect(self.gallery.apply_filter_from_main)
+        filter_layout.addWidget(self.filter_combo)
+
+        self.filter_rating_widget = StarRatingWidget()
+        self.filter_rating_widget.ratingChanged.connect(self.gallery.apply_filter_from_main)
+        filter_layout.addWidget(self.filter_rating_widget)
+        bar_layout.addLayout(filter_layout)
+
+        self.btn_open_folder = QtWidgets.QPushButton("Open Folder")
+        self.btn_open_folder.setObjectName("OpenFolderButton")
+        self.btn_open_folder.clicked.connect(self.gallery.browse_folder)
+        bar_layout.addWidget(self.btn_open_folder)
+
 
         parent_layout.addWidget(bar_frame)
 
@@ -102,26 +135,57 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_edit.setChecked(False)
 
     def switch_to_edit(self):
+        # If editor already has an image, just switch
+        if self.editor.raw_path:
+            self.stack.setCurrentWidget(self.editor)
+            self.btn_gallery.setChecked(False)
+            self.btn_edit.setChecked(True)
+            return
+
+        # Editor is empty, try to populate it from gallery
+        current_item = self.gallery.list_widget.currentItem()
+        if current_item:
+            path_to_open = current_item.data(QtCore.Qt.UserRole)
+            self.open_editor(path_to_open)
+        else:
+            # No selection, try first item
+            image_list = self.gallery.get_current_image_list()
+            if image_list:
+                self.open_editor(image_list[0])
+            else:
+                # Gallery is empty, just switch to empty editor
+                self.stack.setCurrentWidget(self.editor)
+                self.btn_gallery.setChecked(False)
+                self.btn_edit.setChecked(True)
+
+    def open_editor(self, path):
+        image_list = self.gallery.get_current_image_list()
+        self.editor.open(path, image_list=image_list)
         self.stack.setCurrentWidget(self.editor)
         self.btn_gallery.setChecked(False)
         self.btn_edit.setChecked(True)
-
-    def open_editor(self, path):
-        # Determine folder from path
-        path = Path(path)
-        folder = path.parent
-
-        # Load the image
-        self.editor.load_image(path)
-
-        # Update carousel if needed
-        if self.editor.current_folder != folder:
-            self.editor.load_carousel_folder(folder)
-
-        self.switch_to_edit()
 
     def open_single_file(self):
         extensions = ' '.join(['*'+e for e in pynegative.SUPPORTED_EXTS])
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open RAW", "", f"RAW ({extensions})")
         if path:
             self.open_editor(path)
+
+    def _on_gallery_list_changed(self, image_list):
+        if not self.editor.raw_path:
+            return  # Editor isn't open, nothing to do
+
+        current_path_str = str(self.editor.raw_path)
+        if current_path_str in image_list:
+            # Current image is still in the list, just update the carousel
+            self.editor.set_carousel_images(image_list, self.editor.raw_path)
+        else:
+            # Current image has been filtered out
+            if image_list:
+                # Open the first image of the new list
+                self.open_editor(image_list[0])
+            else:
+                # The filtered list is empty, clear the editor
+                self.editor.clear()
+                # Optionally, switch back to the gallery
+                self.switch_to_gallery()
