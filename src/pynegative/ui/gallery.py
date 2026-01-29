@@ -8,6 +8,7 @@ import pynegative
 class GalleryWidget(QtWidgets.QWidget):
     imageSelected = QtCore.Signal(str)
     ratingChanged = QtCore.Signal(str, int)
+    imageListChanged = QtCore.Signal(list)
 
     def __init__(self, thread_pool):
         super().__init__()
@@ -142,6 +143,8 @@ class GalleryWidget(QtWidgets.QWidget):
             loader = ThumbnailLoader(path)
             loader.signals.finished.connect(self._on_thumbnail_loaded)
             self.thread_pool.start(loader)
+
+        self.imageListChanged.emit(self.get_current_image_list())
 
     def _apply_filter(self):
         if self.current_folder:

@@ -249,6 +249,18 @@ class EditorWidget(QtWidgets.QWidget):
         setattr(self, var_name, value)
 
 
+    def clear(self):
+        self.raw_path = None
+        self.setWindowTitle("Editor")
+        self.current_settings = self._get_default_settings()
+        self.current_rating = 0
+        self.star_rating_widget.set_rating(0)
+        self.reset_sliders()
+        self.view.reset_zoom()
+        self.view.set_pixmaps(QtGui.QPixmap(), 0, 0)
+        self.carousel.clear()
+        self.controls_stack.setEnabled(False)
+
     def update_rating_for_path(self, path, rating):
         if self.raw_path and str(self.raw_path) == path:
             self.star_rating_widget.set_rating(rating)

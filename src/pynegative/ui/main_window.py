@@ -43,6 +43,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.gallery.imageSelected.connect(self.open_editor)
         self.editor.ratingChanged.connect(self.gallery.update_rating_for_item)
         self.gallery.ratingChanged.connect(self.editor.update_rating_for_path)
+        self.gallery.imageListChanged.connect(self._on_gallery_list_changed)
 
         # Setup Menu (File operations only)
         self._create_menu()
@@ -169,3 +170,22 @@ class MainWindow(QtWidgets.QMainWindow):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open RAW", "", f"RAW ({extensions})")
         if path:
             self.open_editor(path)
+
+    def _on_gallery_list_changed(self, image_list):
+        if not self.editor.raw_path:
+            return  # Editor isn't open, nothing to do
+
+        current_path_str = str(self.editor.raw_path)
+        if current_path_str in image_list:
+            # Current image is still in the list, just update the carousel
+            self.editor.set_carousel_images(image_list, self.editor.raw_path)
+        else:
+            # Current image has been filtered out
+            if image_list:
+                # Open the first image of the new list
+                self.open_editor(image_list[0])
+            else:
+                # The filtered list is empty, clear the editor
+                self.editor.clear()
+                # Optionally, switch back to the gallery
+                self.switch_to_gallery()
