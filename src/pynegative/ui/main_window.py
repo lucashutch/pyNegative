@@ -40,6 +40,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Signals
         self.gallery.imageSelected.connect(self.open_editor)
+        self.editor.ratingChanged.connect(self.gallery.update_rating_for_item)
 
         # Setup Menu (File operations only)
         self._create_menu()

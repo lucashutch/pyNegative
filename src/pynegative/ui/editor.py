@@ -6,9 +6,11 @@ from PySide6.QtCore import Qt
 
 from .. import core as pynegative
 from .loaders import ThumbnailLoader, RawLoader
-from .widgets import HorizontalListWidget, CollapsibleSection, ResetableSlider, ZoomableGraphicsView, ZoomControls
+from .widgets import HorizontalListWidget, CollapsibleSection, ResetableSlider, ZoomableGraphicsView, ZoomControls, StarRatingWidget
 
 class EditorWidget(QtWidgets.QWidget):
+    ratingChanged = QtCore.Signal(str, int)
+
     def __init__(self, thread_pool):
         super().__init__()
         self.thread_pool = thread_pool
@@ -17,6 +19,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.base_img_full = None  # The High-Res Proxy (e.g. 4000px)
         self._base_img_uint8 = None # Cached uint8 version for resizing
         self.current_qpixmap = None
+        self.current_rating = 0
 
         # Auto-save timer
         self.save_timer = QtCore.QTimer()
@@ -111,6 +114,13 @@ class EditorWidget(QtWidgets.QWidget):
         self.lbl_info.setObjectName("InfoLabel")
         self.lbl_info.setWordWrap(True)
         self.controls_layout.addWidget(self.lbl_info)
+
+        # --- Rating Section ---
+        self.rating_section = CollapsibleSection("RATING", expanded=True)
+        self.controls_layout.addWidget(self.rating_section)
+        self.star_rating_widget = StarRatingWidget()
+        self.star_rating_widget.ratingChanged.connect(self._on_rating_changed)
+        self.rating_section.add_widget(self.star_rating_widget)
 
         # --- Tone Section ---
         self.tone_section = CollapsibleSection("TONE", expanded=True)
@@ -239,6 +249,12 @@ class EditorWidget(QtWidgets.QWidget):
         setattr(self, var_name, value)
 
 
+    def _on_rating_changed(self, rating):
+        self.current_rating = rating
+        self.save_timer.start(500)
+        if self.raw_path:
+            self.ratingChanged.emit(str(self.raw_path), rating)
+
     def _update_sharpen_state(self, checked):
         self.var_sharpen_enabled = checked
         self.request_update()
@@ -249,6 +265,7 @@ class EditorWidget(QtWidgets.QWidget):
             return
 
         settings = {
+            "rating": self.current_rating,
             "exposure": self.val_exposure,
             "contrast": self.val_contrast,
             "whites": self.val_whites,
@@ -286,6 +303,8 @@ class EditorWidget(QtWidgets.QWidget):
 
         # Apply Auto-Expose Settings
         if settings:
+            self.current_rating = settings.get("rating", 0)
+            self.star_rating_widget.set_rating(self.current_rating)
             self._set_slider_value("val_exposure", settings.get("exposure", 0.0))
             self._set_slider_value("val_contrast", settings.get("contrast", 1.0))
             self._set_slider_value("val_whites", settings.get("whites", 1.0))

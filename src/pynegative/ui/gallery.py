@@ -2,6 +2,7 @@ from pathlib import Path
 from PySide6 import QtWidgets, QtGui, QtCore
 from .. import core as pynegative
 from .loaders import ThumbnailLoader
+from .widgets import StarRatingWidget, GalleryItemDelegate
 
 class GalleryWidget(QtWidgets.QWidget):
     imageSelected = QtCore.Signal(str) # Path
@@ -39,6 +40,18 @@ class GalleryWidget(QtWidgets.QWidget):
         self.btn_open_folder.clicked.connect(self.browse_folder)
         top_bar.addWidget(self.btn_open_folder)
         top_bar.addStretch()
+
+        # Filtering
+        top_bar.addWidget(QtWidgets.QLabel("Filter:"))
+        self.filter_combo = QtWidgets.QComboBox()
+        self.filter_combo.addItems(["Exact Match", "Less Than or Equal", "Greater Than or Equal"])
+        self.filter_combo.currentIndexChanged.connect(self._apply_filter)
+        top_bar.addWidget(self.filter_combo)
+
+        self.filter_rating_widget = StarRatingWidget()
+        self.filter_rating_widget.ratingChanged.connect(self._apply_filter)
+        top_bar.addWidget(self.filter_rating_widget)
+
         grid_layout.addLayout(top_bar)
 
         # Grid View
@@ -49,6 +62,7 @@ class GalleryWidget(QtWidgets.QWidget):
         self.list_widget.setResizeMode(QtWidgets.QListView.Adjust)
         self.list_widget.setSpacing(10)
         self.list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self.list_widget.setItemDelegate(GalleryItemDelegate(self.list_widget))
         grid_layout.addWidget(self.list_widget)
 
         self.stack.addWidget(self.grid_container)
@@ -110,12 +124,26 @@ class GalleryWidget(QtWidgets.QWidget):
         # Switch to grid view
         self.stack.setCurrentWidget(self.grid_container)
 
-        # Find raw files
         files = [f for f in self.current_folder.iterdir() if f.is_file() and f.suffix.lower() in pynegative.SUPPORTED_EXTS]
 
+        filter_mode = self.filter_combo.currentText()
+        filter_rating = self.filter_rating_widget.rating()
+
         for path in files:
+            sidecar_settings = pynegative.load_sidecar(path)
+            rating = sidecar_settings.get("rating", 0) if sidecar_settings else 0
+
+            if filter_rating > 0:
+                if filter_mode == "Exact Match" and rating != filter_rating:
+                    continue
+                if filter_mode == "Less Than or Equal" and rating > filter_rating:
+                    continue
+                if filter_mode == "Greater Than or Equal" and rating < filter_rating:
+                    continue
+
             item = QtWidgets.QListWidgetItem(path.name)
             item.setData(QtCore.Qt.UserRole, str(path))
+            item.setData(QtCore.Qt.UserRole + 1, rating)
             # Set placeholder icon
             item.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon))
             self.list_widget.addItem(item)
@@ -124,6 +152,10 @@ class GalleryWidget(QtWidgets.QWidget):
             loader = ThumbnailLoader(path)
             loader.signals.finished.connect(self._on_thumbnail_loaded)
             self.thread_pool.start(loader)
+
+    def _apply_filter(self):
+        if self.current_folder:
+            self.load_folder(self.current_folder)
 
     def _on_thumbnail_loaded(self, path, pixmap):
         # find the item with this path
@@ -137,3 +169,11 @@ class GalleryWidget(QtWidgets.QWidget):
     def _on_item_double_clicked(self, item):
         path = item.data(QtCore.Qt.UserRole)
         self.imageSelected.emit(path)
+
+    def update_rating_for_item(self, path, rating):
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if item.data(QtCore.Qt.UserRole) == path:
+                item.setData(QtCore.Qt.UserRole + 1, rating)
+                self.list_widget.update(self.list_widget.visualItemRect(item))
+                break
