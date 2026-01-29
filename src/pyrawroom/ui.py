@@ -341,7 +341,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.thread_pool.start(loader)
 
     def _on_raw_loaded(self, path, img_arr, settings):
-        if path != self.raw_path:
+        if Path(path) != self.raw_path:
             return # User switched images already
 
         if img_arr is None:
@@ -482,7 +482,7 @@ class EditorWidget(QtWidgets.QWidget):
     def _on_carousel_item_clicked(self, item):
         path = item.data(QtCore.Qt.UserRole)
         # Avoid reloading if same image
-        if path != self.raw_path:
+        if Path(path) != self.raw_path:
             self.load_image(path)
 
 
