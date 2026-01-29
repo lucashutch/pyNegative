@@ -109,14 +109,35 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_edit.setChecked(False)
 
     def switch_to_edit(self):
-        self.stack.setCurrentWidget(self.editor)
-        self.btn_gallery.setChecked(False)
-        self.btn_edit.setChecked(True)
+        # If editor already has an image, just switch
+        if self.editor.raw_path:
+            self.stack.setCurrentWidget(self.editor)
+            self.btn_gallery.setChecked(False)
+            self.btn_edit.setChecked(True)
+            return
+
+        # Editor is empty, try to populate it from gallery
+        current_item = self.gallery.list_widget.currentItem()
+        if current_item:
+            path_to_open = current_item.data(QtCore.Qt.UserRole)
+            self.open_editor(path_to_open)
+        else:
+            # No selection, try first item
+            image_list = self.gallery.get_current_image_list()
+            if image_list:
+                self.open_editor(image_list[0])
+            else:
+                # Gallery is empty, just switch to empty editor
+                self.stack.setCurrentWidget(self.editor)
+                self.btn_gallery.setChecked(False)
+                self.btn_edit.setChecked(True)
 
     def open_editor(self, path):
         image_list = self.gallery.get_current_image_list()
         self.editor.open(path, image_list=image_list)
-        self.switch_to_edit()
+        self.stack.setCurrentWidget(self.editor)
+        self.btn_gallery.setChecked(False)
+        self.btn_edit.setChecked(True)
 
     def open_single_file(self):
         extensions = ' '.join(['*'+e for e in pynegative.SUPPORTED_EXTS])
