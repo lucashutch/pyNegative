@@ -6,7 +6,7 @@ from PIL import Image, ImageQt
 
 from PySide6 import QtWidgets, QtGui, QtCore
 
-import pyrawroom # Assuming this module is available and contains the core logic
+from . import core as pyrawroom # Assuming this module is available and contains the core logic
 
 class PyRawEditorApp(QtWidgets.QMainWindow):
     def __init__(self):
@@ -31,7 +31,7 @@ class PyRawEditorApp(QtWidgets.QMainWindow):
         self.panel.setContentsMargins(10, 10, 10, 10) # padding
         self.panel.setFixedWidth(350)
         self.panel.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
-        
+
         self.panel_layout = QtWidgets.QVBoxLayout(self.panel)
         main_layout.addWidget(self.panel)
 
@@ -80,7 +80,7 @@ class PyRawEditorApp(QtWidgets.QMainWindow):
 
         self.panel_layout.addWidget(file_frame)
         self.panel_layout.addSpacing(10) # ttk.Separator equivalent
-        
+
     def _setup_tone_controls(self):
         self._add_separator()
         self.val_exposure = 0.0
@@ -105,7 +105,7 @@ class PyRawEditorApp(QtWidgets.QMainWindow):
         self.sharpen_checkbox.setChecked(self.var_sharpen_enabled)
         self.sharpen_checkbox.stateChanged.connect(lambda state: self._update_sharpen_state(state))
         self.panel_layout.addWidget(self.sharpen_checkbox)
-        
+
         self.val_radius = 2.0
         self.val_percent = 150
         self._add_slider("Sharpen Radius", 0.5, 5.0, self.val_radius, "val_radius", 0.01)
@@ -164,7 +164,7 @@ class PyRawEditorApp(QtWidgets.QMainWindow):
             self.request_update() # Request image update
 
         slider_widget.valueChanged.connect(_update_slider_display)
-        
+
         # Store references to widgets for potential later access
         setattr(self, f"{var_name}_slider", slider_widget)
         setattr(self, f"{var_name}_value_label", value_label)
@@ -245,7 +245,7 @@ class PyRawEditorApp(QtWidgets.QMainWindow):
             self._set_slider_value("val_blacks", settings.get("blacks", 0.0))
             self._set_slider_value("val_highlights", settings.get("highlights", 0.0))
             self._set_slider_value("val_shadows", settings.get("shadows", 0.0))
-            
+
             self.sharpen_checkbox.setChecked(settings.get("sharpen_enabled", False))
             self._set_slider_value("val_radius", settings.get("sharpen_radius", 2.0))
             self._set_slider_value("val_percent", settings.get("sharpen_percent", 150))
@@ -295,9 +295,9 @@ class PyRawEditorApp(QtWidgets.QMainWindow):
         if self.base_img_preview is None:
             self.canvas_label.clear()
             return
-            
+
         res_pil_img = self.process_image(self.base_img_preview)
-        
+
         # Convert PIL Image to QPixmap
         q_image = ImageQt.ImageQt(res_pil_img)
         pixmap = QtGui.QPixmap.fromImage(q_image)

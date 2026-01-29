@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyrawroom"
+version = "0.1.0"
+authors = [
+  { name="Lucas", email="lucas@example.com" },
+]
+description = "A simple RAW image processor using rawpy and Pillow"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "Pillow",
+    "pillow-heif",
+    "rawpy",
+    "PySide6",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[project.scripts]
+pyraw-batch = "pyrawroom.cli:main"
+pyraw-ui = "pyrawroom.ui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
