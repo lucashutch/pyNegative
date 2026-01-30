@@ -59,3 +59,11 @@ Track planned features and project goals.
 -   [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
 -   [ ] **Archival Export Preset**: Reduce storage footprint (e.g., 16-bit DNG or high-quality HEIF) while retaining latitude.
 -   [ ] **Batch Renaming**: Sequence-based renaming for folder exports.
+
+## Testing Improvement Areas
+
+Based on recent project growth, the following areas would benefit from expanded unit testing:
+
+1.  **Image Adjustment Logic (`src/pynegative/core.py`)**: Test core functions like `apply_tone_map` and `sharpen_image` with known inputs to assert that the output image data is mathematically correct. (Ease: Medium)
+2.  **Gallery Filtering Logic (`src/pynegative/ui/gallery.py`)**: Mock a file system with sidecars to test and assert that the gallery correctly filters images based on different rating criteria. (Ease: Hard)
+3.  **Editor Rendering and Throttling (`src/pynegative/ui/editor.py`)**: Test the asynchronous `QTimer`-based rendering loop to ensure updates are correctly throttled and processed, preventing UI lag. (Ease: Hardest)

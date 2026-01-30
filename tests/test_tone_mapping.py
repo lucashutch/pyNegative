@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
-"""Unit tests for pynegative.py"""
+"""Unit tests for tone mapping and auto-exposure functions in pynegative.core"""
 import pytest
 import numpy as np
-from PIL import Image
-import tempfile
-from pathlib import Path
-from unittest.mock import patch
 
 import pynegative
 
@@ -91,8 +87,7 @@ class TestApplyToneMap:
 
         # Oversaturate
         result, _ = pynegative.apply_tone_map(img, saturation=2.0)
-        # Manual check: lum + (img-lum)*2 = 0.26378 + (img-0.26378)*2
-        # R: 0.26378 + (0.5-0.26378)*2 = 0.26378 + 0.23622*2 = 0.73622
+        # Manual check: lum + (img-lum)*2 = 0.26378 + (0.5-0.26378)*2 = 0.26378 + 0.23622*2 = 0.73622
         expected_r = 0.73622
         assert result[0,0,0] == pytest.approx(expected_r)
 
@@ -135,98 +130,3 @@ class TestCalculateAutoExposure:
         normal_img = np.full((10, 10, 3), 0.18, dtype=np.float32)
         normal_settings = pynegative.calculate_auto_exposure(normal_img)
         assert settings["exposure"] < normal_settings["exposure"]
-
-
-class TestSharpening:
-    """Tests for image sharpening"""
-
-    def test_basic_sharpening(self):
-        """Test basic sharpening with typical parameters"""
-        # Create a simple PIL image
-        pil_img = Image.new('RGB', (10, 10), color=(128, 128, 128))
-
-        result = pynegative.sharpen_image(pil_img, radius=2.0, percent=100)
-
-        # Should return a PIL Image
-        assert isinstance(result, Image.Image)
-        assert result.size == pil_img.size
-        assert result.mode == pil_img.mode
-
-    def test_sharpening_with_floats(self):
-        """Regression test for TypeError when floats are passed to sharpen_image"""
-        pil_img = Image.new('RGB', (10, 10), color=(128, 128, 128))
-
-        # UI passes these as floats from division
-        try:
-            pynegative.sharpen_image(pil_img, radius=2.5, percent=150.0)
-        except TypeError as e:
-            pytest.fail(f"sharpen_image failed with floats: {e}")
-
-
-class TestSaveImage:
-    """Tests for the save_image function"""
-
-    def test_save_jpeg(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmpdir = Path(tmpdir)
-            pil_img = Image.new('RGB', (10, 10), color=(255, 0, 0))
-            output_path = tmpdir / "test.jpg"
-
-            pynegative.save_image(pil_img, output_path)
-            assert output_path.exists()
-
-    def test_save_heif_not_supported(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmpdir = Path(tmpdir)
-            pil_img = Image.new('RGB', (10, 10), color=(255, 0, 0))
-            output_path = tmpdir / "test.heic"
-
-            # Mock HEIF_SUPPORTED to False
-            with patch.object(pynegative.core, 'HEIF_SUPPORTED', False):
-                with pytest.raises(RuntimeError, match="HEIF requested but pillow-heif not installed"):
-                    pynegative.save_image(pil_img, output_path)
-
-class TestSidecars:
-    """Tests for sidecar file logic"""
-
-    def test_sidecar_path(self):
-        raw_path = Path("/tmp/test.dng")
-        expected = Path("/tmp/.pyNegative/test.dng.json")
-        assert pynegative.core.get_sidecar_path(raw_path) == expected
-
-    def test_save_load_sidecar(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmpdir = Path(tmpdir)
-            raw_path = tmpdir / "test.dng"
-            settings = {"exposure": 1.5, "blacks": 0.05}
-
-            pynegative.save_sidecar(raw_path, settings)
-
-            # Check file exists
-            sidecar_path = pynegative.core.get_sidecar_path(raw_path)
-            assert sidecar_path.exists()
-
-            # Load and verify
-            loaded = pynegative.load_sidecar(raw_path)
-            assert loaded == settings
-
-    def test_rename_sidecar(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmpdir = Path(tmpdir)
-            old_raw = tmpdir / "old.dng"
-            new_raw = tmpdir / "new.dng"
-            settings = {"exposure": 1.5}
-
-            pynegative.save_sidecar(old_raw, settings)
-            old_sidecar = pynegative.core.get_sidecar_path(old_raw)
-            assert old_sidecar.exists()
-
-            pynegative.core.rename_sidecar(old_raw, new_raw)
-
-            new_sidecar = pynegative.core.get_sidecar_path(new_raw)
-            assert new_sidecar.exists()
-            assert not old_sidecar.exists()
-
-            # Verify data survived
-            loaded = pynegative.load_sidecar(new_raw)
-            assert loaded == settings

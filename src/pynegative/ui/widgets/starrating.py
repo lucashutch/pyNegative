@@ -67,14 +67,15 @@ class StarRatingWidget(QtWidgets.QWidget):
         if not self.isEnabled():
             return
 
-        for i in range(5):
-            star_width = self.star_empty_pixmap.width()
-            if event.x() >= i * (star_width + 4) and event.x() <= (i + 1) * (star_width + 4):
-                self._hover_rating = i + 1
-                self.update()
-                return
-
-        self._hover_rating = -1
+        star_full_width = self.star_empty_pixmap.width() + 4 # Star width + spacing
+        
+        # Calculate which star is being hovered over
+        # Check if event.x() is within the bounds of the 5 stars
+        if 0 <= event.x() < (5 * star_full_width):
+            hovered_star_index = int(event.x() / star_full_width)
+            self._hover_rating = hovered_star_index + 1
+        else:
+            self._hover_rating = -1 # Outside the star area
         self.update()
 
     def mousePressEvent(self, event):
