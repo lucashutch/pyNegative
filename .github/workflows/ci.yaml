@@ -1,4 +1,4 @@
-name: Python CI with uv
+name: CI
 on:
   push:
     branches: [ main ]
@@ -6,22 +6,29 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-test:
+  test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.12", "3.14"]
+
     steps:
     - uses: actions/checkout@v4
-    - name: Set up Python 3.8
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.8' # Based on pyproject.toml requires-python
-    - name: Install uv
-      run: pip install uv
-    - name: Install dependencies
-      run: uv sync --extra test
-    - name: Install xvfb for headless GUI testing
+
+    - name: Install xvfb and GUI libs
       run: |
         sudo apt-get update
         sudo apt-get install -y xvfb libglx-mesa0 libegl1-mesa-dev libxkbcommon0
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: uv sync --extra test
+
     - name: Run tests
       run: uv run xvfb-run -a pytest -v
       env:
