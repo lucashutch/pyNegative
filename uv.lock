@@ -855,7 +855,10 @@ dependencies = [
     { name = "rawpy", version = "0.26.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
+lint = [
+    { name = "ruff" },
+]
 test = [
     { name = "pytest", version = "8.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
@@ -864,25 +867,21 @@ test = [
     { name = "pytest-qt", version = "4.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
 ]
 
-[package.dev-dependencies]
-lint = [
-    { name = "ruff" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "numpy" },
     { name = "pillow" },
     { name = "pillow-heif" },
     { name = "pyside6" },
-    { name = "pytest", marker = "extra == 'test'" },
-    { name = "pytest-qt", marker = "extra == 'test'" },
     { name = "rawpy" },
 ]
-provides-extras = ["test"]
 
 [package.metadata.requires-dev]
 lint = [{ name = "ruff" }]
+test = [
+    { name = "pytest" },
+    { name = "pytest-qt" },
+]
 
 [[package]]
 name = "pyside6"
