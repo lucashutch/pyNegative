@@ -192,7 +192,14 @@ class EditorWidget(QtWidgets.QWidget):
             flipped=True,
         )
         self._add_slider(
-            "Blacks", -0.2, 0.2, self.val_blacks, "val_blacks", 0.001, self.tone_section
+            "Blacks",
+            -0.2,
+            0.2,
+            self.val_blacks,
+            "val_blacks",
+            0.001,
+            self.tone_section,
+            flipped=True,
         )
 
         # --- Color Section ---
