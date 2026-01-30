@@ -1,27 +1,28 @@
-name: CI
-on: [push]
+name: Python CI with uv
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  test:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.12'
-        cache: 'pip'
-
+        python-version: '3.8' # Based on pyproject.toml requires-python
+    - name: Install uv
+      run: pip install uv
     - name: Install dependencies
+      run: uv sync --extra test
+    - name: Install xvfb for headless GUI testing
       run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[test]"
-        # Install xvfb for headless GUI testing
         sudo apt-get update
         sudo apt-get install -y xvfb libglx-mesa0 libegl1-mesa-dev libxkbcommon0
-
     - name: Run tests
-      run: xvfb-run -a pytest -v
+      run: uv run xvfb-run -a pytest -v
       env:
         QT_QPA_PLATFORM: offscreen

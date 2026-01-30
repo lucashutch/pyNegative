@@ -4,16 +4,30 @@ A modern, cross-platform desktop application for photographers, offering a fast 
 
 ## Installation
 
+### Get the code
 ```bash
-# Clone the repository
 git clone https://github.com/lucashutch/pyNegative.git
 cd pyNegative
+```
 
+### Using `uv` (Preffererd)
+uv automatically creates a virtual environment and installs the dependencies.
+```bash
+# Install in editable mode
+uv sync
+
+# Run the UI
+uv run pyneg-ui
+```
+
+### Using `pip` (Legacy)
+This method is not recommended as it does not create a virtual environment. You can use the default python environment, but it is not recommended. especially on newer OSs.
+```bash
 # Install in editable mode
 pip install -e .
 
-# Or install with test dependencies
-pip install -e ".[test]"
+# Run the UI
+pyneg-ui
 ```
 
 ## Features
@@ -40,9 +54,14 @@ A graphical user interface (GUI) for interactively editing RAW files.
 
 ## Development
 
+Install test dependancies:
+```bash
+uv sync --extra test
+```
+
 Run tests with:
 ```bash
-pytest
+uv run pytest
 ```
 
 ## Roadmap / TODO
