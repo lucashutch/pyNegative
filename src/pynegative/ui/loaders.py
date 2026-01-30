@@ -1,11 +1,13 @@
 from pathlib import Path
-from PIL import Image, ImageQt
+from PIL import ImageQt
 from PySide6 import QtGui, QtCore
 from .. import core as pynegative
+
 
 # ----------------- Async Thumbnail Loader -----------------
 class ThumbnailLoaderSignals(QtCore.QObject):
     finished = QtCore.Signal(str, object)  # path, QPixmap
+
 
 class ThumbnailLoader(QtCore.QRunnable):
     def __init__(self, path, size=200):
@@ -32,7 +34,8 @@ class ThumbnailLoader(QtCore.QRunnable):
 
 # ----------------- Gallery Widget -----------------
 class RawLoaderSignals(QtCore.QObject):
-    finished = QtCore.Signal(str, object, object) # path, numpy array, settings_dict
+    finished = QtCore.Signal(str, object, object)  # path, numpy array, settings_dict
+
 
 class RawLoader(QtCore.QRunnable):
     def __init__(self, path):

@@ -1,5 +1,4 @@
 from PySide6 import QtWidgets, QtGui, QtCore
-from PySide6.QtCore import Qt
 
 
 class StarRatingWidget(QtWidgets.QWidget):
@@ -19,7 +18,7 @@ class StarRatingWidget(QtWidgets.QWidget):
         pixmap.fill(QtCore.Qt.transparent)
         painter = QtGui.QPainter(pixmap)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        
+
         font = self.font()
         font.setPointSize(20)
         painter.setFont(font)
@@ -28,9 +27,9 @@ class StarRatingWidget(QtWidgets.QWidget):
             painter.setPen(QtGui.QColor("#f0c419"))
             painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "★")
         else:
-            painter.setPen(QtGui.QColor("#808080")) # gray
+            painter.setPen(QtGui.QColor("#808080"))  # gray
             painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "☆")
-        
+
         painter.end()
         return pixmap
 
@@ -44,7 +43,9 @@ class StarRatingWidget(QtWidgets.QWidget):
         return self._rating
 
     def sizeHint(self):
-        return QtCore.QSize(self.star_empty_pixmap.width() * 5 + 4 * 4, self.star_empty_pixmap.height())
+        return QtCore.QSize(
+            self.star_empty_pixmap.width() * 5 + 4 * 4, self.star_empty_pixmap.height()
+        )
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
@@ -67,15 +68,15 @@ class StarRatingWidget(QtWidgets.QWidget):
         if not self.isEnabled():
             return
 
-        star_full_width = self.star_empty_pixmap.width() + 4 # Star width + spacing
-        
+        star_full_width = self.star_empty_pixmap.width() + 4  # Star width + spacing
+
         # Calculate which star is being hovered over
         # Check if event.x() is within the bounds of the 5 stars
         if 0 <= event.x() < (5 * star_full_width):
             hovered_star_index = int(event.x() / star_full_width)
             self._hover_rating = hovered_star_index + 1
         else:
-            self._hover_rating = -1 # Outside the star area
+            self._hover_rating = -1  # Outside the star area
         self.update()
 
     def mousePressEvent(self, event):
