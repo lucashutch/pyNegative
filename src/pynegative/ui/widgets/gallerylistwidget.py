@@ -1,4 +1,5 @@
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets
+
 
 class GalleryListWidget(QtWidgets.QListWidget):
     def __init__(self, parent=None):

@@ -1,4 +1,3 @@
-from . import core
 from .core import (
     apply_tone_map,
     open_raw,
@@ -10,7 +9,7 @@ from .core import (
     save_sidecar,
     load_sidecar,
     SUPPORTED_EXTS,
-    HEIF_SUPPORTED
+    HEIF_SUPPORTED,
 )
 
 __all__ = [
@@ -24,5 +23,5 @@ __all__ = [
     "save_sidecar",
     "load_sidecar",
     "SUPPORTED_EXTS",
-    "HEIF_SUPPORTED"
+    "HEIF_SUPPORTED",
 ]

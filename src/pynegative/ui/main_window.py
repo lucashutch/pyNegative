@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 from PySide6 import QtWidgets, QtGui, QtCore
 
@@ -6,6 +5,7 @@ from .. import core as pynegative
 from .gallery import GalleryWidget
 from .editor import EditorWidget
 from .widgets import StarRatingWidget
+
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
@@ -63,7 +63,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Now MainWindow is in ui/main_window.py, so it's reaching up.
         style_path = Path(__file__).parent.parent / "styles.qss"
         try:
-            with open(style_path, 'r') as f:
+            with open(style_path, "r") as f:
                 self.setStyleSheet(f.read())
         except FileNotFoundError:
             print(f"Warning: Stylesheet not found at {style_path}")
@@ -93,7 +93,7 @@ class MainWindow(QtWidgets.QMainWindow):
         filter_layout = QtWidgets.QHBoxLayout()
         filter_layout.setContentsMargins(0, 5, 0, 5)
         filter_layout.setAlignment(QtCore.Qt.AlignVCenter)
-        
+
         filter_label = QtWidgets.QLabel("Filter:")
         filter_layout.addWidget(filter_label)
 
@@ -101,11 +101,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.filter_combo.addItems(["Match", "Greater", "Less"])
         self.filter_combo.setCurrentText("Greater")
         self.filter_combo.setMaximumWidth(120)
-        self.filter_combo.currentIndexChanged.connect(self.gallery.apply_filter_from_main)
+        self.filter_combo.currentIndexChanged.connect(
+            self.gallery.apply_filter_from_main
+        )
         filter_layout.addWidget(self.filter_combo)
 
         self.filter_rating_widget = StarRatingWidget()
-        self.filter_rating_widget.ratingChanged.connect(self.gallery.apply_filter_from_main)
+        self.filter_rating_widget.ratingChanged.connect(
+            self.gallery.apply_filter_from_main
+        )
         filter_layout.addWidget(self.filter_rating_widget)
         bar_layout.addLayout(filter_layout)
 
@@ -113,7 +117,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_open_folder.setObjectName("OpenFolderButton")
         self.btn_open_folder.clicked.connect(self.gallery.browse_folder)
         bar_layout.addWidget(self.btn_open_folder)
-
 
         parent_layout.addWidget(bar_frame)
 
@@ -166,8 +169,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_edit.setChecked(True)
 
     def open_single_file(self):
-        extensions = ' '.join(['*'+e for e in pynegative.SUPPORTED_EXTS])
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open RAW", "", f"RAW ({extensions})")
+        extensions = " ".join(["*" + e for e in pynegative.SUPPORTED_EXTS])
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Open RAW", "", f"RAW ({extensions})"
+        )
         if path:
             self.open_editor(path)
 

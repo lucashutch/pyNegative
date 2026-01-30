@@ -1,5 +1,4 @@
 from PySide6 import QtWidgets, QtGui, QtCore
-from PySide6.QtCore import Qt
 
 
 class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
@@ -27,9 +26,12 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         super().paint(painter, option, index)
-        
+
         list_widget = self.parent()
-        is_hovered = list_widget.get_hovered_item() is not None and list_widget.get_hovered_item().text() == index.data()
+        is_hovered = (
+            list_widget.get_hovered_item() is not None
+            and list_widget.get_hovered_item().text() == index.data()
+        )
 
         rating = index.data(QtCore.Qt.UserRole + 1)
         if rating is None:
@@ -41,14 +43,17 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
                 star_icon = self.star_empty
                 if i < rating:
                     star_icon = self.star_filled
-                
+
                 x = option.rect.x() + 5 + (i * (self.star_empty.width() + 2))
                 painter.drawPixmap(x, y, star_icon)
 
     def editorEvent(self, event, model, option, index):
         if event.type() == QtCore.QEvent.MouseButtonPress:
             list_widget = self.parent()
-            is_hovered = list_widget.get_hovered_item() is not None and list_widget.get_hovered_item().text() == index.data()
+            is_hovered = (
+                list_widget.get_hovered_item() is not None
+                and list_widget.get_hovered_item().text() == index.data()
+            )
 
             if is_hovered:
                 # Check if click is on the stars
@@ -57,14 +62,14 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
                 star_width = self.star_empty.width()
                 star_height = self.star_empty.height()
 
-                if (event.pos().y() >= y and event.pos().y() <= y + star_height):
+                if event.pos().y() >= y and event.pos().y() <= y + star_height:
                     for i in range(5):
                         x = x_start + (i * (star_width + 2))
                         if event.pos().x() >= x and event.pos().x() <= x + star_width:
                             new_rating = i + 1
                             current_rating = index.data(QtCore.Qt.UserRole + 1)
                             if current_rating == new_rating:
-                                new_rating = 0 # Allow clearing
+                                new_rating = 0  # Allow clearing
                             model.setData(index, new_rating, QtCore.Qt.UserRole + 1)
                             return True
 
