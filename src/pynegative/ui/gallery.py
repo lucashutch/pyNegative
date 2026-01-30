@@ -2,8 +2,8 @@ from pathlib import Path
 from PySide6 import QtWidgets, QtGui, QtCore
 from .. import core as pynegative
 from .loaders import ThumbnailLoader
-from .widgets import StarRatingWidget, GalleryItemDelegate, GalleryListWidget
-import pynegative
+from .widgets import GalleryItemDelegate, GalleryListWidget
+
 
 class GalleryWidget(QtWidgets.QWidget):
     imageSelected = QtCore.Signal(str)
@@ -97,7 +97,9 @@ class GalleryWidget(QtWidgets.QWidget):
         if self.current_folder and self.current_folder.exists():
             start_dir = str(self.current_folder)
 
-        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Open Folder", start_dir)
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Open Folder", start_dir
+        )
         if folder:
             self.load_folder(folder)
 
@@ -111,7 +113,11 @@ class GalleryWidget(QtWidgets.QWidget):
         # Switch to grid view
         self.stack.setCurrentWidget(self.grid_container)
 
-        files = [f for f in self.current_folder.iterdir() if f.is_file() and f.suffix.lower() in pynegative.SUPPORTED_EXTS]
+        files = [
+            f
+            for f in self.current_folder.iterdir()
+            if f.is_file() and f.suffix.lower() in pynegative.SUPPORTED_EXTS
+        ]
 
         # The filter widgets are now in MainWindow, so we need to get the values from there.
         # This is a bit of a hack. A better way would be to pass the filter values
@@ -169,16 +175,16 @@ class GalleryWidget(QtWidgets.QWidget):
     def _on_rating_changed(self, top_left_index, bottom_right_index):
         if top_left_index != bottom_right_index:
             return
-        
+
         item = self.list_widget.itemFromIndex(top_left_index)
         if item:
             path_str = item.data(QtCore.Qt.UserRole)
             rating = item.data(QtCore.Qt.UserRole + 1)
-            
+
             settings = pynegative.load_sidecar(path_str) or {}
-            settings['rating'] = rating
+            settings["rating"] = rating
             pynegative.save_sidecar(path_str, settings)
-            
+
             self.ratingChanged.emit(path_str, rating)
 
     def get_current_image_list(self):

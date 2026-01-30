@@ -41,3 +41,23 @@ jobs:
       run: uv run xvfb-run -a pytest -v
       env:
         QT_QPA_PLATFORM: offscreen
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+        python-version: "3.12"
+
+    - name: Install lint dependencies
+      run: uv sync --extra lint
+
+    - name: Run ruff check
+      run: uv run ruff check .
+
+    - name: Run ruff format check
+      run: uv run ruff format . --check

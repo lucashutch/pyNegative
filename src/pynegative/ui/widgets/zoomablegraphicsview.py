@@ -1,5 +1,6 @@
-from PySide6 import QtWidgets, QtGui, QtCore
+from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal
+
 
 class ZoomableGraphicsView(QtWidgets.QGraphicsView):
     zoomChanged = Signal(float)
@@ -40,7 +41,9 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         if not self._is_fitting:
             self.zoomChanged.emit(self._current_zoom)
 
-    def set_pixmaps(self, bg_pix, full_w, full_h, roi_pix=None, roi_x=0, roi_y=0, roi_w=0, roi_h=0):
+    def set_pixmaps(
+        self, bg_pix, full_w, full_h, roi_pix=None, roi_x=0, roi_y=0, roi_w=0, roi_h=0
+    ):
         """Unified update for both layers to ensure alignment."""
         # 1. Update Background
         self._bg_item.setPixmap(bg_pix)
@@ -69,7 +72,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
     def reset_zoom(self):
         if self._bg_item.pixmap().isNull() and self._scene.sceneRect().isEmpty():
-             return
+            return
         self.fitInView(self._scene.sceneRect(), Qt.KeepAspectRatio)
         self._current_zoom = self.transform().m11()
         self._is_fitting = True

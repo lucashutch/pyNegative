@@ -25,6 +25,10 @@ test = [
     "pytest-qt",
 ]
 
+lint = [
+    "ruff",
+]
+
 [project.scripts]
 pyneg-ui = "pynegative.ui:main"
 

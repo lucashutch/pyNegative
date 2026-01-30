@@ -3,11 +3,15 @@ import numpy as np
 from pathlib import Path
 import json
 import time
+import rawpy
+from PIL import Image, ImageFilter
+from functools import lru_cache
 
 SUPPORTED_EXTS = (".cr3", ".CR3", ".cr2", ".CR2", ".dng", ".DNG")
 
 try:
     import pillow_heif
+
     pillow_heif.register_heif_opener()
     HEIF_SUPPORTED = True
 except ImportError:
@@ -15,11 +19,20 @@ except ImportError:
 
 
 # ---------------- Tone Mapping ----------------
-def apply_tone_map(img, exposure=0.0, contrast=1.0, blacks=0.0, whites=1.0, shadows=0.0, highlights=0.0, saturation=1.0):
+def apply_tone_map(
+    img,
+    exposure=0.0,
+    contrast=1.0,
+    blacks=0.0,
+    whites=1.0,
+    shadows=0.0,
+    highlights=0.0,
+    saturation=1.0,
+):
     """
     Applies Exposure -> Levels -> Tone EQ -> Saturation -> Base Curve
     """
-    img = img.copy() # Ensure we don't modify the input array in-place
+    img = img.copy()  # Ensure we don't modify the input array in-place
     total_pixels = img.size
 
     # 1. Exposure (2^stops)
@@ -33,33 +46,33 @@ def apply_tone_map(img, exposure=0.0, contrast=1.0, blacks=0.0, whites=1.0, shad
     # 2. Levels (Blacks & Whites)
     if blacks != 0.0 or whites != 1.0:
         denom = whites - blacks
-        if abs(denom) < 1e-6: denom = 1e-6
+        if abs(denom) < 1e-6:
+            denom = 1e-6
         img = (img - blacks) / denom
 
     # 3. Tone EQ (Shadows & Highlights)
     if shadows != 0.0 or highlights != 0.0:
-        lum = 0.2126 * img[:,:,0] + 0.7152 * img[:,:,1] + 0.0722 * img[:,:,2]
+        lum = 0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
         lum = np.clip(lum, 0, 1)
-        lum = lum[:,:,np.newaxis]
+        lum = lum[:, :, np.newaxis]
 
         if shadows != 0.0:
             s_mask = (1.0 - lum) ** 2
             img += shadows * s_mask * img
 
         if highlights != 0.0:
-            h_mask = lum ** 2
+            h_mask = lum**2
             img += highlights * h_mask * (1.0 - img)
 
     # 4. Saturation
     if saturation != 1.0:
-        lum = 0.2126 * img[:,:,0] + 0.7152 * img[:,:,1] + 0.0722 * img[:,:,2]
-        lum = lum[:,:,np.newaxis]
+        lum = 0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
+        lum = lum[:, :, np.newaxis]
         img = lum + (img - lum) * saturation
 
     # 5. Base Curve (Sigmoid for "Punch")
     # TBD: Implementation of cosmetic contrast curves/S-curves.
     # For now, relying on saturation + exposure boost + contrast slider.
-
 
     # Clip stats for reporting
     clipped_shadows = np.sum(img < 0.0)
@@ -75,13 +88,14 @@ def apply_tone_map(img, exposure=0.0, contrast=1.0, blacks=0.0, whites=1.0, shad
 
     return img, stats
 
+
 def calculate_auto_exposure(img):
     """
     Analyzes image histogram to determine auto-exposure and contrast settings.
     Returns a dict with recommended {exposure, blacks, whites}.
     """
     # 1. Calculate luminance
-    lum = 0.2126 * img[:,:,0] + 0.7152 * img[:,:,1] + 0.0722 * img[:,:,2]
+    lum = 0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
 
     # Baseline for "Standard Look"
     # Most cameras underexpose the RAW data by ~1 stop to protect highlights.
@@ -92,14 +106,14 @@ def calculate_auto_exposure(img):
     avg_lum = np.mean(lum)
 
     # If image is super bright (High Key), reduce the base boost
-    if avg_lum > 0.6: # Relaxed threshold for high key
+    if avg_lum > 0.6:  # Relaxed threshold for high key
         base_exposure = 0.5
     elif avg_lum > 0.3:
-        base_exposure = 1.0 # Aggressive boost even for mid-tones
+        base_exposure = 1.0  # Aggressive boost even for mid-tones
 
     # Standard Contrast (S-Curve simulation via Levels)
     # We pull blacks down and push whites up slightly to create "Pop"
-    base_blacks = 0.08 # Very aggressive black crush for high contrast
+    base_blacks = 0.08  # Very aggressive black crush for high contrast
     base_whites = 0.92
 
     return {
@@ -108,12 +122,9 @@ def calculate_auto_exposure(img):
         "whites": float(base_whites),
         "highlights": 0.0,
         "shadows": 0.0,
-        "saturation": 1.10 # 10% Saturation boost (Standard Profile)
+        "saturation": 1.10,  # 10% Saturation boost (Standard Profile)
     }
 
-import rawpy
-from PIL import Image, ImageFilter
-from functools import lru_cache
 
 @lru_cache(maxsize=4)
 def open_raw(path, half_size=False):
@@ -126,12 +137,10 @@ def open_raw(path, half_size=False):
     path = str(path)  # rawpy requires str
     with rawpy.imread(path) as raw:
         rgb = raw.postprocess(
-            use_camera_wb=True,
-            half_size=half_size,
-            no_auto_bright=False,
-            output_bps=8
+            use_camera_wb=True, half_size=half_size, no_auto_bright=False, output_bps=8
         )
     return rgb.astype(np.float32) / 255.0
+
 
 def extract_thumbnail(path):
     """
@@ -150,6 +159,7 @@ def extract_thumbnail(path):
             # If we found a JPEG thumbnail
             if thumb and thumb.format == rawpy.ThumbFormat.JPEG:
                 from io import BytesIO
+
                 return Image.open(BytesIO(thumb.data))
 
             # Fallback: fast postprocess (half_size=True is very fast)
@@ -157,7 +167,7 @@ def extract_thumbnail(path):
                 use_camera_wb=True,
                 half_size=True,  # 1/4 resolution
                 no_auto_bright=True,
-                output_bps=8
+                output_bps=8,
             )
             return Image.fromarray(rgb)
 
@@ -165,23 +175,28 @@ def extract_thumbnail(path):
         print(f"Error extracting thumbnail for {path}: {e}")
         return None
 
+
 def sharpen_image(pil_img, radius, percent):
     return pil_img.filter(
         ImageFilter.UnsharpMask(radius=float(radius), percent=int(percent))
     )
 
+
 def de_noise_image(pil_img, radius):
     """Simple de-noise using Median filter. Size must be odd >= 3."""
     size = int(radius)
     if size < 3:
-        if radius > 0: size = 3
-        else: return pil_img
+        if radius > 0:
+            size = 3
+        else:
+            return pil_img
 
     # Ensure size is odd
     if size % 2 == 0:
         size += 1
 
     return pil_img.filter(ImageFilter.MedianFilter(size=size))
+
 
 def save_image(pil_img, output_path, quality=95):
     output_path = Path(output_path)
@@ -199,6 +214,7 @@ def save_image(pil_img, output_path, quality=95):
 # ---------------- Sidecar Files ----------------
 SIDECAR_DIR = ".pyNegative"
 
+
 def get_sidecar_path(raw_path):
     """
     Returns the Path object to the sidecar JSON file for a given RAW file.
@@ -206,6 +222,7 @@ def get_sidecar_path(raw_path):
     """
     raw_path = Path(raw_path)
     return raw_path.parent / SIDECAR_DIR / f"{raw_path.name}.json"
+
 
 def save_sidecar(raw_path, settings):
     """
@@ -222,11 +239,12 @@ def save_sidecar(raw_path, settings):
         "version": "1.0",
         "last_modified": time.time(),
         "raw_path": str(raw_path),
-        "settings": settings
+        "settings": settings,
     }
 
-    with open(sidecar_path, 'w') as f:
+    with open(sidecar_path, "w") as f:
         json.dump(data, f, indent=4)
+
 
 def load_sidecar(raw_path):
     """
@@ -238,7 +256,7 @@ def load_sidecar(raw_path):
         return None
 
     try:
-        with open(sidecar_path, 'r') as f:
+        with open(sidecar_path, "r") as f:
             data = json.load(f)
             settings = data.get("settings")
             if settings:
@@ -248,6 +266,7 @@ def load_sidecar(raw_path):
     except Exception as e:
         print(f"Error loading sidecar {sidecar_path}: {e}")
         return None
+
 
 def rename_sidecar(old_raw_path, new_raw_path):
     """
