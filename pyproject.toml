@@ -19,15 +19,14 @@ dependencies = [
     "PySide6",
 ]
 
-[project.optional-dependencies]
-test = [
-    "pytest",
-    "pytest-qt",
-]
-
 [dependency-groups]
 lint = [
     "ruff",
+]
+
+test = [
+    "pytest",
+    "pytest-qt",
 ]
 
 [project.scripts]
