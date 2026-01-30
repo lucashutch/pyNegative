@@ -1,7 +1,9 @@
 from PySide6 import QtWidgets
 
+
 class CollapsibleSection(QtWidgets.QWidget):
     """A collapsible section with a header and a content area."""
+
     def __init__(self, title, expanded=True, parent=None):
         super().__init__(parent)
         self.layout = QtWidgets.QVBoxLayout(self)

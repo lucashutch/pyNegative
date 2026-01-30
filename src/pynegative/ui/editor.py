@@ -6,7 +6,15 @@ from PySide6.QtCore import Qt
 
 from .. import core as pynegative
 from .loaders import ThumbnailLoader, RawLoader
-from .widgets import HorizontalListWidget, CollapsibleSection, ResetableSlider, ZoomableGraphicsView, ZoomControls, StarRatingWidget
+from .widgets import (
+    HorizontalListWidget,
+    CollapsibleSection,
+    ResetableSlider,
+    ZoomableGraphicsView,
+    ZoomControls,
+    StarRatingWidget,
+)
+
 
 class EditorWidget(QtWidgets.QWidget):
     ratingChanged = QtCore.Signal(str, int)
@@ -17,7 +25,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.current_folder = None
         self.raw_path = None
         self.base_img_full = None  # The High-Res Proxy (e.g. 4000px)
-        self._base_img_uint8 = None # Cached uint8 version for resizing
+        self._base_img_uint8 = None  # Cached uint8 version for resizing
         self.current_qpixmap = None
         self.current_rating = 0
 
@@ -50,7 +58,9 @@ class EditorWidget(QtWidgets.QWidget):
         # --- Canvas (Right Side) ---
         self.canvas_frame = QtWidgets.QFrame()
         self.canvas_frame.setObjectName("CanvasFrame")
-        self.canvas_frame.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        self.canvas_frame.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        )
         main_layout.addWidget(self.canvas_frame)
 
         # View replaced with ZoomableGraphicsView
@@ -69,14 +79,16 @@ class EditorWidget(QtWidgets.QWidget):
         # Trigger ROI re-render when zoom or pan changes
         self.view.zoomChanged.connect(self.request_update)
 
-        self.canvas_container.addWidget(self.zoom_ctrl, 0, 0, Qt.AlignBottom | Qt.AlignRight)
+        self.canvas_container.addWidget(
+            self.zoom_ctrl, 0, 0, Qt.AlignBottom | Qt.AlignRight
+        )
         self.zoom_ctrl.setContentsMargins(0, 0, 20, 20)
 
         # Carousel (Bottom)
         self.carousel = HorizontalListWidget()
         self.carousel.setObjectName("Carousel")
         self.carousel.setViewMode(QtWidgets.QListView.IconMode)
-        self.carousel.setFlow(QtWidgets.QListView.LeftToRight) # Horizontal
+        self.carousel.setFlow(QtWidgets.QListView.LeftToRight)  # Horizontal
         self.carousel.setWrapping(False)
         self.carousel.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.carousel.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
@@ -91,9 +103,9 @@ class EditorWidget(QtWidgets.QWidget):
     def resizeEvent(self, event):
         # Auto-fit image if in fitting mode
         # Using hasattr check to be absolutely safe against racing AttributeErrors
-        if hasattr(self, 'base_img_full') and self.base_img_full is not None:
-            if getattr(self.view, '_is_fitting', False):
-                 self.view.reset_zoom()
+        if hasattr(self, "base_img_full") and self.base_img_full is not None:
+            if getattr(self.view, "_is_fitting", False):
+                self.view.reset_zoom()
         super().resizeEvent(event)
 
     def _setup_controls(self):
@@ -133,19 +145,70 @@ class EditorWidget(QtWidgets.QWidget):
         self.val_highlights = 0.0
         self.val_shadows = 0.0
 
-        self._add_slider("Exposure", -4.0, 4.0, self.val_exposure, "val_exposure", 0.01, self.tone_section)
-        self._add_slider("Contrast", 0.5, 2.0, self.val_contrast, "val_contrast", 0.01, self.tone_section)
-        self._add_slider("Highlights", -1.0, 1.0, self.val_highlights, "val_highlights", 0.01, self.tone_section)
-        self._add_slider("Shadows", -1.0, 1.0, self.val_shadows, "val_shadows", 0.01, self.tone_section)
-        self._add_slider("Whites", 0.5, 1.5, self.val_whites, "val_whites", 0.01, self.tone_section, flipped=True)
-        self._add_slider("Blacks", -0.2, 0.2, self.val_blacks, "val_blacks", 0.001, self.tone_section)
+        self._add_slider(
+            "Exposure",
+            -4.0,
+            4.0,
+            self.val_exposure,
+            "val_exposure",
+            0.01,
+            self.tone_section,
+        )
+        self._add_slider(
+            "Contrast",
+            0.5,
+            2.0,
+            self.val_contrast,
+            "val_contrast",
+            0.01,
+            self.tone_section,
+        )
+        self._add_slider(
+            "Highlights",
+            -1.0,
+            1.0,
+            self.val_highlights,
+            "val_highlights",
+            0.01,
+            self.tone_section,
+        )
+        self._add_slider(
+            "Shadows",
+            -1.0,
+            1.0,
+            self.val_shadows,
+            "val_shadows",
+            0.01,
+            self.tone_section,
+        )
+        self._add_slider(
+            "Whites",
+            0.5,
+            1.5,
+            self.val_whites,
+            "val_whites",
+            0.01,
+            self.tone_section,
+            flipped=True,
+        )
+        self._add_slider(
+            "Blacks", -0.2, 0.2, self.val_blacks, "val_blacks", 0.001, self.tone_section
+        )
 
         # --- Color Section ---
         self.color_section = CollapsibleSection("COLOR", expanded=False)
         self.controls_layout.addWidget(self.color_section)
 
         self.val_saturation = 1.0
-        self._add_slider("Saturation", 0.0, 2.0, self.val_saturation, "val_saturation", 0.01, self.color_section)
+        self._add_slider(
+            "Saturation",
+            0.0,
+            2.0,
+            self.val_saturation,
+            "val_saturation",
+            0.01,
+            self.color_section,
+        )
 
         # --- Details Section ---
         self.details_section = CollapsibleSection("DETAILS", expanded=False)
@@ -159,9 +222,27 @@ class EditorWidget(QtWidgets.QWidget):
         self.val_radius = 2.0
         self.val_percent = 150
         self.val_denoise = 0
-        self._add_slider("Sharpen Radius", 0.5, 5.0, self.val_radius, "val_radius", 0.01, self.details_section)
-        self._add_slider("Sharpen Amount", 0, 300, self.val_percent, "val_percent", 1, self.details_section)
-        self._add_slider("De-noise", 0, 5, self.val_denoise, "val_denoise", 1, self.details_section)
+        self._add_slider(
+            "Sharpen Radius",
+            0.5,
+            5.0,
+            self.val_radius,
+            "val_radius",
+            0.01,
+            self.details_section,
+        )
+        self._add_slider(
+            "Sharpen Amount",
+            0,
+            300,
+            self.val_percent,
+            "val_percent",
+            1,
+            self.details_section,
+        )
+        self._add_slider(
+            "De-noise", 0, 5, self.val_denoise, "val_denoise", 1, self.details_section
+        )
 
         # Save Button
         self.controls_layout.addSpacing(10)
@@ -173,7 +254,17 @@ class EditorWidget(QtWidgets.QWidget):
 
         self.controls_layout.addStretch()
 
-    def _add_slider(self, label_text, min_val, max_val, default, var_name, step_size, section=None, flipped=False):
+    def _add_slider(
+        self,
+        label_text,
+        min_val,
+        max_val,
+        default,
+        var_name,
+        step_size,
+        section=None,
+        flipped=False,
+    ):
         frame = QtWidgets.QFrame()
         layout = QtWidgets.QVBoxLayout(frame)
         layout.setContentsMargins(0, 2, 0, 2)
@@ -210,13 +301,13 @@ class EditorWidget(QtWidgets.QWidget):
             self.request_update()
 
             # Trigger auto-save
-            self.save_timer.start(1000) # Save after 1 second of inactivity
+            self.save_timer.start(1000)  # Save after 1 second of inactivity
 
         slider.valueChanged.connect(on_change)
 
         # Store refs
         setattr(self, f"{var_name}_slider", slider)
-        setattr(self, f"{var_name}_label", val_lbl) # Store label for updates
+        setattr(self, f"{var_name}_label", val_lbl)  # Store label for updates
 
         layout.addWidget(slider)
         if section:
@@ -247,7 +338,6 @@ class EditorWidget(QtWidgets.QWidget):
         if label:
             label.setText(f"{value:.2f}")
         setattr(self, var_name, value)
-
 
     def clear(self):
         self.raw_path = None
@@ -292,7 +382,7 @@ class EditorWidget(QtWidgets.QWidget):
             "sharpen_enabled": self.var_sharpen_enabled,
             "sharpen_radius": self.val_radius,
             "sharpen_percent": self.val_percent,
-            "de_noise": self.val_denoise
+            "de_noise": self.val_denoise,
         }
         pynegative.save_sidecar(self.raw_path, settings)
 
@@ -303,7 +393,7 @@ class EditorWidget(QtWidgets.QWidget):
 
         QtWidgets.QApplication.processEvents()
 
-        self.btn_save.setEnabled(False) # Disable save until full load
+        self.btn_save.setEnabled(False)  # Disable save until full load
 
         loader = RawLoader(path)
         loader.signals.finished.connect(self._on_raw_loaded)
@@ -311,7 +401,7 @@ class EditorWidget(QtWidgets.QWidget):
 
     def _on_raw_loaded(self, path, img_arr, settings):
         if Path(path) != self.raw_path:
-            return # User switched images already
+            return  # User switched images already
 
         if img_arr is None:
             QtWidgets.QMessageBox.critical(self, "Error", "Failed to load image")
@@ -337,11 +427,11 @@ class EditorWidget(QtWidgets.QWidget):
             self._set_slider_value("val_percent", settings.get("sharpen_percent", 150))
             self._set_slider_value("val_denoise", settings.get("de_noise", 0))
 
-        self.base_img_full = img_arr # The half-res proxy
+        self.base_img_full = img_arr  # The half-res proxy
 
         # Clear caches for the new image
         self._base_img_uint8 = None
-        if hasattr(self, '_img_render_base'):
+        if hasattr(self, "_img_render_base"):
             del self._img_render_base
 
         self.btn_save.setEnabled(True)
@@ -376,7 +466,7 @@ class EditorWidget(QtWidgets.QWidget):
 
         # Lock rendering for 33ms (30 FPS)
         self._is_rendering_locked = True
-        self.render_timer.start(33) # 33ms interval for throttle
+        self.render_timer.start(33)  # 33ms interval for throttle
 
     def _on_render_timer_timeout(self):
         """Called when the 33ms throttle window expires."""
@@ -386,7 +476,8 @@ class EditorWidget(QtWidgets.QWidget):
             self._process_pending_update()
 
     def update_preview(self):
-        if self.base_img_full is None: return
+        if self.base_img_full is None:
+            return
 
         # Strategy: Single-Layer Dynamic ROI
         # 1. Determine the viewport size
@@ -402,7 +493,9 @@ class EditorWidget(QtWidgets.QWidget):
         if vw > 0 and vh > 0:
             fit_scale = min(vw / full_w, vh / full_h)
 
-        is_zoomed_in = not self.view._is_fitting and (zoom_scale > fit_scale * 1.01 or zoom_scale > 0.99)
+        is_zoomed_in = not self.view._is_fitting and (
+            zoom_scale > fit_scale * 1.01 or zoom_scale > 0.99
+        )
 
         # --- Part 1: Global Background ---
         # Cache the 1500px base
@@ -411,7 +504,10 @@ class EditorWidget(QtWidgets.QWidget):
 
         scale = 1500 / max(full_h, full_w)
         target_h, target_w = int(full_h * scale), int(full_w * scale)
-        if not hasattr(self, '_img_render_base') or self._img_render_base.shape[0] != target_h:
+        if (
+            not hasattr(self, "_img_render_base")
+            or self._img_render_base.shape[0] != target_h
+        ):
             temp_pil = Image.fromarray(self._base_img_uint8)
             temp_pil = temp_pil.resize((target_w, target_h), Image.Resampling.BILINEAR)
             self._img_render_base = np.array(temp_pil).astype(np.float32) / 255.0
@@ -419,10 +515,13 @@ class EditorWidget(QtWidgets.QWidget):
         # Process Background
         processed_bg, _ = pynegative.apply_tone_map(
             self._img_render_base,
-            exposure=self.val_exposure, contrast=self.val_contrast,
-            blacks=self.val_blacks, whites=self.val_whites,
-            shadows=self.val_shadows, highlights=self.val_highlights,
-            saturation=self.val_saturation
+            exposure=self.val_exposure,
+            contrast=self.val_contrast,
+            blacks=self.val_blacks,
+            whites=self.val_whites,
+            shadows=self.val_shadows,
+            highlights=self.val_highlights,
+            saturation=self.val_saturation,
         )
         processed_bg *= 255
         pil_bg = Image.fromarray(processed_bg.astype(np.uint8))
@@ -460,16 +559,21 @@ class EditorWidget(QtWidgets.QWidget):
 
                 processed_roi, _ = pynegative.apply_tone_map(
                     crop_to_proc,
-                    exposure=self.val_exposure, contrast=self.val_contrast,
-                    blacks=self.val_blacks, whites=self.val_whites,
-                    shadows=self.val_shadows, highlights=self.val_highlights,
-                    saturation=self.val_saturation
+                    exposure=self.val_exposure,
+                    contrast=self.val_contrast,
+                    blacks=self.val_blacks,
+                    whites=self.val_whites,
+                    shadows=self.val_shadows,
+                    highlights=self.val_highlights,
+                    saturation=self.val_saturation,
                 )
                 processed_roi *= 255
                 pil_roi = Image.fromarray(processed_roi.astype(np.uint8))
 
                 if self.var_sharpen_enabled:
-                    pil_roi = pynegative.sharpen_image(pil_roi, self.val_radius, self.val_percent)
+                    pil_roi = pynegative.sharpen_image(
+                        pil_roi, self.val_radius, self.val_percent
+                    )
                     if self.val_denoise > 0:
                         pil_roi = pynegative.de_noise_image(pil_roi, self.val_denoise)
 
@@ -478,14 +582,19 @@ class EditorWidget(QtWidgets.QWidget):
                 roi_w, roi_h = rw, rh
 
         # --- Final Update ---
-        self.view.set_pixmaps(pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h)
+        self.view.set_pixmaps(
+            pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
+        )
 
     def save_file(self):
-        if self.base_img_full is None: return
+        if self.base_img_full is None:
+            return
 
         input_dir = self.raw_path.parent
         default_name = self.raw_path.with_suffix(".jpg").name
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save", str(input_dir / default_name), "JPEG (*.jpg);;HEIF (*.heic)")
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save", str(input_dir / default_name), "JPEG (*.jpg);;HEIF (*.heic)"
+        )
 
         if path:
             path = Path(path)
@@ -506,16 +615,20 @@ class EditorWidget(QtWidgets.QWidget):
                     whites=self.val_whites,
                     shadows=self.val_shadows,
                     highlights=self.val_highlights,
-                    saturation=self.val_saturation
+                    saturation=self.val_saturation,
                 )
                 pil_img = Image.fromarray((img * 255).astype(np.uint8))
                 if self.var_sharpen_enabled:
-                    pil_img = pynegative.sharpen_image(pil_img, self.val_radius, self.val_percent)
+                    pil_img = pynegative.sharpen_image(
+                        pil_img, self.val_radius, self.val_percent
+                    )
                     if self.val_denoise > 0:
                         pil_img = pynegative.de_noise_image(pil_img, self.val_denoise)
 
                 pynegative.save_image(pil_img, path)
-                QtWidgets.QMessageBox.information(self, "Saved", f"Saved full resolution to {path}")
+                QtWidgets.QMessageBox.information(
+                    self, "Saved", f"Saved full resolution to {path}"
+                )
                 self.lbl_info.setText(f"Saved: {path.name}")
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Error", str(e))
@@ -525,7 +638,13 @@ class EditorWidget(QtWidgets.QWidget):
         self.current_folder = Path(folder)
         self.carousel.clear()
 
-        files = sorted([f for f in self.current_folder.iterdir() if f.is_file() and f.suffix.lower() in pynegative.SUPPORTED_EXTS])
+        files = sorted(
+            [
+                f
+                for f in self.current_folder.iterdir()
+                if f.is_file() and f.suffix.lower() in pynegative.SUPPORTED_EXTS
+            ]
+        )
 
         for path in files:
             item = QtWidgets.QListWidgetItem(path.name)
