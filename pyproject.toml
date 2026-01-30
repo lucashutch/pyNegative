@@ -25,6 +25,7 @@ test = [
     "pytest-qt",
 ]
 
+[dependency-groups]
 lint = [
     "ruff",
 ]

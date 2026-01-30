@@ -54,9 +54,9 @@ A graphical user interface (GUI) for interactively editing RAW files.
 
 ## Development
 
-Install test dependancies:
+Install Dev dependancies:
 ```bash
-uv sync --extra test
+uv sync --all-groups
 ```
 
 Run tests with:
