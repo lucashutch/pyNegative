@@ -59,10 +59,16 @@ class EditorWidget(QtWidgets.QWidget):
 
         self._init_ui()
 
-        # Set up undo/redo keyboard shortcuts
+        # Set up keyboard shortcuts
         QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Undo, self, self._undo)
         QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Redo, self, self._redo)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Z"), self, self._redo)
+        QtGui.QShortcut(
+            QtGui.QKeySequence.StandardKey.Copy, self, self._handle_copy_shortcut
+        )
+        QtGui.QShortcut(
+            QtGui.QKeySequence.StandardKey.Paste, self, self._handle_paste_shortcut
+        )
 
     def _init_ui(self):
         main_layout = QtWidgets.QHBoxLayout(self)
@@ -1056,6 +1062,27 @@ class EditorWidget(QtWidgets.QWidget):
         """Clear settings clipboard."""
         self.settings_clipboard = None
         self.clipboard_source_path = None
+
+    def _handle_copy_shortcut(self):
+        """Smart copy: copy from selection if multiple, else from current."""
+        selected_paths = self.carousel.get_selected_paths()
+        if len(selected_paths) > 0:
+            # If current photo is selected, we might want to copy its UI values
+            # otherwise copy from the first selected path's sidecar
+            if self.raw_path and str(self.raw_path) in selected_paths:
+                self._copy_settings_from_current()
+            else:
+                self._copy_settings_from_selected()
+        else:
+            self._copy_settings_from_current()
+
+    def _handle_paste_shortcut(self):
+        """Smart paste: paste to selection if any, else to current."""
+        selected_paths = self.carousel.get_selected_paths()
+        if len(selected_paths) > 0:
+            self._paste_settings_to_selected()
+        else:
+            self._paste_settings_to_current()
 
     def _undo(self):
         """Handle undo action."""

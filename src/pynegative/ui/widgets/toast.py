@@ -44,7 +44,9 @@ class ToastWidget(QtWidgets.QWidget):
         self._background_frame.setLayout(self._layout)
 
         # Set main layout
-        self.setLayout(self._layout)
+        self._main_layout = QtWidgets.QVBoxLayout(self)
+        self._main_layout.setContentsMargins(0, 0, 0, 0)
+        self._main_layout.addWidget(self._background_frame)
 
         # Animation timers
         self._timer = QtCore.QTimer(self)
