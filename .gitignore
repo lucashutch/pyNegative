@@ -6,5 +6,5 @@ venv/
 *.egg-info/
 dist/
 build/
-
+plan.md
 
