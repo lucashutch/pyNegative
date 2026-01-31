@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, Signal
 
 class ZoomableGraphicsView(QtWidgets.QGraphicsView):
     zoomChanged = Signal(float)
+    doubleClicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -100,3 +101,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
             self.set_zoom(new_zoom, manual=True)
 
         event.accept()
+
+    def mouseDoubleClickEvent(self, event):
+        self.doubleClicked.emit()
+        super().mouseDoubleClickEvent(event)

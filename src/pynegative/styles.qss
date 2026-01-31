@@ -399,10 +399,24 @@ QMenu::item:selected {
     background-color: #303030;
 }
 
-/* ========== File Dialogs ========== */
-QFileDialog {
-    background-color: #242424;
-    color: #e5e5e5;
+/* ========== View Toggle Button ========== */
+QPushButton#ViewToggleButton {
+    background-color: rgba(36, 36, 36, 0.8);
+    border: 1px solid #4a4a4a;
+    border-radius: 25px;
+    color: #ffffff;
+    font-size: 24px;
+    padding: 0px;
+    min-height: 50px;
+}
+
+QPushButton#ViewToggleButton:hover {
+    background-color: #6366f1;
+    border-color: #818cf8;
+}
+
+QPushButton#ViewToggleButton:pressed {
+    background-color: #4f46e5;
 }
 
 /* ========== Labels ========== */

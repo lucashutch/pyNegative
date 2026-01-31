@@ -49,8 +49,16 @@ A graphical user interface (GUI) for interactively editing RAW files.
 
 ### Gallery View
 -   **Grid Browsing**: Browse images in a folder in a responsive grid layout.
+-   **Full-size Preview Mode**: Toggle between grid layout and a high-quality, zoomable preview without leaving the gallery.
+-   **Interactive Navigation**: Double-click any photo to jump into preview mode, and double-click the preview to return to the grid.
 -   **Star Rating Display**: View assigned star ratings for each image thumbnail.
 -   **Rating-based Filtering**: Filter displayed images by star rating (match, greater than, or less than a specified rating).
+
+### Export Management
+-   **Dedicated Export Tab**: A specialized interface for managing the export pipeline.
+-   **Intelligent Destinations**: Automatically suggests export paths based on the current folder structure.
+-   **Batch Exporting**: Process all currently filtered images at once with consistent settings.
+-   **Flexible Formats**: Support for exporting to JPEG and high-efficiency formats.
 
 ## Development
 
@@ -68,13 +76,11 @@ uv run pytest
 
 Track planned features and project goals.
 
--   [ ] **Full size preview in gallery**: Allow the user to get a full size preview of the image in the gallery view.
 -   [ ] **Enable multi-threaded**: Enable multi-threaded processing of the images in the edit view and gallery view.
 -   [ ] **Rework sharpening and denoise interface and performance**: Improve the UI and performance of sharpening and de-noise functionalities.
 -   [ ] **Batch Export**: Select and process multiple files at once.
 -   [ ] **Sync Settings**: Copy/paste edit changes from one photo to others.
 -   [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
--   [ ] **Export Tab Feature**: Add a dedicated export tab to control what and how images are exported (e.g., format, quality, resizing, watermarks).
 -   [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
 -   [ ] **Archival Export Preset**: Reduce storage footprint (e.g., 16-bit DNG or high-quality HEIF) while retaining latitude.
 -   [ ] **Batch Renaming**: Sequence-based renaming for folder exports.

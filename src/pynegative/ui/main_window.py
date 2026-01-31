@@ -48,6 +48,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.editor.ratingChanged.connect(self.gallery.update_rating_for_item)
         self.gallery.ratingChanged.connect(self.editor.update_rating_for_path)
         self.gallery.imageListChanged.connect(self._on_gallery_list_changed)
+        self.gallery.viewModeChanged.connect(self._on_gallery_view_mode_changed)
 
         # Setup Menu (File operations only)
         self._create_menu()
@@ -170,9 +171,15 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         # Editor is empty, try to populate it from gallery
-        current_item = self.gallery.list_widget.currentItem()
-        if current_item:
-            path_to_open = current_item.data(QtCore.Qt.UserRole)
+        path_to_open = None
+        if self.gallery._is_large_preview and self.gallery.preview_widget.raw_path:
+            path_to_open = str(self.gallery.preview_widget.raw_path)
+        else:
+            current_item = self.gallery.list_widget.currentItem()
+            if current_item:
+                path_to_open = current_item.data(QtCore.Qt.UserRole)
+
+        if path_to_open:
             self.open_editor(path_to_open)
         else:
             # No selection, try first item
@@ -202,7 +209,18 @@ class MainWindow(QtWidgets.QMainWindow):
         if path:
             self.open_editor(path)
 
+    def _on_gallery_view_mode_changed(self, is_large_preview):
+        # If we are in large preview, we want to hide the gallery filters
+        # to give more space? The user didn't ask for this, but it might be good.
+        # Actually, let's keep them for now.
+        pass
+
     def _on_gallery_list_changed(self, image_list):
+        if self.gallery._is_large_preview and self.gallery.preview_widget.raw_path:
+            self.gallery.preview_widget.set_carousel_images(
+                image_list, self.gallery.preview_widget.raw_path
+            )
+
         if not self.editor.raw_path:
             return  # Editor isn't open, nothing to do
 
