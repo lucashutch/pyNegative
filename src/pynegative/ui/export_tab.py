@@ -3,7 +3,6 @@ from .widgets import GalleryItemDelegate, GalleryListWidget, ComboBox
 from .loaders import ThumbnailLoader
 from .. import core as pynegative
 from pathlib import Path
-import time
 import os
 from PIL import Image
 import pyheif
