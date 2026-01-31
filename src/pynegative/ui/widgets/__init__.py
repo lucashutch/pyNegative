@@ -6,6 +6,7 @@ from .zoomcontrols import ZoomControls
 from .starrating import StarRatingWidget
 from .galleryitemdelegate import GalleryItemDelegate
 from .gallerylistwidget import GalleryListWidget
+from .combobox import ComboBox
 
 __all__ = [
     "HorizontalListWidget",
@@ -16,4 +17,5 @@ __all__ = [
     "StarRatingWidget",
     "GalleryItemDelegate",
     "GalleryListWidget",
+    "ComboBox",
 ]

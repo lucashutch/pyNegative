@@ -4,6 +4,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from .. import core as pynegative
 from .gallery import GalleryWidget
 from .editor import EditorWidget
+from .export_tab import ExportWidget
 from .widgets import StarRatingWidget
 
 
@@ -28,6 +29,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Views
         self.gallery = GalleryWidget(self.thread_pool)
         self.editor = EditorWidget(self.thread_pool)
+        self.export_tab = ExportWidget(self.thread_pool)
 
         # Top Bar (Tabs)
         self._setup_top_bar(main_layout)
@@ -38,9 +40,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.stack.addWidget(self.gallery)
         self.stack.addWidget(self.editor)
+        self.stack.addWidget(self.export_tab)
 
         # Signals
         self.gallery.imageSelected.connect(self.open_editor)
+        self.gallery.folderLoaded.connect(self.export_tab.load_folder)
         self.editor.ratingChanged.connect(self.gallery.update_rating_for_item)
         self.gallery.ratingChanged.connect(self.editor.update_rating_for_path)
         self.gallery.imageListChanged.connect(self._on_gallery_list_changed)
@@ -85,8 +89,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_edit.setCheckable(True)
         self.btn_edit.clicked.connect(self.switch_to_edit)
 
+        self.btn_export = QtWidgets.QPushButton("EXPORT")
+        self.btn_export.setObjectName("TabButton")
+        self.btn_export.setCheckable(True)
+        self.btn_export.clicked.connect(self.switch_to_export)
+
         bar_layout.addWidget(self.btn_gallery)
         bar_layout.addWidget(self.btn_edit)
+        bar_layout.addWidget(self.btn_export)
         bar_layout.addStretch()
 
         # Filtering
@@ -104,11 +114,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.filter_combo.currentIndexChanged.connect(
             self.gallery.apply_filter_from_main
         )
+        self.filter_combo.currentIndexChanged.connect(
+            self.export_tab.apply_filter_from_main
+        )
         filter_layout.addWidget(self.filter_combo)
 
         self.filter_rating_widget = StarRatingWidget()
         self.filter_rating_widget.ratingChanged.connect(
             self.gallery.apply_filter_from_main
+        )
+        self.filter_rating_widget.ratingChanged.connect(
+            self.export_tab.apply_filter_from_main
         )
         filter_layout.addWidget(self.filter_rating_widget)
         bar_layout.addLayout(filter_layout)
@@ -136,6 +152,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stack.setCurrentWidget(self.gallery)
         self.btn_gallery.setChecked(True)
         self.btn_edit.setChecked(False)
+        self.btn_export.setChecked(False)
+
+    def switch_to_export(self):
+        self.stack.setCurrentWidget(self.export_tab)
+        self.btn_gallery.setChecked(False)
+        self.btn_edit.setChecked(False)
+        self.btn_export.setChecked(True)
 
     def switch_to_edit(self):
         # If editor already has an image, just switch
@@ -143,6 +166,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.stack.setCurrentWidget(self.editor)
             self.btn_gallery.setChecked(False)
             self.btn_edit.setChecked(True)
+            self.btn_export.setChecked(False)
             return
 
         # Editor is empty, try to populate it from gallery
@@ -160,6 +184,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.stack.setCurrentWidget(self.editor)
                 self.btn_gallery.setChecked(False)
                 self.btn_edit.setChecked(True)
+                self.btn_export.setChecked(False)
 
     def open_editor(self, path):
         image_list = self.gallery.get_current_image_list()
@@ -167,6 +192,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stack.setCurrentWidget(self.editor)
         self.btn_gallery.setChecked(False)
         self.btn_edit.setChecked(True)
+        self.btn_export.setChecked(False)
 
     def open_single_file(self):
         extensions = " ".join(["*" + e for e in pynegative.SUPPORTED_EXTS])
