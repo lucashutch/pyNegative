@@ -176,26 +176,106 @@ def extract_thumbnail(path):
         return None
 
 
-def sharpen_image(pil_img, radius, percent):
-    return pil_img.filter(
-        ImageFilter.UnsharpMask(radius=float(radius), percent=int(percent))
-    )
+def sharpen_image(pil_img, radius, percent, method="advanced"):
+    """Advanced sharpening with multiple algorithms."""
+    if method == "advanced":
+        # Convert PIL to OpenCV format for better algorithms
+        try:
+            import cv2
+
+            img_array = np.array(pil_img)
+
+            # Convert to float for precision
+            img_float = img_array.astype(np.float32) / 255.0
+
+            # Apply bilateral filter for edge preservation
+            bilateral = cv2.bilateralFilter(img_float, 9, 80, 80)
+
+            # Create unsharp mask
+            blur = cv2.GaussianBlur(img_float, (0, 0), radius)
+            sharpened = img_float + (img_float - blur) * (percent / 100.0)
+
+            # Edge-aware threshold to prevent halo artifacts
+            edges = cv2.Canny((sharpened * 255).astype(np.uint8), 50, 150)
+
+            # Combine based on edge strength
+            result = np.where(edges[:, :, np.newaxis] > 0, sharpened, bilateral)
+
+            # Convert back to PIL
+            result_array = np.clip(result * 255, 0, 255).astype(np.uint8)
+            return Image.fromarray(result_array)
+
+        except ImportError:
+            # Fallback to basic sharpening if OpenCV not available
+            return pil_img.filter(
+                ImageFilter.UnsharpMask(radius=float(radius), percent=int(percent))
+            )
+    else:
+        # Fallback to original PIL implementation
+        return pil_img.filter(
+            ImageFilter.UnsharpMask(radius=float(radius), percent=int(percent))
+        )
 
 
-def de_noise_image(pil_img, radius):
-    """Simple de-noise using Median filter. Size must be odd >= 3."""
-    size = int(radius)
-    if size < 3:
-        if radius > 0:
-            size = 3
-        else:
-            return pil_img
+def de_noise_image(pil_img, strength, method="nlm"):
+    """Advanced de-noising with multiple algorithms."""
+    if method == "nlm":
+        # Non-Local Means - best quality
+        try:
+            import cv2
 
-    # Ensure size is odd
-    if size % 2 == 0:
-        size += 1
+            # OpenCV's fastNlMeansDenoisingColored expects color images
+            img_array = np.array(pil_img)
+            denoised = cv2.fastNlMeansDenoisingColored(img_array, None, strength, 7, 21)
+            return Image.fromarray(denoised)
+        except ImportError:
+            # Fallback to basic median filter if OpenCV not available
+            size = int(strength)
+            if size < 3:
+                if strength > 0:
+                    size = 3
+                else:
+                    return pil_img
 
-    return pil_img.filter(ImageFilter.MedianFilter(size=size))
+            # Ensure size is odd
+            if size % 2 == 0:
+                size += 1
+
+            return pil_img.filter(ImageFilter.MedianFilter(size=size))
+    elif method == "bilateral":
+        # Bilateral filter - edge-preserving smoothing
+        try:
+            import cv2
+
+            img_array = np.array(pil_img)
+            denoised = cv2.bilateralFilter(img_array, 9, strength * 5, strength * 5)
+            return Image.fromarray(denoised)
+        except ImportError:
+            return pil_img.filter(ImageFilter.MedianFilter(size=max(3, int(strength))))
+    elif method == "tv":
+        # Total Variation - preserves edges well
+        try:
+            import cv2
+
+            img_array = np.array(pil_img)
+            denoised = cv2.denoise_TVL1(img_array, strength, 30)
+            return Image.fromarray(denoised)
+        except ImportError:
+            return pil_img.filter(ImageFilter.MedianFilter(size=max(3, int(strength))))
+    else:
+        # Fallback to original median filter
+        size = int(strength)
+        if size < 3:
+            if strength > 0:
+                size = 3
+            else:
+                return pil_img
+
+        # Ensure size is odd
+        if size % 2 == 0:
+            size += 1
+
+        return pil_img.filter(ImageFilter.MedianFilter(size=size))
 
 
 def save_image(pil_img, output_path, quality=95):

@@ -228,9 +228,14 @@ class EditorWidget(QtWidgets.QWidget):
         self.sharpen_checkbox.toggled.connect(self._update_sharpen_state)
         self.details_section.add_widget(self.sharpen_checkbox)
 
+        # Sharpening Method Selection
+        self.sharpen_method_combo = QtWidgets.QComboBox()
+        self.sharpen_method_combo.addItems(["Advanced", "Standard"])
+        self.sharpen_method_combo.currentTextChanged.connect(self.request_update)
+        self.details_section.add_widget(self.sharpen_method_combo)
+
         self.val_radius = 2.0
         self.val_percent = 150
-        self.val_denoise = 0
         self._add_slider(
             "Sharpen Radius",
             0.5,
@@ -249,9 +254,34 @@ class EditorWidget(QtWidgets.QWidget):
             1,
             self.details_section,
         )
-        self._add_slider(
-            "De-noise", 0, 5, self.val_denoise, "val_denoise", 1, self.details_section
+
+        # De-noising Method Selection
+        self.denoise_method_combo = QtWidgets.QComboBox()
+        self.denoise_method_combo.addItems(
+            ["Non-Local Means", "Bilateral", "Total Variation", "Median"]
         )
+        self.denoise_method_combo.currentTextChanged.connect(self.request_update)
+        self.details_section.add_widget(self.denoise_method_combo)
+
+        self.val_denoise = 0
+        self._add_slider(
+            "De-noise", 0, 20, self.val_denoise, "val_denoise", 1, self.details_section
+        )
+
+        # Preset Buttons
+        preset_widget = QtWidgets.QWidget()
+        preset_layout = QtWidgets.QHBoxLayout(preset_widget)
+        self.btn_subtle = QtWidgets.QPushButton("Subtle")
+        self.btn_subtle.clicked.connect(lambda: self._apply_preset("subtle"))
+        self.btn_medium = QtWidgets.QPushButton("Medium")
+        self.btn_medium.clicked.connect(lambda: self._apply_preset("medium"))
+        self.btn_aggressive = QtWidgets.QPushButton("Aggressive")
+        self.btn_aggressive.clicked.connect(lambda: self._apply_preset("aggressive"))
+
+        preset_layout.addWidget(self.btn_subtle)
+        preset_layout.addWidget(self.btn_medium)
+        preset_layout.addWidget(self.btn_aggressive)
+        self.details_section.add_widget(preset_widget)
 
         # Save Button
         self.controls_layout.addSpacing(10)
@@ -389,8 +419,10 @@ class EditorWidget(QtWidgets.QWidget):
             "shadows": self.val_shadows,
             "saturation": self.val_saturation,
             "sharpen_enabled": self.var_sharpen_enabled,
+            "sharpen_method": self.sharpen_method_combo.currentText(),
             "sharpen_radius": self.val_radius,
             "sharpen_percent": self.val_percent,
+            "denoise_method": self.denoise_method_combo.currentText(),
             "de_noise": self.val_denoise,
         }
         pynegative.save_sidecar(self.raw_path, settings)
@@ -432,6 +464,13 @@ class EditorWidget(QtWidgets.QWidget):
             sharpen_on = settings.get("sharpen_enabled", False)
             self.sharpen_checkbox.setChecked(sharpen_on)
             self.var_sharpen_enabled = sharpen_on
+
+            # Set method combos
+            sharpen_method = settings.get("sharpen_method", "Advanced")
+            self.sharpen_method_combo.setCurrentText(sharpen_method)
+            denoise_method = settings.get("denoise_method", "Non-Local Means")
+            self.denoise_method_combo.setCurrentText(denoise_method)
+
             self._set_slider_value("val_radius", settings.get("sharpen_radius", 2.0))
             self._set_slider_value("val_percent", settings.get("sharpen_percent", 150))
             self._set_slider_value("val_denoise", settings.get("de_noise", 0))
@@ -580,11 +619,19 @@ class EditorWidget(QtWidgets.QWidget):
                 pil_roi = Image.fromarray(processed_roi.astype(np.uint8))
 
                 if self.var_sharpen_enabled:
+                    sharpen_method = (
+                        "advanced"
+                        if self.sharpen_method_combo.currentText() == "Advanced"
+                        else "standard"
+                    )
                     pil_roi = pynegative.sharpen_image(
-                        pil_roi, self.val_radius, self.val_percent
+                        pil_roi, self.val_radius, self.val_percent, sharpen_method
                     )
                     if self.val_denoise > 0:
-                        pil_roi = pynegative.de_noise_image(pil_roi, self.val_denoise)
+                        denoise_method = self._get_denoise_method()
+                        pil_roi = pynegative.de_noise_image(
+                            pil_roi, self.val_denoise, denoise_method
+                        )
 
                 pix_roi = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_roi))
                 roi_x, roi_y = ix_min, iy_min
@@ -628,11 +675,22 @@ class EditorWidget(QtWidgets.QWidget):
                 )
                 pil_img = Image.fromarray((img * 255).astype(np.uint8))
                 if self.var_sharpen_enabled:
+                    sharpen_method = (
+                        "advanced"
+                        if self.sharpen_method_combo.currentText() == "Advanced"
+                        else "standard"
+                    )
                     pil_img = pynegative.sharpen_image(
-                        pil_img, self.val_radius, self.val_percent
+                        pil_img,
+                        self.val_radius,
+                        self.val_percent,
+                        method=sharpen_method,
                     )
                     if self.val_denoise > 0:
-                        pil_img = pynegative.de_noise_image(pil_img, self.val_denoise)
+                        denoise_method = self._get_denoise_method()
+                        pil_img = pynegative.de_noise_image(
+                            pil_img, self.val_denoise, method=denoise_method
+                        )
 
                 pynegative.save_image(pil_img, path)
                 QtWidgets.QMessageBox.information(
@@ -695,6 +753,33 @@ class EditorWidget(QtWidgets.QWidget):
         # Avoid reloading if same image
         if Path(path) != self.raw_path:
             self.load_image(path)
+
+    def _get_denoise_method(self):
+        """Map combo box text to core function method parameter."""
+        method_map = {
+            "Non-Local Means": "nlm",
+            "Bilateral": "bilateral",
+            "Total Variation": "tv",
+            "Median": "standard",
+        }
+        return method_map.get(self.denoise_method_combo.currentText(), "nlm")
+
+    def _apply_preset(self, preset_type):
+        """Apply preset values for sharpening and denoising."""
+        if preset_type == "subtle":
+            self._set_slider_value("val_radius", 1.0)
+            self._set_slider_value("val_percent", 50)
+            self._set_slider_value("val_denoise", 3)
+        elif preset_type == "medium":
+            self._set_slider_value("val_radius", 2.0)
+            self._set_slider_value("val_percent", 150)
+            self._set_slider_value("val_denoise", 10)
+        elif preset_type == "aggressive":
+            self._set_slider_value("val_radius", 3.0)
+            self._set_slider_value("val_percent", 250)
+            self._set_slider_value("val_denoise", 15)
+
+        self.request_update()
 
     def set_preview_mode(self, enabled):
         self.panel.setVisible(not enabled)
