@@ -176,106 +176,113 @@ def extract_thumbnail(path):
         return None
 
 
-def sharpen_image(pil_img, radius, percent, method="advanced"):
-    """Advanced sharpening with multiple algorithms."""
-    if method == "advanced":
+def sharpen_image(pil_img, radius, percent, method="High Quality"):
+    """Advanced sharpening with simplified options."""
+    # Ensure image is RGB (no alpha) for OpenCV algorithms
+    if pil_img.mode != "RGB":
+        pil_img = pil_img.convert("RGB")
+
+    if method == "High Quality":
         # Convert PIL to OpenCV format for better algorithms
         try:
             import cv2
 
             img_array = np.array(pil_img)
-
-            # Convert to float for precision
             img_float = img_array.astype(np.float32) / 255.0
-
-            # Apply bilateral filter for edge preservation
-            bilateral = cv2.bilateralFilter(img_float, 9, 80, 80)
 
             # Create unsharp mask
             blur = cv2.GaussianBlur(img_float, (0, 0), radius)
             sharpened = img_float + (img_float - blur) * (percent / 100.0)
 
-            # Edge-aware threshold to prevent halo artifacts
-            edges = cv2.Canny((sharpened * 255).astype(np.uint8), 50, 150)
+            # Edge-aware threshold to prevent halo artifacts and noise sharpening
+            # Convert to uint8 for Canny
+            gray = cv2.cvtColor((img_float * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
+            edges = cv2.Canny(gray, 50, 150)
 
-            # Combine based on edge strength
-            result = np.where(edges[:, :, np.newaxis] > 0, sharpened, bilateral)
+            # Dilate edges slightly to cover transition zones
+            kernel = np.ones((3, 3), np.uint8)
+            edges = cv2.dilate(edges, kernel, iterations=1)
+
+            # Combine: Sharpened edges, but keep original for flat areas (to avoid noise)
+            # We use the original img_float for flat areas instead of the heavily blurred version
+            result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
 
             # Convert back to PIL
             result_array = np.clip(result * 255, 0, 255).astype(np.uint8)
             return Image.fromarray(result_array)
+        except Exception as e:
+            print(f"High Quality Sharpen failed: {e}")
 
-        except ImportError:
-            # Fallback to basic sharpening if OpenCV not available
-            return pil_img.filter(
-                ImageFilter.UnsharpMask(radius=float(radius), percent=int(percent))
-            )
-    else:
-        # Fallback to original PIL implementation
-        return pil_img.filter(
-            ImageFilter.UnsharpMask(radius=float(radius), percent=int(percent))
-        )
+    # Fallback to original PIL implementation (Standard)
+    return pil_img.filter(
+        ImageFilter.UnsharpMask(radius=float(radius), percent=int(percent))
+    )
 
 
-def de_noise_image(pil_img, strength, method="nlm"):
-    """Advanced de-noising with multiple algorithms."""
-    if method == "nlm":
-        # Non-Local Means - best quality
-        try:
-            import cv2
+def de_noise_image(pil_img, strength, method="High Quality"):
+    """Advanced de-noising with simplified options."""
+    # Ensure image is RGB (no alpha) for OpenCV algorithms
+    if pil_img.mode != "RGB":
+        pil_img = pil_img.convert("RGB")
 
-            # OpenCV's fastNlMeansDenoisingColored expects color images
-            img_array = np.array(pil_img)
-            denoised = cv2.fastNlMeansDenoisingColored(img_array, None, strength, 7, 21)
+    try:
+        import cv2
+
+        img_array = np.array(pil_img)
+
+        if strength <= 0:
+            return pil_img
+
+        if method == "High Quality":
+            # Sensor-aware de-noising: Separates Luma and Chroma
+            # This targets color noise aggressively while preserving luminance detail
+            yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
+            y, u, v = cv2.split(yuv)
+
+            # 1. Denoise Chrominance (U, V) - Aggressive to remove color blotches
+            # Color noise is visually distracting but carries less detail
+            chroma_strength = float(strength) * 1.5
+            # Use small d and tight sigmaSpace to prevent color bleeding
+            u_denoised = cv2.bilateralFilter(u, 5, chroma_strength * 3, 1.5)
+            v_denoised = cv2.bilateralFilter(v, 5, chroma_strength * 3, 1.5)
+
+            # 2. Denoise Luminance (Y) - Very conservative to preserve fine texture
+            # We use a very small sigmaSpace (0.5-0.8) to ensure only
+            # the most local pixels are averaged, preserving high-frequency detail.
+            luma_sigma_color = float(strength) * 1.2
+            luma_sigma_space = 0.5 + (
+                float(strength) / 100.0
+            )  # Very tight spatial control
+            y_denoised = cv2.bilateralFilter(y, 3, luma_sigma_color, luma_sigma_space)
+
+            # Merge back
+            denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
+            denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
+
             return Image.fromarray(denoised)
-        except ImportError:
-            # Fallback to basic median filter if OpenCV not available
-            size = int(strength)
-            if size < 3:
-                if strength > 0:
-                    size = 3
-                else:
-                    return pil_img
 
-            # Ensure size is odd
-            if size % 2 == 0:
-                size += 1
+        elif method == "Edge Aware":
+            # Standard Bilateral filter on RGB with tighter spatial constraints
+            # sigmaSpace is reduced to prevent global blurring
+            denoised = cv2.bilateralFilter(img_array, 5, float(strength) * 2, 1.0)
+            if denoised is not None:
+                return Image.fromarray(denoised)
+    except Exception as e:
+        print(f"OpenCV Denoise ({method}) failed: {e}")
 
-            return pil_img.filter(ImageFilter.MedianFilter(size=size))
-    elif method == "bilateral":
-        # Bilateral filter - edge-preserving smoothing
-        try:
-            import cv2
+    # Fallback to original median filter (Standard)
+    size = int(strength)
+    if size < 3:
+        if strength > 0:
+            size = 3
+        else:
+            return pil_img
 
-            img_array = np.array(pil_img)
-            denoised = cv2.bilateralFilter(img_array, 9, strength * 5, strength * 5)
-            return Image.fromarray(denoised)
-        except ImportError:
-            return pil_img.filter(ImageFilter.MedianFilter(size=max(3, int(strength))))
-    elif method == "tv":
-        # Total Variation - preserves edges well
-        try:
-            import cv2
+    # Ensure size is odd
+    if size % 2 == 0:
+        size += 1
 
-            img_array = np.array(pil_img)
-            denoised = cv2.denoise_TVL1(img_array, strength, 30)
-            return Image.fromarray(denoised)
-        except ImportError:
-            return pil_img.filter(ImageFilter.MedianFilter(size=max(3, int(strength))))
-    else:
-        # Fallback to original median filter
-        size = int(strength)
-        if size < 3:
-            if strength > 0:
-                size = 3
-            else:
-                return pil_img
-
-        # Ensure size is odd
-        if size % 2 == 0:
-            size += 1
-
-        return pil_img.filter(ImageFilter.MedianFilter(size=size))
+    return pil_img.filter(ImageFilter.MedianFilter(size=size))
 
 
 def save_image(pil_img, output_path, quality=95):

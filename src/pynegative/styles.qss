@@ -504,7 +504,7 @@ QComboBox QAbstractItemView {
 }
 
 /* ========== Preset Buttons ========== */
-QPushButton[label="Subtle"], QPushButton[label="Medium"], QPushButton[label="Aggressive"] {
+QPushButton[label="Low"], QPushButton[label="Medium"], QPushButton[label="High"] {
     background-color: #303030;
     border: 1px solid #404040;
     border-radius: 4px;
@@ -514,12 +514,12 @@ QPushButton[label="Subtle"], QPushButton[label="Medium"], QPushButton[label="Agg
     min-height: 30px;
 }
 
-QPushButton[label="Subtle"]:hover, QPushButton[label="Medium"]:hover, QPushButton[label="Aggressive"]:hover {
+QPushButton[label="Low"]:hover, QPushButton[label="Medium"]:hover, QPushButton[label="High"]:hover {
     background-color: #353535;
     border-color: #4a4a4a;
 }
 
-QPushButton[label="Subtle"]:pressed, QPushButton[label="Medium"]:pressed, QPushButton[label="Aggressive"]:pressed {
+QPushButton[label="Low"]:pressed, QPushButton[label="Medium"]:pressed, QPushButton[label="High"]:pressed {
     background-color: #2b2b2b;
 }
 
@@ -527,4 +527,21 @@ QPushButton#SavePresetButton {
     min-height: 30px;
     font-size: 13px;
     padding: 8px 16px;
+}
+
+/* ========== Splitter ========== */
+QSplitter::handle {
+    background-color: #303030;
+}
+
+QSplitter::handle:horizontal {
+    width: 2px;
+}
+
+QSplitter::handle:vertical {
+    height: 2px;
+}
+
+QSplitter::handle:hover {
+    background-color: #6366f1;
 }
