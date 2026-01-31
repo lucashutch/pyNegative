@@ -417,3 +417,45 @@ QLabel[objectName*="label"] {
     font-size: 13px;
     font-weight: 500;
 }
+
+/* ========== Export Tab ========== */
+QComboBox#ExportComboBox {
+    background-color: #303030;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    padding: 8px 12px;
+    min-height: 36px;
+}
+
+QComboBox#ExportComboBox:hover {
+    background-color: #353535;
+    border-color: #4a4a4a;
+}
+
+/* Custom dropdown arrow is drawn in the ComboBox paintEvent */
+
+
+QComboBox#ExportComboBox QAbstractItemView {
+    background-color: #242424;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+QLineEdit#ExportLineEdit {
+    background-color: #303030;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    padding: 8px 12px;
+    min-height: 36px;
+}
+
+QLineEdit#ExportLineEdit:focus {
+    border-color: #6366f1;
+}
+
+QPushButton#SavePresetButton {
+    min-height: 30px;
+    font-size: 13px;
+    padding: 8px 16px;
+}
