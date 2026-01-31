@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets, QtCore, QtGui
-from .widgets import GalleryItemDelegate, GalleryListWidget, ComboBox
+from .widgets import GalleryListWidget, ComboBox, CarouselDelegate
 from .loaders import ThumbnailLoader
 from .. import core as pynegative
 from pathlib import Path
@@ -104,15 +104,28 @@ class ExportWidget(QtWidgets.QWidget):
         self.list_widget.setIconSize(QtCore.QSize(180, 180))
         self.list_widget.setResizeMode(QtWidgets.QListView.Adjust)
         self.list_widget.setSpacing(10)
-        self.list_widget.setItemDelegate(GalleryItemDelegate(self.list_widget))
         self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+
+        # Set up carousel delegate for selection circles
+        self.carousel_delegate = CarouselDelegate(self.list_widget)
+        self.list_widget.setItemDelegate(self.carousel_delegate)
+        self.list_widget.selectionChanged.connect(self._on_gallery_selection_changed)
+
         self.gallery_layout.addWidget(self.list_widget)
+
+        # Update circle visibility based on initial state
+        self._update_gallery_circle_visibility()
 
         self.selection_label = QtWidgets.QLabel("0 items selected")
         self.gallery_layout.addWidget(self.selection_label)
         self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
 
         # Right side: Settings
+
+    def _on_gallery_selection_changed(self):
+        """Handle gallery selection changes for circle visibility."""
+        show_circles = self.list_widget.count() > 1
+        self.carousel_delegate.set_show_selection_circles(show_circles)
         self.settings_container = QtWidgets.QFrame()
         self.settings_container.setObjectName("EditorPanel")
         self.settings_container.setMinimumWidth(320)
@@ -318,6 +331,14 @@ class ExportWidget(QtWidgets.QWidget):
             loader = ThumbnailLoader(str(path))
             loader.signals.finished.connect(self._on_thumbnail_loaded)
             self.thread_pool.start(loader)
+
+        # Update circle visibility after loading items
+        self._update_gallery_circle_visibility()
+
+    def _update_gallery_circle_visibility(self):
+        """Update circle visibility based on gallery state."""
+        show_circles = self.list_widget.count() > 1
+        self.carousel_delegate.set_show_selection_circles(show_circles)
 
     def _on_thumbnail_loaded(self, path, pixmap):
         for i in range(self.list_widget.count()):

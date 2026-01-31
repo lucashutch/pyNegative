@@ -1,7 +1,11 @@
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtCore
 
 
 class GalleryListWidget(QtWidgets.QListWidget):
+    """ListWidget with selection changed signal for gallery."""
+
+    selectionChanged = QtCore.Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMouseTracking(True)
@@ -27,3 +31,8 @@ class GalleryListWidget(QtWidgets.QListWidget):
 
     def get_hovered_item(self):
         return self._hovered_item
+
+    def selectionChange(self, selected, deselected):
+        """Override selectionChange to emit custom signal."""
+        super().selectionChange(selected, deselected)
+        self.selectionChanged.emit()
