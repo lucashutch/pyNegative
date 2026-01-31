@@ -14,7 +14,6 @@ requires-python = ">=3.8"
 dependencies = [
     "numpy",
     "Pillow",
-    "pyheif",
     "pillow-heif",
     "rawpy",
     "PySide6",

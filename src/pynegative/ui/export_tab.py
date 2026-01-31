@@ -5,7 +5,6 @@ from .. import core as pynegative
 from pathlib import Path
 import os
 from PIL import Image
-import pyheif
 
 
 class ExporterSignals(QtCore.QObject):
@@ -59,9 +58,10 @@ class Exporter(QtCore.QRunnable):
                     dest_path = os.path.join(
                         self.destination_folder, f"{file_name}.heic"
                     )
-                    heif_file = pyheif.from_pillow(pil_img)
-                    heif_file.save(
-                        dest_path, quality=self.settings.get("heif_quality", 90)
+                    pil_img.save(
+                        dest_path,
+                        format="HEIF",
+                        quality=self.settings.get("heif_quality", 90),
                     )
                 elif format == "DNG":
                     # DNG support is not implemented yet
