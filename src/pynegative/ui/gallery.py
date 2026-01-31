@@ -9,6 +9,7 @@ class GalleryWidget(QtWidgets.QWidget):
     imageSelected = QtCore.Signal(str)
     ratingChanged = QtCore.Signal(str, int)
     imageListChanged = QtCore.Signal(list)
+    folderLoaded = QtCore.Signal(str)
 
     def __init__(self, thread_pool):
         super().__init__()
@@ -127,7 +128,7 @@ class GalleryWidget(QtWidgets.QWidget):
         filter_rating = main_window.filter_rating_widget.rating()
 
         for path in files:
-            sidecar_settings = pynegative.load_sidecar(path)
+            sidecar_settings = pynegative.load_sidecar(str(path))
             rating = sidecar_settings.get("rating", 0) if sidecar_settings else 0
 
             if filter_rating > 0:
@@ -146,15 +147,16 @@ class GalleryWidget(QtWidgets.QWidget):
             self.list_widget.addItem(item)
 
             # Start async load
-            loader = ThumbnailLoader(path)
+            loader = ThumbnailLoader(str(path))
             loader.signals.finished.connect(self._on_thumbnail_loaded)
             self.thread_pool.start(loader)
 
         self.imageListChanged.emit(self.get_current_image_list())
+        self.folderLoaded.emit(str(folder))
 
     def _apply_filter(self):
         if self.current_folder:
-            self.load_folder(self.current_folder)
+            self.load_folder(str(self.current_folder))
 
     def apply_filter_from_main(self):
         self._apply_filter()
