@@ -21,7 +21,7 @@ class CollapsibleSection(QtWidgets.QWidget):
         # Content Area
         self.content = QtWidgets.QWidget()
         self.content_layout = QtWidgets.QVBoxLayout(self.content)
-        self.content_layout.setContentsMargins(5, 5, 5, 5)
+        self.content_layout.setContentsMargins(4, 5, 4, 5)
         self.content_layout.setSpacing(2)
         self.layout.addWidget(self.content)
 

@@ -17,6 +17,7 @@ dependencies = [
     "pillow-heif",
     "rawpy",
     "PySide6",
+    "opencv-python",
 ]
 
 [dependency-groups]
