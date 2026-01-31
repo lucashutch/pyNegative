@@ -87,12 +87,16 @@ class ExportWidget(QtWidgets.QWidget):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
+        # Use a splitter to allow manual resizing of the settings panel
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.main_layout.addWidget(self.splitter)
+
         # Left side: Gallery
         self.gallery_container = QtWidgets.QWidget()
         self.gallery_layout = QtWidgets.QVBoxLayout(self.gallery_container)
         self.gallery_layout.setContentsMargins(10, 10, 10, 10)
         self.gallery_layout.setSpacing(10)
-        self.main_layout.addWidget(self.gallery_container, 3)
+        self.splitter.addWidget(self.gallery_container)
 
         self.list_widget = GalleryListWidget()
         self.list_widget.setObjectName("ExportGrid")
@@ -109,12 +113,47 @@ class ExportWidget(QtWidgets.QWidget):
         self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
 
         # Right side: Settings
-        self.settings_container = QtWidgets.QWidget()
-        self.settings_container.setFixedWidth(300)
-        self.settings_layout = QtWidgets.QVBoxLayout(self.settings_container)
+        self.settings_container = QtWidgets.QFrame()
+        self.settings_container.setObjectName("EditorPanel")
+        self.settings_container.setMinimumWidth(320)
+        self.settings_container.setMaximumWidth(600)
+
+        outer_layout = QtWidgets.QVBoxLayout(self.settings_container)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        outer_layout.addWidget(scroll)
+
+        content_widget = QtWidgets.QWidget()
+        self.settings_layout = QtWidgets.QVBoxLayout(content_widget)
         self.settings_layout.setContentsMargins(10, 10, 10, 10)
         self.settings_layout.setSpacing(10)
-        self.main_layout.addWidget(self.settings_container, 1)
+        scroll.setWidget(content_widget)
+
+        # Dynamic margin adjustment for scrollbar
+        def _update_export_scroll_margins():
+            try:
+                vbar = scroll.verticalScrollBar()
+                is_visible = vbar.isVisible()
+                right_margin = 26 if is_visible else 10
+                self.settings_layout.setContentsMargins(10, 10, right_margin, 10)
+            except Exception:
+                pass  # Ignore errors during initialization
+
+        # Connect to scrollbar visibility change
+        scroll.verticalScrollBar().rangeChanged.connect(_update_export_scroll_margins)
+        scroll.verticalScrollBar().valueChanged.connect(_update_export_scroll_margins)
+
+        # Force initial check after UI is built
+        QtCore.QTimer.singleShot(100, _update_export_scroll_margins)
+
+        self.splitter.addWidget(self.settings_container)
+
+        # Set initial sizes for the splitter: gallery takes most space, settings at 340px
+        self.splitter.setSizes([1000, 340])
 
         # Preset
         self.preset_label = QtWidgets.QLabel("Preset")

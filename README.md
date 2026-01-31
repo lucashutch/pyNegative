@@ -40,6 +40,10 @@ pyneg-ui
 A graphical user interface (GUI) for interactively editing RAW files.
 -   **Interactive Editing**: Live preview of changes as adjustments are made.
 -   **Comprehensive Adjustments**: Sliders for fine-tuning exposure, contrast, blacks, whites, shadows, highlights, sharpening, and de-noise.
+-   **Advanced Processing**: 
+    -   **Sharpening**: High-quality, edge-aware sharpening algorithms (Advanced/Standard).
+    -   **Noise Reduction**: Multiple denoising methods including Non-Local Means (NLM), Bilateral, and Total Variation.
+    -   **Processing Presets**: Quick "Subtle", "Medium", and "Aggressive" presets for detail enhancement.
 -   **Zoom Support**: Zoom into photos for precise control during editing.
 -   **Responsive Sliders**: Optimized performance for smooth slider interactions.
 -   **Quick Reset**: Double-click sliders to reset them to their default values.
@@ -77,7 +81,6 @@ uv run pytest
 Track planned features and project goals.
 
 -   [ ] **Enable multi-threaded**: Enable multi-threaded processing of the images in the edit view and gallery view.
--   [ ] **Rework sharpening and denoise interface and performance**: Improve the UI and performance of sharpening and de-noise functionalities.
 -   [ ] **Batch Export**: Select and process multiple files at once.
 -   [ ] **Sync Settings**: Copy/paste edit changes from one photo to others.
 -   [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).

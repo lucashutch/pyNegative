@@ -46,15 +46,22 @@ class EditorWidget(QtWidgets.QWidget):
 
     def _init_ui(self):
         main_layout = QtWidgets.QHBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Use a splitter to allow manual resizing of the sidebar
+        self.splitter = QtWidgets.QSplitter(Qt.Horizontal)
+        main_layout.addWidget(self.splitter)
 
         # --- Left Panel (Controls) ---
         self.panel = QtWidgets.QFrame()
         self.panel.setObjectName("EditorPanel")
-        self.panel.setFixedWidth(280)
+        self.panel.setMinimumWidth(320)
+        self.panel.setMaximumWidth(600)
         self.panel_layout = QtWidgets.QVBoxLayout(self.panel)
-        self.panel_layout.setContentsMargins(10, 10, 10, 10)
+        self.panel_layout.setContentsMargins(8, 10, 8, 10)
         self.panel_layout.setSpacing(2)
-        main_layout.addWidget(self.panel)
+        self.splitter.addWidget(self.panel)
 
         # --- Canvas (Right Side) ---
         self.canvas_frame = QtWidgets.QFrame()
@@ -62,7 +69,10 @@ class EditorWidget(QtWidgets.QWidget):
         self.canvas_frame.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
-        main_layout.addWidget(self.canvas_frame)
+        self.splitter.addWidget(self.canvas_frame)
+
+        # Set initial sizes for the splitter: sidebar at 360px, canvas takes rest
+        self.splitter.setSizes([360, 1000])
 
         # View replaced with ZoomableGraphicsView
         self.view = ZoomableGraphicsView()
@@ -120,9 +130,26 @@ class EditorWidget(QtWidgets.QWidget):
 
         container = QtWidgets.QWidget()
         self.controls_layout = QtWidgets.QVBoxLayout(container)
-        self.controls_layout.setContentsMargins(0, 0, 0, 0)
+        self.controls_layout.setContentsMargins(8, 0, 8, 0)
         self.controls_layout.setSpacing(5)
         scroll.setWidget(container)
+
+        # Dynamic margin adjustment for scrollbar
+        def _update_scroll_margins():
+            try:
+                vbar = scroll.verticalScrollBar()
+                is_visible = vbar.isVisible()
+                right_margin = 24 if is_visible else 8
+                self.controls_layout.setContentsMargins(8, 0, right_margin, 0)
+            except Exception:
+                pass  # Ignore errors during initialization
+
+        # Connect to scrollbar visibility change
+        scroll.verticalScrollBar().rangeChanged.connect(_update_scroll_margins)
+        scroll.verticalScrollBar().valueChanged.connect(_update_scroll_margins)
+
+        # Force initial check after UI is built
+        QtCore.QTimer.singleShot(100, _update_scroll_margins)
 
         self.lbl_info = QtWidgets.QLabel("No file loaded")
         self.lbl_info.setObjectName("InfoLabel")
@@ -223,34 +250,54 @@ class EditorWidget(QtWidgets.QWidget):
         self.details_section = CollapsibleSection("DETAILS", expanded=False)
         self.controls_layout.addWidget(self.details_section)
 
-        self.var_sharpen_enabled = False
-        self.sharpen_checkbox = QtWidgets.QCheckBox("Enable Processing")
-        self.sharpen_checkbox.toggled.connect(self._update_sharpen_state)
-        self.details_section.add_widget(self.sharpen_checkbox)
+        # Preset Buttons at the top of Details
+        preset_widget = QtWidgets.QWidget()
+        preset_layout = QtWidgets.QHBoxLayout(preset_widget)
+        preset_layout.setContentsMargins(0, 5, 0, 5)
+        preset_layout.setSpacing(4)  # Tighten spacing
+        self.btn_low = QtWidgets.QPushButton("Low")
+        self.btn_low.setProperty("label", "Low")
+        self.btn_low.clicked.connect(lambda: self._apply_preset("low"))
+        self.btn_medium = QtWidgets.QPushButton("Medium")
+        self.btn_medium.setProperty("label", "Medium")
+        self.btn_medium.clicked.connect(lambda: self._apply_preset("medium"))
+        self.btn_high = QtWidgets.QPushButton("High")
+        self.btn_high.setProperty("label", "High")
+        self.btn_high.clicked.connect(lambda: self._apply_preset("high"))
 
-        self.val_radius = 2.0
-        self.val_percent = 150
-        self.val_denoise = 0
+        preset_layout.addWidget(self.btn_low)
+        preset_layout.addWidget(self.btn_medium)
+        preset_layout.addWidget(self.btn_high)
+        self.details_section.add_widget(preset_widget)
+
+        self.val_sharpen = 0.0  # Default to zero (disabled)
+        self.val_radius = 0.5  # Min radius
+        self.val_percent = 0.0  # Min percent
+
+        # Mapping function for combined sharpening
+        def update_sharpen_params(val):
+            # val is 0..100
+            # radius: 0.5 .. 1.25 (1/4 of original 0.5..5.0 range is ~1.125, but let's go with 1.25)
+            # percent: 0 .. 150 (half of original 300)
+            self.val_radius = 0.5 + (val / 100.0) * 0.75
+            self.val_percent = (val / 100.0) * 150.0
+            self.val_sharpen = val
+            self.request_update()
+
         self._add_slider(
-            "Sharpen Radius",
-            0.5,
-            5.0,
-            self.val_radius,
-            "val_radius",
-            0.01,
-            self.details_section,
-        )
-        self._add_slider(
-            "Sharpen Amount",
+            "Sharpening",
             0,
-            300,
-            self.val_percent,
-            "val_percent",
+            100,
+            self.val_sharpen,
+            "val_sharpen",
             1,
             self.details_section,
+            custom_callback=update_sharpen_params,
         )
+
+        self.val_denoise = 0
         self._add_slider(
-            "De-noise", 0, 5, self.val_denoise, "val_denoise", 1, self.details_section
+            "De-noise", 0, 20, self.val_denoise, "val_denoise", 1, self.details_section
         )
 
         # Save Button
@@ -273,6 +320,7 @@ class EditorWidget(QtWidgets.QWidget):
         step_size,
         section=None,
         flipped=False,
+        custom_callback=None,
     ):
         frame = QtWidgets.QFrame()
         layout = QtWidgets.QVBoxLayout(frame)
@@ -307,7 +355,11 @@ class EditorWidget(QtWidgets.QWidget):
 
             val_lbl.setText(f"{actual:.2f}")
             setattr(self, var_name, actual)
-            self.request_update()
+
+            if custom_callback:
+                custom_callback(actual)
+            else:
+                self.request_update()
 
             # Trigger auto-save
             self.save_timer.start(1000)  # Save after 1 second of inactivity
@@ -370,11 +422,6 @@ class EditorWidget(QtWidgets.QWidget):
         if self.raw_path:
             self.ratingChanged.emit(str(self.raw_path), rating)
 
-    def _update_sharpen_state(self, checked):
-        self.var_sharpen_enabled = checked
-        self.request_update()
-        self.save_timer.start(500)
-
     def _auto_save_sidecar(self):
         if not self.raw_path:
             return
@@ -388,9 +435,11 @@ class EditorWidget(QtWidgets.QWidget):
             "highlights": self.val_highlights,
             "shadows": self.val_shadows,
             "saturation": self.val_saturation,
-            "sharpen_enabled": self.var_sharpen_enabled,
+            "sharpen_method": "High Quality",
             "sharpen_radius": self.val_radius,
             "sharpen_percent": self.val_percent,
+            "sharpen_value": self.val_sharpen,
+            "denoise_method": "High Quality",
             "de_noise": self.val_denoise,
         }
         pynegative.save_sidecar(self.raw_path, settings)
@@ -428,12 +477,16 @@ class EditorWidget(QtWidgets.QWidget):
             self._set_slider_value("val_highlights", settings.get("highlights", 0.0))
             self._set_slider_value("val_shadows", settings.get("shadows", 0.0))
 
-            # Sharpening state
-            sharpen_on = settings.get("sharpen_enabled", False)
-            self.sharpen_checkbox.setChecked(sharpen_on)
-            self.var_sharpen_enabled = sharpen_on
-            self._set_slider_value("val_radius", settings.get("sharpen_radius", 2.0))
-            self._set_slider_value("val_percent", settings.get("sharpen_percent", 150))
+            sharpen_val = settings.get("sharpen_value")
+            if sharpen_val is not None:
+                self._set_slider_value("val_sharpen", sharpen_val)
+            else:
+                # Compatibility: try to infer from radius/percent
+                radius = settings.get("sharpen_radius", 2.0)
+                # Reverse mapping: s = (radius - 0.5) / 0.75 * 100
+                inferred_val = max(0, min(100, (radius - 0.5) / 0.75 * 100))
+                self._set_slider_value("val_sharpen", inferred_val)
+
             self._set_slider_value("val_denoise", settings.get("de_noise", 0))
 
         self.base_img_full = img_arr  # The half-res proxy
@@ -579,12 +632,15 @@ class EditorWidget(QtWidgets.QWidget):
                 processed_roi *= 255
                 pil_roi = Image.fromarray(processed_roi.astype(np.uint8))
 
-                if self.var_sharpen_enabled:
+                if self.val_sharpen > 0:
                     pil_roi = pynegative.sharpen_image(
-                        pil_roi, self.val_radius, self.val_percent
+                        pil_roi, self.val_radius, self.val_percent, "High Quality"
                     )
-                    if self.val_denoise > 0:
-                        pil_roi = pynegative.de_noise_image(pil_roi, self.val_denoise)
+
+                if self.val_denoise > 0:
+                    pil_roi = pynegative.de_noise_image(
+                        pil_roi, self.val_denoise, "High Quality"
+                    )
 
                 pix_roi = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_roi))
                 roi_x, roi_y = ix_min, iy_min
@@ -627,14 +683,22 @@ class EditorWidget(QtWidgets.QWidget):
                     saturation=self.val_saturation,
                 )
                 pil_img = Image.fromarray((img * 255).astype(np.uint8))
-                if self.var_sharpen_enabled:
+
+                if self.val_sharpen > 0:
                     pil_img = pynegative.sharpen_image(
-                        pil_img, self.val_radius, self.val_percent
+                        pil_img,
+                        self.val_radius,
+                        self.val_percent,
+                        method="High Quality",
                     )
-                    if self.val_denoise > 0:
-                        pil_img = pynegative.de_noise_image(pil_img, self.val_denoise)
+
+                if self.val_denoise > 0:
+                    pil_img = pynegative.de_noise_image(
+                        pil_img, self.val_denoise, method="High Quality"
+                    )
 
                 pynegative.save_image(pil_img, path)
+
                 QtWidgets.QMessageBox.information(
                     self, "Saved", f"Saved full resolution to {path}"
                 )
@@ -695,6 +759,20 @@ class EditorWidget(QtWidgets.QWidget):
         # Avoid reloading if same image
         if Path(path) != self.raw_path:
             self.load_image(path)
+
+    def _apply_preset(self, preset_type):
+        """Apply preset values for sharpening and denoising."""
+        if preset_type == "low":
+            self._set_slider_value("val_sharpen", 30.0)
+            self._set_slider_value("val_denoise", 5.0)
+        elif preset_type == "medium":
+            self._set_slider_value("val_sharpen", 60.0)
+            self._set_slider_value("val_denoise", 15.0)
+        elif preset_type == "high":
+            self._set_slider_value("val_sharpen", 100.0)
+            self._set_slider_value("val_denoise", 25.0)
+
+        self.request_update()
 
     def set_preview_mode(self, enabled):
         self.panel.setVisible(not enabled)
