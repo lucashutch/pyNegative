@@ -116,15 +116,6 @@ class ExportWidget(QtWidgets.QWidget):
         self.settings_layout.setSpacing(10)
         self.main_layout.addWidget(self.settings_container, 1)
 
-        # Format
-        self.format_label = QtWidgets.QLabel("Format")
-        self.settings_layout.addWidget(self.format_label)
-        self.format_combo = ComboBox()
-        self.format_combo.setObjectName("ExportComboBox")
-        self.format_combo.addItems(["JPEG", "HEIF", "DNG"])
-        self.format_combo.currentIndexChanged.connect(self._on_format_changed)
-        self.settings_layout.addWidget(self.format_combo)
-
         # Preset
         self.preset_label = QtWidgets.QLabel("Preset")
         self.settings_layout.addWidget(self.preset_label)
@@ -137,9 +128,15 @@ class ExportWidget(QtWidgets.QWidget):
         self.save_preset_button.clicked.connect(self.save_preset)
         self.settings_layout.addWidget(self.save_preset_button)
 
+        # Format
+        self.format_label = QtWidgets.QLabel("Format")
+        self.settings_layout.addWidget(self.format_label)
+        self.format_combo = ComboBox()
+        self.format_combo.setObjectName("ExportComboBox")
+        self.format_combo.addItems(["JPEG", "HEIF", "DNG"])
+        self.settings_layout.addWidget(self.format_combo)
+        self.format_combo.currentIndexChanged.connect(self._on_format_changed)
         self.preset_combo.currentIndexChanged.connect(self.apply_preset)
-
-        self.load_presets()
 
         # Settings
         self.jpeg_settings = QtWidgets.QGroupBox("JPEG Settings")
@@ -166,8 +163,10 @@ class ExportWidget(QtWidgets.QWidget):
         self.dng_layout.addRow("Compression", self.dng_compression)
         self.settings_layout.addWidget(self.dng_settings)
 
-        # Size
+        # Size (collapsible)
         self.size_group = QtWidgets.QGroupBox("Size")
+        self.size_group.setCheckable(True)
+        self.size_group.setChecked(False)  # Collapsed by default
         self.size_layout = QtWidgets.QFormLayout(self.size_group)
         self.max_width = QtWidgets.QLineEdit()
         self.max_width.setObjectName("ExportLineEdit")
@@ -177,6 +176,32 @@ class ExportWidget(QtWidgets.QWidget):
         self.size_layout.addRow("Max Height", self.max_height)
         self.settings_layout.addWidget(self.size_group)
 
+        # Destination
+        self.destination_group = QtWidgets.QGroupBox("Destination")
+        self.destination_layout = QtWidgets.QVBoxLayout(self.destination_group)
+
+        self.use_default_dest = QtWidgets.QCheckBox("Use gallery folder /exported")
+        self.use_default_dest.setChecked(True)
+        self.destination_layout.addWidget(self.use_default_dest)
+
+        # Custom destination selection
+        self.custom_dest_container = QtWidgets.QWidget()
+        self.custom_dest_layout = QtWidgets.QHBoxLayout(self.custom_dest_container)
+        self.custom_dest_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.custom_dest_button = QtWidgets.QPushButton("Choose Folder...")
+        self.custom_dest_button.setEnabled(False)
+        self.custom_dest_button.setMinimumWidth(140)
+        self.custom_dest_label = QtWidgets.QLabel("No folder selected")
+        self.custom_dest_label.setStyleSheet("color: gray;")
+
+        self.custom_dest_layout.addWidget(self.custom_dest_button)
+        self.custom_dest_layout.addWidget(self.custom_dest_label)
+        self.custom_dest_layout.addStretch()
+
+        self.destination_layout.addWidget(self.custom_dest_container)
+        self.settings_layout.addWidget(self.destination_group)
+
         self.settings_layout.addStretch()
 
         # Export Button
@@ -184,11 +209,30 @@ class ExportWidget(QtWidgets.QWidget):
         self.export_button.clicked.connect(self.start_export)
         self.settings_layout.addWidget(self.export_button)
 
+        # Load destination settings
+        self.custom_destination = self.settings.value(
+            "custom_destination", "", type=str
+        )
+        use_default = self.settings.value("use_default_destination", True, type=bool)
+
+        # Set initial value before connecting signal
+        self.use_default_dest.setChecked(use_default)
+
+        # Connect destination signals
+        self.use_default_dest.toggled.connect(self.on_destination_mode_changed)
+        self.custom_dest_button.clicked.connect(self.on_choose_custom_destination)
+
+        if self.custom_destination:
+            self.custom_dest_label.setText(self.custom_destination)
+            self.custom_dest_label.setStyleSheet("")
+
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setVisible(False)
         self.settings_layout.addWidget(self.progress_bar)
 
-        self._on_format_changed(0)
+        # Load presets after all UI components are created
+        self.load_presets()
+        self._on_format_changed(self.format_combo.currentIndex())
 
     def _on_format_changed(self, index):
         format = self.format_combo.itemText(index)
@@ -248,6 +292,40 @@ class ExportWidget(QtWidgets.QWidget):
         if self.current_folder:
             self.load_folder(self.current_folder)
 
+    def on_destination_mode_changed(self, use_default):
+        """Handle toggle between default and custom destination."""
+        self.custom_dest_button.setEnabled(not use_default)
+        self.settings.setValue("use_default_destination", use_default)
+
+    def on_choose_custom_destination(self):
+        """Handle custom folder selection."""
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Select Export Destination"
+        )
+        if folder:
+            self.custom_destination = folder
+            self.custom_dest_label.setText(folder)
+            self.custom_dest_label.setStyleSheet("")
+            self.settings.setValue("custom_destination", folder)
+
+    def get_export_destination(self):
+        """Get the export destination folder."""
+        if self.use_default_dest.isChecked():
+            # Use gallery folder + "exported" subfolder
+            if self.current_folder:
+                default_dest = self.current_folder / "exported"
+                default_dest.mkdir(exist_ok=True)
+                return str(default_dest)
+
+        # Use custom destination or show folder dialog
+        if self.custom_destination:
+            return self.custom_destination
+
+        # Fallback to folder selection
+        return QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Select Destination Folder"
+        )
+
     def start_export(self):
         files = [
             item.data(QtCore.Qt.UserRole) for item in self.list_widget.selectedItems()
@@ -258,9 +336,7 @@ class ExportWidget(QtWidgets.QWidget):
             )
             return
 
-        destination_folder = QtWidgets.QFileDialog.getExistingDirectory(
-            self, "Select Destination Folder"
-        )
+        destination_folder = self.get_export_destination()
         if not destination_folder:
             return
 
@@ -310,6 +386,11 @@ class ExportWidget(QtWidgets.QWidget):
         for preset_name in self.settings.childKeys():
             self.preset_combo.addItem(preset_name)
         self.settings.endGroup()
+
+        # Set default to Archival
+        archival_index = self.preset_combo.findText("Archival")
+        if archival_index != -1:
+            self.preset_combo.setCurrentIndex(archival_index)
 
     def save_preset(self):
         preset_name, ok = QtWidgets.QInputDialog.getText(
