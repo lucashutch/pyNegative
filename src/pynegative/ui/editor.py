@@ -18,6 +18,7 @@ from .widgets import (
 
 class EditorWidget(QtWidgets.QWidget):
     ratingChanged = QtCore.Signal(str, int)
+    imageDoubleClicked = QtCore.Signal()
 
     def __init__(self, thread_pool):
         super().__init__()
@@ -78,6 +79,7 @@ class EditorWidget(QtWidgets.QWidget):
 
         # Trigger ROI re-render when zoom or pan changes
         self.view.zoomChanged.connect(self.request_update)
+        self.view.doubleClicked.connect(self.imageDoubleClicked.emit)
 
         self.canvas_container.addWidget(
             self.zoom_ctrl, 0, 0, Qt.AlignBottom | Qt.AlignRight
@@ -693,6 +695,11 @@ class EditorWidget(QtWidgets.QWidget):
         # Avoid reloading if same image
         if Path(path) != self.raw_path:
             self.load_image(path)
+
+    def set_preview_mode(self, enabled):
+        self.panel.setVisible(not enabled)
+        # In preview mode, we might want the carousel to be slightly different
+        # but for now, the user wants it exactly like edit mode.
 
     def open(self, path, image_list=None):
         if not isinstance(path, Path):

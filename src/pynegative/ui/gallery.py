@@ -3,6 +3,7 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from .. import core as pynegative
 from .loaders import ThumbnailLoader
 from .widgets import GalleryItemDelegate, GalleryListWidget
+from .editor import EditorWidget
 
 
 class GalleryWidget(QtWidgets.QWidget):
@@ -10,12 +11,14 @@ class GalleryWidget(QtWidgets.QWidget):
     ratingChanged = QtCore.Signal(str, int)
     imageListChanged = QtCore.Signal(list)
     folderLoaded = QtCore.Signal(str)
+    viewModeChanged = QtCore.Signal(bool)  # True for Large Preview, False for Grid
 
     def __init__(self, thread_pool):
         super().__init__()
         self.thread_pool = thread_pool
         self.current_folder = None
         self.settings = QtCore.QSettings("pyNegative", "Gallery")
+        self._is_large_preview = False
         self._init_ui()
 
     def _init_ui(self):
@@ -55,6 +58,62 @@ class GalleryWidget(QtWidgets.QWidget):
 
         self.stack.addWidget(self.grid_container)
 
+        # Large Preview View
+        self.preview_widget = EditorWidget(self.thread_pool)
+        self.preview_widget.set_preview_mode(True)
+        self.preview_widget.imageDoubleClicked.connect(self.toggle_view_mode)
+        self.preview_widget.ratingChanged.connect(self.ratingChanged.emit)
+        self.stack.addWidget(self.preview_widget)
+
+        # Floating Toggle Button
+        self.btn_toggle_view = QtWidgets.QPushButton("⊞", self)  # Grid icon placeholder
+        self.btn_toggle_view.setObjectName("ViewToggleButton")
+        self.btn_toggle_view.setFixedSize(50, 50)
+        self.btn_toggle_view.setToolTip("Toggle Grid/Preview")
+        self.btn_toggle_view.clicked.connect(self.toggle_view_mode)
+        self.btn_toggle_view.hide()  # Hide until folder is loaded
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Position the button in the bottom right corner
+        if hasattr(self, "btn_toggle_view"):
+            self.btn_toggle_view.move(
+                self.width() - self.btn_toggle_view.width() - 20,
+                self.height() - self.btn_toggle_view.height() - 20,
+            )
+            self.btn_toggle_view.raise_()
+
+    def toggle_view_mode(self):
+        self._is_large_preview = not self._is_large_preview
+        if self._is_large_preview:
+            self.btn_toggle_view.setText("❐")  # Preview icon placeholder
+            self.stack.setCurrentWidget(self.preview_widget)
+
+            # Load current selection into preview
+            current_item = self.list_widget.currentItem()
+            if current_item:
+                path = current_item.data(QtCore.Qt.UserRole)
+                self.preview_widget.open(path, self.get_current_image_list())
+            else:
+                # If no selection, try first item
+                image_list = self.get_current_image_list()
+                if image_list:
+                    self.preview_widget.open(image_list[0], image_list)
+        else:
+            self.btn_toggle_view.setText("⊞")
+            self.stack.setCurrentWidget(self.grid_container)
+
+            # Sync selection back to grid
+            if self.preview_widget.raw_path:
+                path_str = str(self.preview_widget.raw_path)
+                for i in range(self.list_widget.count()):
+                    item = self.list_widget.item(i)
+                    if item.data(QtCore.Qt.UserRole) == path_str:
+                        self.list_widget.setCurrentItem(item)
+                        break
+
+        self.viewModeChanged.emit(self._is_large_preview)
+
     def _create_empty_state(self):
         """Create centered empty state with Open Folder button."""
         empty_widget = QtWidgets.QWidget()
@@ -91,6 +150,7 @@ class GalleryWidget(QtWidgets.QWidget):
         else:
             # Show empty state
             self.stack.setCurrentWidget(self.empty_state)
+            self.btn_toggle_view.hide()
 
     def browse_folder(self):
         # Start from last folder if available
@@ -113,6 +173,8 @@ class GalleryWidget(QtWidgets.QWidget):
 
         # Switch to grid view
         self.stack.setCurrentWidget(self.grid_container)
+        self.btn_toggle_view.show()
+        self.btn_toggle_view.raise_()
 
         files = [
             f
@@ -172,7 +234,13 @@ class GalleryWidget(QtWidgets.QWidget):
 
     def _on_item_double_clicked(self, item):
         path = item.data(QtCore.Qt.UserRole)
-        self.imageSelected.emit(path)
+        if self._is_large_preview:
+            # This shouldn't really happen from grid, but for consistency:
+            self.preview_widget.open(path, self.get_current_image_list())
+        else:
+            self.toggle_view_mode()
+            # The toggle_view_mode will load the current selection,
+            # and double click also selects the item.
 
     def _on_rating_changed(self, top_left_index, bottom_right_index):
         if top_left_index != bottom_right_index:
@@ -197,6 +265,8 @@ class GalleryWidget(QtWidgets.QWidget):
         return paths
 
     def update_rating_for_item(self, path, rating):
+        # Update both grid and preview
+        self.preview_widget.update_rating_for_path(path, rating)
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
             if item.data(QtCore.Qt.UserRole) == path:
