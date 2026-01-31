@@ -432,26 +432,7 @@ QComboBox#ExportComboBox:hover {
     border-color: #4a4a4a;
 }
 
-QComboBox#ExportComboBox::drop-down {
-    border: none;
-}
-
-QComboBox#ExportComboBox::down-arrow {
-    subcontrol-origin: padding;
-    subcontrol-position: top right;
-    width: 15px;
-    border-left-width: 1px;
-    border-left-color: #404040;
-    border-left-style: solid;
-    border-top-right-radius: 3px;
-    border-bottom-right-radius: 3px;
-    background: #303030;
-}
-
-QComboBox#ExportComboBox::down-arrow:on {
-    top: 1px;
-    left: 1px;
-}
+/* Custom dropdown arrow is drawn in the ComboBox paintEvent */
 
 
 QComboBox#ExportComboBox QAbstractItemView {
