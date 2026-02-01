@@ -6,6 +6,7 @@ import time
 import rawpy
 from PIL import Image, ImageFilter
 from functools import lru_cache
+from numba import jit
 
 SUPPORTED_EXTS = (".cr3", ".CR3", ".cr2", ".CR2", ".dng", ".DNG")
 
@@ -16,6 +17,75 @@ try:
     HEIF_SUPPORTED = True
 except ImportError:
     HEIF_SUPPORTED = False
+
+
+@jit(nopython=True, fastmath=True)
+def _numba_tone_map(
+    img, exposure, contrast, blacks, whites, shadows, highlights, saturation
+):
+    """
+    JIT-compiled core tone mapping function.
+    Operates purely on numpy arrays for max performance.
+    """
+    # Ensure all parameters and constants are float32 to match image array type
+    f32 = np.float32
+    exposure = f32(exposure)
+    contrast = f32(contrast)
+    blacks = f32(blacks)
+    whites = f32(whites)
+    shadows = f32(shadows)
+    highlights = f32(highlights)
+    saturation = f32(saturation)
+
+    # 1. Exposure
+    if exposure != 0.0:
+        img = img * (f32(2.0) ** exposure)
+
+    # 1.5 Contrast
+    if contrast != 1.0:
+        img = (img - f32(0.5)) * contrast + f32(0.5)
+
+    # 2. Levels
+    if blacks != 0.0 or whites != 1.0:
+        denom = whites - blacks
+        if abs(denom) < f32(1e-6):
+            denom = f32(1e-6)
+        img = (img - blacks) / denom
+
+    # 3. Tone EQ
+    if shadows != 0.0 or highlights != 0.0:
+        # Numba requires explicit loops for this kind of operation
+        h, w, _ = img.shape
+        for r in range(h):
+            for c in range(w):
+                lum = (
+                    f32(0.2126) * img[r, c, 0]
+                    + f32(0.7152) * img[r, c, 1]
+                    + f32(0.0722) * img[r, c, 2]
+                )
+                lum = max(f32(0.0), min(f32(1.0), lum))  # Clip lum
+
+                if shadows != 0.0:
+                    s_mask = (f32(1.0) - lum) ** f32(2.0)
+                    img[r, c, :] += shadows * s_mask * img[r, c, :]
+
+                if highlights != 0.0:
+                    h_mask = lum ** f32(2.0)
+                    img[r, c, :] += highlights * h_mask * (f32(1.0) - img[r, c, :])
+
+    # 4. Saturation
+    if saturation != 1.0:
+        h, w, _ = img.shape
+        for r in range(h):
+            for c in range(w):
+                lum = (
+                    f32(0.2126) * img[r, c, 0]
+                    + f32(0.7152) * img[r, c, 1]
+                    + f32(0.0722) * img[r, c, 2]
+                )
+                img[r, c, :] = lum + (img[r, c, :] - lum) * saturation
+
+    return img
 
 
 # ---------------- Tone Mapping ----------------
@@ -32,61 +102,27 @@ def apply_tone_map(
     """
     Applies Exposure -> Levels -> Tone EQ -> Saturation -> Base Curve
     """
-    img = img.copy()  # Ensure we don't modify the input array in-place
-    total_pixels = img.size
+    img_in = img.copy()  # Ensure we don't modify the input array in-place
+    total_pixels = img_in.size
 
-    # 1. Exposure (2^stops)
-    if exposure != 0.0:
-        img = img * (2**exposure)
+    # Call the JIT-compiled function for the heavy lifting
+    processed_img = _numba_tone_map(
+        img_in, exposure, contrast, blacks, whites, shadows, highlights, saturation
+    )
 
-    # 1.5 Contrast (Symmetric around 0.5)
-    if contrast != 1.0:
-        img = (img - 0.5) * contrast + 0.5
+    # Clip stats for reporting (done outside the JIT function)
+    clipped_shadows = np.sum(processed_img < 0.0)
+    clipped_highlights = np.sum(processed_img > 1.0)
 
-    # 2. Levels (Blacks & Whites)
-    if blacks != 0.0 or whites != 1.0:
-        denom = whites - blacks
-        if abs(denom) < 1e-6:
-            denom = 1e-6
-        img = (img - blacks) / denom
-
-    # 3. Tone EQ (Shadows & Highlights)
-    if shadows != 0.0 or highlights != 0.0:
-        lum = 0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
-        lum = np.clip(lum, 0, 1)
-        lum = lum[:, :, np.newaxis]
-
-        if shadows != 0.0:
-            s_mask = (1.0 - lum) ** 2
-            img += shadows * s_mask * img
-
-        if highlights != 0.0:
-            h_mask = lum**2
-            img += highlights * h_mask * (1.0 - img)
-
-    # 4. Saturation
-    if saturation != 1.0:
-        lum = 0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
-        lum = lum[:, :, np.newaxis]
-        img = lum + (img - lum) * saturation
-
-    # 5. Base Curve (Sigmoid for "Punch")
-    # TBD: Implementation of cosmetic contrast curves/S-curves.
-    # For now, relying on saturation + exposure boost + contrast slider.
-
-    # Clip stats for reporting
-    clipped_shadows = np.sum(img < 0.0)
-    clipped_highlights = np.sum(img > 1.0)
-
-    img = np.clip(img, 0.0, 1.0)
+    processed_img = np.clip(processed_img, 0.0, 1.0)
 
     stats = {
         "pct_shadows_clipped": clipped_shadows / total_pixels * 100,
         "pct_highlights_clipped": clipped_highlights / total_pixels * 100,
-        "mean": img.mean(),
+        "mean": processed_img.mean(),
     }
 
-    return img, stats
+    return processed_img, stats
 
 
 def calculate_auto_exposure(img):
