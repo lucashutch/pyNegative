@@ -36,7 +36,7 @@ class EditorWidget(QtWidgets.QWidget):
 
     def _init_components(self):
         """Initialize all component instances."""
-        self.image_processor = ImageProcessingPipeline(self)
+        self.image_processor = ImageProcessingPipeline(self.thread_pool, self)
         self.editing_controls = EditingControls(self)
         self.settings_manager = SettingsManager(self)
         self.carousel_manager = CarouselManager(self.thread_pool, self)
@@ -110,6 +110,17 @@ class EditorWidget(QtWidgets.QWidget):
         # Toast widget for notifications
         self.toast = ToastWidget(self.canvas_frame)
 
+        # Performance metric label
+        self.perf_label = QtWidgets.QLabel(self.canvas_frame)
+        self.perf_label.setStyleSheet(
+            "background-color: rgba(0, 0, 0, 128); color: white; padding: 4px; border-radius: 4px;"
+        )
+        self.canvas_container.addWidget(
+            self.perf_label, 0, 0, Qt.AlignBottom | Qt.AlignLeft
+        )
+        self.perf_label.setContentsMargins(10, 0, 0, 10)
+        self.perf_label.hide()
+
     def _setup_connections(self):
         """Setup signal/slot connections between components."""
         # Editing controls -> Image processor
@@ -120,6 +131,7 @@ class EditorWidget(QtWidgets.QWidget):
 
         # Image processor -> View
         self.image_processor.previewUpdated.connect(self.view.set_pixmaps)
+        self.image_processor.performanceMeasured.connect(self._on_performance_measured)
 
         # Settings manager
         self.settings_manager.showToast.connect(self.show_toast)
@@ -146,6 +158,9 @@ class EditorWidget(QtWidgets.QWidget):
         )
         QtGui.QShortcut(
             QtGui.QKeySequence.StandardKey.Paste, self, self._handle_paste_shortcut
+        )
+        QtGui.QShortcut(
+            QtGui.QKeySequence("F12"), self, self._toggle_performance_overlay
         )
 
     def resizeEvent(self, event):
@@ -314,10 +329,10 @@ class EditorWidget(QtWidgets.QWidget):
     def _on_preset_applied(self, preset_type):
         """Handle preset application."""
         self.image_processor.set_processing_params(
-            sharpen=self.editing_controls.val_sharpen,
-            radius=self.editing_controls.val_radius,
-            percent=self.editing_controls.val_percent,
-            denoise=self.editing_controls.val_denoise,
+            sharpen_value=self.editing_controls.val_sharpen_value,
+            sharpen_radius=self.editing_controls.val_sharpen_radius,
+            sharpen_percent=self.editing_controls.val_sharpen_percent,
+            de_noise=self.editing_controls.val_de_noise,
         )
         self._request_update_from_view()
 
@@ -559,3 +574,14 @@ class EditorWidget(QtWidgets.QWidget):
         # Restore rating
         self.editing_controls.set_rating(rating)
         self.settings_manager.set_current_settings(settings, rating)
+
+    @QtCore.Slot(float)
+    def _on_performance_measured(self, elapsed_ms):
+        """Update the performance label."""
+        self.perf_label.setText(f"{elapsed_ms:.1f} ms")
+
+    def _toggle_performance_overlay(self):
+        """Toggle the visibility of the performance metric overlay."""
+        is_visible = not self.perf_label.isVisible()
+        self.perf_label.setVisible(is_visible)
+        self.show_toast(f"Performance Overlay {'On' if is_visible else 'Off'}")

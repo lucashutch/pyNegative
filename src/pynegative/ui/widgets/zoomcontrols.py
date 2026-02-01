@@ -14,7 +14,7 @@ class ZoomControls(QtWidgets.QFrame):
 
         # Slider (50 to 400)
         self.slider = QtWidgets.QSlider(Qt.Horizontal)
-        self.slider.setRange(50, 400)
+        self.slider.setRange(1, 400)
         self.slider.setValue(100)
         self.slider.setFixedWidth(120)
         self.slider.valueChanged.connect(self._on_slider_changed)
@@ -22,7 +22,7 @@ class ZoomControls(QtWidgets.QFrame):
 
         # Percentage Box
         self.spin = QtWidgets.QSpinBox()
-        self.spin.setRange(50, 400)
+        self.spin.setRange(1, 400)
         self.spin.setValue(100)
         self.spin.setSuffix("%")
         self.spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)

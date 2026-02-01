@@ -10,18 +10,18 @@ git clone https://github.com/lucashutch/pyNegative.git
 cd pyNegative
 ```
 
-### Using `uv` (Preffererd)
+### Using `uv` (Preferred)
 uv automatically creates a virtual environment and installs the dependencies.
 ```bash
 # Install in editable mode
-uv sync
+uv sync --all-groups
 
 # Run the UI
 uv run pyneg-ui
 ```
 
 ### Using `pip` (Legacy)
-This method is not recommended as it does not create a virtual environment. You can use the default python environment, but it is not recommended. especially on newer OSs.
+This method is not recommended as it does not create a virtual environment. You can use the default python environment, but it is not recommended, especially on newer OSs.
 ```bash
 # Install in editable mode
 pip install -e .
@@ -39,17 +39,17 @@ pyneg-ui
 ### UI Editor (`pyneg-ui`)
 A graphical user interface (GUI) for interactively editing RAW files.
 -   **Interactive Editing**: Live preview of changes as adjustments are made.
+-   **Multi-threaded Performance**: Image processing is done in a background thread, ensuring the UI remains smooth and responsive, even during heavy edits.
 -   **Comprehensive Adjustments**: Sliders for fine-tuning exposure, contrast, blacks, whites, shadows, highlights, sharpening, and de-noise.
 -   **Advanced Processing**:
-    -   **Sharpening**: High-quality, edge-aware sharpening algorithms (Advanced/Standard).
-    -   **Noise Reduction**: Multiple denoising methods including Non-Local Means (NLM), Bilateral, and Total Variation.
+    -   **Sharpening**: High-quality, edge-aware sharpening algorithms.
+    -   **Noise Reduction**: Multiple denoising methods including a high-quality, chroma-aware bilateral filter.
     -   **Processing Presets**: Quick "Subtle", "Medium", and "Aggressive" presets for detail enhancement.
--   **Zoom Support**: Zoom into photos for precise control during editing.
--   **Responsive Sliders**: Optimized performance for smooth slider interactions.
+-   **Dynamic Zoom**: Zoom into photos for precise control. The minimum zoom is dynamically calculated to perfectly fit the image to your window, preventing you from zooming out too far.
 -   **Quick Reset**: Double-click sliders to reset them to their default values.
 -   **Image Carousel**: Horizontal carousel for easy navigation through images in a folder.
 -   **Integrated Rating System**: Assign star ratings (1-5) to photos directly within the editor.
--   **Dynamic Carousel Sync**: Editor's image carousel automatically updates and synchronizes with gallery filters.
+-   **Performance Overlay (F12)**: A diagnostic overlay showing the render time for the last operation can be toggled by pressing F12.
 
 ### Gallery View
 -   **Grid Browsing**: Browse images in a folder in a responsive grid layout.
@@ -66,7 +66,7 @@ A graphical user interface (GUI) for interactively editing RAW files.
 
 ## Development
 
-Install Dev dependancies:
+Install Dev dependencies:
 ```bash
 uv sync --all-groups
 ```
@@ -80,11 +80,12 @@ uv run pytest
 
 Track planned features and project goals.
 
--   [ ] **Enable multi-threaded**: Enable multi-threaded processing of the images in the edit view and gallery view.
+-   [x] **Enable multi-threaded**: Enable multi-threaded processing of the images in the edit view.
+-   [x] **Fix edit and preview zoom**: Fix edit and preview zoom to work as expected when fit to window vs zooming in.
 -   [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
 -   [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
 -   [ ] **Batch Renaming**: Sequence-based renaming for folder exports.
--   [ ] **Readme refactor** update readme, and create a readme structure that is easy to navigate. and covers larger sections of the codebase in more details. eg tests.
+-   [ ] **Readme refactor**: Update readme, and create a readme structure that is easy to navigate and covers larger sections of the codebase in more detail (e.g., tests).
 
 ## Testing Improvement Areas
 

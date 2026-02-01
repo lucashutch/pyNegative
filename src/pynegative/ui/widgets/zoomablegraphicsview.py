@@ -31,6 +31,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self._fg_item.setZValue(1)
 
         self._current_zoom = 1.0
+        self._fit_in_view_scale = 1.0
         self._is_fitting = True
         self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
 
@@ -41,6 +42,25 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
     def _sync_view(self):
         if not self._is_fitting:
             self.zoomChanged.emit(self._current_zoom)
+
+    def _update_fit_in_view_scale(self):
+        """Calculates and stores the scale factor for fitting the image to the view."""
+        if self.sceneRect().isEmpty() or self.viewport().width() <= 0:
+            return
+
+        view_rect = self.viewport().rect()
+        scene_rect = self.sceneRect()
+
+        x_scale = view_rect.width() / scene_rect.width()
+        y_scale = view_rect.height() / scene_rect.height()
+        self._fit_in_view_scale = min(x_scale, y_scale)
+
+    def resizeEvent(self, event):
+        """Handle viewport resizing."""
+        super().resizeEvent(event)
+        self._update_fit_in_view_scale()
+        if self._is_fitting:
+            self.reset_zoom()
 
     def set_pixmaps(
         self,
@@ -67,6 +87,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
         # 2. Update Scene Rect
         self._scene.setSceneRect(0, 0, full_w, full_h)
+        self._update_fit_in_view_scale()
 
         # 3. Update ROI
         if not roi_pix.isNull():
@@ -95,8 +116,11 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self.zoomChanged.emit(self._current_zoom)
 
     def set_zoom(self, scale, manual=True):
+        self._is_fitting = False  # Any call to set_zoom breaks fitting
         if manual:
-            self._is_fitting = False
+            # Clamp to the dynamic fit-in-view scale for manual user actions
+            scale = max(self._fit_in_view_scale, scale)
+
         self._current_zoom = scale
         self.setTransform(QtGui.QTransform.fromScale(scale, scale))
         self.zoomChanged.emit(self._current_zoom)
@@ -110,9 +134,10 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
         self._current_zoom = self.transform().m11()
         new_zoom = self._current_zoom * factor
-        new_zoom = max(0.5, min(new_zoom, 4.0))
+        # Use the dynamic fit-in-view scale as the minimum
+        new_zoom = max(self._fit_in_view_scale, min(new_zoom, 4.0))
 
-        if new_zoom != self._current_zoom:
+        if abs(new_zoom - self._current_zoom) > 0.001:
             self.set_zoom(new_zoom, manual=True)
 
         event.accept()
