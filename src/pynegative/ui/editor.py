@@ -147,6 +147,9 @@ class EditorWidget(QtWidgets.QWidget):
         # Update circle visibility based on initial state
         self._update_circle_visibility()
 
+        # Debug selection circle visibility issue temporarily resolved
+        # self.carousel_delegate.set_show_selection_circles(False)  # Uncomment to disable circles
+
         # Set up carousel context menu
         self.carousel.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.carousel.customContextMenuRequested.connect(

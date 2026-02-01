@@ -46,6 +46,8 @@ class HorizontalListWidget(QtWidgets.QListWidget):
                     self._last_clicked_item = item
                     self.selectionChanged.emit()
                     self.update()
+                    # Accept and return to prevent base class from processing the click
+                    event.accept()
                     return
 
             # Skip selection logic for right-click (context menu)

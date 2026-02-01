@@ -1,5 +1,4 @@
 import pytest
-from PySide6 import QtWidgets, QtCore, QtGui
 from pynegative.ui.widgets.zoomcontrols import ZoomControls
 
 

@@ -28,7 +28,7 @@ class ToastWidget(QtWidgets.QWidget):
 
         # Create layout
         self._layout = QtWidgets.QHBoxLayout(self._background_frame)
-        self._layout.setContentsMargins(20, 12, 20, 12)
+        self._layout.setContentsMargins(16, 8, 16, 8)
 
         # Create label
         self._label = QtWidgets.QLabel()
@@ -37,6 +37,7 @@ class ToastWidget(QtWidgets.QWidget):
                 color: #ffffff;
                 font-size: 14px;
                 font-weight: 500;
+                border: none;
             }
         """)
 
@@ -55,17 +56,26 @@ class ToastWidget(QtWidgets.QWidget):
         self._fade_timer = QtCore.QTimer(self)
         self._fade_timer.timeout.connect(self._update_opacity)
 
+        # Initialize hidden and transparent
+        self.setWindowOpacity(0.0)
+        self.hide()
+
     def show_message(self, message):
         """Show a toast message."""
         self._label.setText(message)
+        self.ensurePolished()
         self.adjustSize()
 
         # Position at bottom center of parent
         if self.parent():
             parent_rect = self.parent().rect()
+            # Use the actual width/height after adjustSize
             x = (parent_rect.width() - self.width()) // 2
             y = parent_rect.height() - self.height() - 40
             self.move(x, y)
+
+            # Ensure toast is visible and properly positioned
+            self.raise_()
 
         # Show with fade in
         self._opacity = 0.0
