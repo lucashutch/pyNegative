@@ -1,21 +1,15 @@
 from pathlib import Path
 import numpy as np
-from PIL import Image, ImageQt
+from PIL import Image
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
 
-from .loaders import ThumbnailLoader, RawLoader
-from .undomanager import UndoManager
-from .widgets import (
-    HorizontalListWidget,
-    CollapsibleSection,
-    ResetableSlider,
-    StarRatingWidget,
-    CarouselDelegate,
-    ToastWidget,
-    ZoomableGraphicsView,
-    ZoomControls,
-)
+from .loaders import RawLoader
+from .widgets import ZoomControls, ToastWidget, ZoomableGraphicsView
+from .imageprocessing import ImageProcessingPipeline
+from .editingcontrols import EditingControls
+from .settingsmanager import SettingsManager
+from .carouselmanager import CarouselManager
 from .. import core as pynegative
 
 
@@ -28,49 +22,27 @@ class EditorWidget(QtWidgets.QWidget):
         self.thread_pool = thread_pool
         self.current_folder = None
         self.raw_path = None
-        self.base_img_full = None  # The High-Res Proxy (e.g. 4000px)
-        self._base_img_uint8 = None  # Cached uint8 version for resizing
-        self.current_qpixmap = None
-        self.current_rating = 0
 
         # Auto-save timer
         self.save_timer = QtCore.QTimer()
         self.save_timer.setSingleShot(True)
         self.save_timer.timeout.connect(self._auto_save_sidecar)
 
-        # Throttled Render Timer (30 FPS)
-        self.render_timer = QtCore.QTimer()
-        self.render_timer.setSingleShot(True)
-        self.render_timer.timeout.connect(self._on_render_timer_timeout)
-        self._render_pending = False
-        self._is_rendering_locked = False
-
-        # Sync Settings - Settings clipboard
-        self.settings_clipboard = None
-        self.clipboard_source_path = None
-
-        # Undo/Redo system
-        self.undo_manager = UndoManager()
-        self.undo_timer = QtCore.QTimer()
-        self.undo_timer.setSingleShot(True)
-        self.undo_timer.timeout.connect(self._push_undo_state)
-        self._undo_state_description = ""
-        self._undo_timer_active = False
-
+        # Initialize components
+        self._init_components()
         self._init_ui()
+        self._setup_connections()
+        self._setup_keyboard_shortcuts()
 
-        # Set up keyboard shortcuts
-        QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Undo, self, self._undo)
-        QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Redo, self, self._redo)
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Z"), self, self._redo)
-        QtGui.QShortcut(
-            QtGui.QKeySequence.StandardKey.Copy, self, self._handle_copy_shortcut
-        )
-        QtGui.QShortcut(
-            QtGui.QKeySequence.StandardKey.Paste, self, self._handle_paste_shortcut
-        )
+    def _init_components(self):
+        """Initialize all component instances."""
+        self.image_processor = ImageProcessingPipeline(self)
+        self.editing_controls = EditingControls(self)
+        self.settings_manager = SettingsManager(self)
+        self.carousel_manager = CarouselManager(self.thread_pool, self)
 
     def _init_ui(self):
+        """Initialize the user interface."""
         main_layout = QtWidgets.QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
@@ -89,6 +61,9 @@ class EditorWidget(QtWidgets.QWidget):
         self.panel_layout.setSpacing(2)
         self.splitter.addWidget(self.panel)
 
+        # Add editing controls to panel
+        self.panel_layout.addWidget(self.editing_controls)
+
         # --- Canvas (Right Side) ---
         self.canvas_frame = QtWidgets.QFrame()
         self.canvas_frame.setObjectName("CanvasFrame")
@@ -103,7 +78,7 @@ class EditorWidget(QtWidgets.QWidget):
         # View replaced with ZoomableGraphicsView
         self.view = ZoomableGraphicsView()
 
-        # Layout for canvas + zoom controls
+        # Layout for canvas + zoom controls + carousel
         self.canvas_container = QtWidgets.QGridLayout(self.canvas_frame)
         self.canvas_container.setContentsMargins(0, 0, 0, 0)
         self.canvas_container.addWidget(self.view, 0, 0)
@@ -117,8 +92,11 @@ class EditorWidget(QtWidgets.QWidget):
         self.view.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.view.customContextMenuRequested.connect(self._show_main_photo_context_menu)
 
+        # Set view reference for image processor
+        self.image_processor.set_view_reference(self.view)
+
         # Trigger ROI re-render when zoom or pan changes
-        self.view.zoomChanged.connect(self.request_update)
+        self.view.zoomChanged.connect(self._request_update_from_view)
         self.view.doubleClicked.connect(self.imageDoubleClicked.emit)
 
         self.canvas_container.addWidget(
@@ -126,606 +104,96 @@ class EditorWidget(QtWidgets.QWidget):
         )
         self.zoom_ctrl.setContentsMargins(0, 0, 20, 20)
 
-        # Carousel (Bottom)
-        self.carousel = HorizontalListWidget()
-        self.carousel.setObjectName("Carousel")
-        self.carousel.setViewMode(QtWidgets.QListView.IconMode)
-        self.carousel.setFlow(QtWidgets.QListView.LeftToRight)  # Horizontal
-        self.carousel.setWrapping(False)
-        self.carousel.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        self.carousel.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.carousel.setFixedHeight(145)
-        self.carousel.setIconSize(QtCore.QSize(100, 100))
-        self.carousel.setSpacing(5)
-        self.carousel.itemClicked.connect(self._on_carousel_item_clicked)
-
-        # Set up carousel delegate for selection circles
-        self.carousel_delegate = CarouselDelegate(self.carousel)
-        self.carousel.setItemDelegate(self.carousel_delegate)
-        self.carousel.selectionChanged.connect(self._on_carousel_selection_changed)
-
-        # Update circle visibility based on initial state
-        self._update_circle_visibility()
-
-        # Debug selection circle visibility issue temporarily resolved
-        # self.carousel_delegate.set_show_selection_circles(False)  # Uncomment to disable circles
-
-        # Set up carousel context menu
-        self.carousel.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self.carousel.customContextMenuRequested.connect(
-            self._show_carousel_context_menu
-        )
-        self.carousel.setObjectName("Carousel")
-        self.carousel.setViewMode(QtWidgets.QListView.IconMode)
-        self.carousel.setFlow(QtWidgets.QListView.LeftToRight)  # Horizontal
-        self.carousel.setWrapping(False)
-        self.carousel.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        self.carousel.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.carousel.setFixedHeight(145)
-        self.carousel.setIconSize(QtCore.QSize(100, 100))
-        self.carousel.setSpacing(5)
-        self.carousel.itemClicked.connect(self._on_carousel_item_clicked)
-
-        # Set up carousel delegate for selection circles
-        self.carousel_delegate = CarouselDelegate(self.carousel)
-        self.carousel.setItemDelegate(self.carousel_delegate)
-        self.carousel.selectionChanged.connect(self._on_carousel_selection_changed)
-
-        self.canvas_container.addWidget(self.carousel, 1, 0)
+        # Add carousel from carousel manager
+        self.canvas_container.addWidget(self.carousel_manager.get_widget(), 1, 0)
 
         # Toast widget for notifications
         self.toast = ToastWidget(self.canvas_frame)
 
-        self._setup_controls()
+    def _setup_connections(self):
+        """Setup signal/slot connections between components."""
+        # Editing controls -> Image processor
+        self.editing_controls.settingChanged.connect(self._on_setting_changed)
+        self.editing_controls.ratingChanged.connect(self._on_rating_changed)
+        self.editing_controls.saveRequested.connect(self.save_file)
+        self.editing_controls.presetApplied.connect(self._on_preset_applied)
+
+        # Image processor -> View
+        self.image_processor.previewUpdated.connect(self.view.set_pixmaps)
+
+        # Settings manager
+        self.settings_manager.showToast.connect(self.show_toast)
+        self.settings_manager.settingsCopied.connect(self._on_settings_copied)
+        self.settings_manager.settingsPasted.connect(self._on_settings_pasted)
+        self.settings_manager.undoStateChanged.connect(self._on_undo_state_changed)
+
+        # Carousel manager
+        self.carousel_manager.imageSelected.connect(self._on_carousel_image_selected)
+        self.carousel_manager.selectionChanged.connect(
+            self._on_carousel_selection_changed
+        )
+        self.carousel_manager.contextMenuRequested.connect(
+            self._handle_carousel_context_menu
+        )
+
+    def _setup_keyboard_shortcuts(self):
+        """Setup keyboard shortcuts."""
+        QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Undo, self, self._undo)
+        QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Redo, self, self._redo)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Z"), self, self._redo)
+        QtGui.QShortcut(
+            QtGui.QKeySequence.StandardKey.Copy, self, self._handle_copy_shortcut
+        )
+        QtGui.QShortcut(
+            QtGui.QKeySequence.StandardKey.Paste, self, self._handle_paste_shortcut
+        )
 
     def resizeEvent(self, event):
+        """Handle widget resize."""
         # Auto-fit image if in fitting mode
-        # Using hasattr check to be absolutely safe against racing AttributeErrors
-        if hasattr(self, "base_img_full") and self.base_img_full is not None:
+        if (
+            hasattr(self, "image_processor")
+            and self.image_processor.base_img_full is not None
+        ):
             if getattr(self.view, "_is_fitting", False):
                 self.view.reset_zoom()
         super().resizeEvent(event)
 
-    def _setup_controls(self):
-        # Wrap everything in a scroll area just in case
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.panel_layout.addWidget(scroll)
-
-        container = QtWidgets.QWidget()
-        self.controls_layout = QtWidgets.QVBoxLayout(container)
-        self.controls_layout.setContentsMargins(8, 0, 8, 0)
-        self.controls_layout.setSpacing(5)
-        scroll.setWidget(container)
-
-        # Dynamic margin adjustment for scrollbar
-        def _update_scroll_margins():
-            try:
-                vbar = scroll.verticalScrollBar()
-                is_visible = vbar.isVisible()
-                right_margin = 24 if is_visible else 8
-                self.controls_layout.setContentsMargins(8, 0, right_margin, 0)
-            except Exception:
-                pass  # Ignore errors during initialization
-
-        # Connect to scrollbar visibility change
-        scroll.verticalScrollBar().rangeChanged.connect(_update_scroll_margins)
-        scroll.verticalScrollBar().valueChanged.connect(_update_scroll_margins)
-
-        # Force initial check after UI is built
-        QtCore.QTimer.singleShot(100, _update_scroll_margins)
-
-        self.lbl_info = QtWidgets.QLabel("No file loaded")
-        self.lbl_info.setObjectName("InfoLabel")
-        self.lbl_info.setWordWrap(True)
-        self.controls_layout.addWidget(self.lbl_info)
-
-        # --- Rating Section ---
-        self.rating_section = CollapsibleSection("RATING", expanded=True)
-        self.controls_layout.addWidget(self.rating_section)
-        self.star_rating_widget = StarRatingWidget()
-        self.star_rating_widget.ratingChanged.connect(self._on_rating_changed)
-        self.rating_section.add_widget(self.star_rating_widget)
-
-        # --- Tone Section ---
-        self.tone_section = CollapsibleSection("TONE", expanded=True)
-        self.controls_layout.addWidget(self.tone_section)
-
-        self.val_exposure = 0.0
-        self.val_contrast = 1.0
-        self.val_whites = 1.0
-        self.val_blacks = 0.0
-        self.val_highlights = 0.0
-        self.val_shadows = 0.0
-
-        self._add_slider(
-            "Exposure",
-            -4.0,
-            4.0,
-            self.val_exposure,
-            "val_exposure",
-            0.01,
-            self.tone_section,
-        )
-        self._add_slider(
-            "Contrast",
-            0.5,
-            2.0,
-            self.val_contrast,
-            "val_contrast",
-            0.01,
-            self.tone_section,
-        )
-        self._add_slider(
-            "Highlights",
-            -1.0,
-            1.0,
-            self.val_highlights,
-            "val_highlights",
-            0.01,
-            self.tone_section,
-        )
-        self._add_slider(
-            "Shadows",
-            -1.0,
-            1.0,
-            self.val_shadows,
-            "val_shadows",
-            0.01,
-            self.tone_section,
-        )
-        self._add_slider(
-            "Whites",
-            0.5,
-            1.5,
-            self.val_whites,
-            "val_whites",
-            0.01,
-            self.tone_section,
-            flipped=True,
-        )
-        self._add_slider(
-            "Blacks",
-            -0.2,
-            0.2,
-            self.val_blacks,
-            "val_blacks",
-            0.001,
-            self.tone_section,
-            flipped=True,
-        )
-
-        # --- Color Section ---
-        self.color_section = CollapsibleSection("COLOR", expanded=False)
-        self.controls_layout.addWidget(self.color_section)
-
-        self.val_saturation = 1.0
-        self._add_slider(
-            "Saturation",
-            0.0,
-            2.0,
-            self.val_saturation,
-            "val_saturation",
-            0.01,
-            self.color_section,
-        )
-
-        # --- Details Section ---
-        self.details_section = CollapsibleSection("DETAILS", expanded=False)
-        self.controls_layout.addWidget(self.details_section)
-
-        # Preset Buttons at the top of Details
-        preset_widget = QtWidgets.QWidget()
-        preset_layout = QtWidgets.QHBoxLayout(preset_widget)
-        preset_layout.setContentsMargins(0, 5, 0, 5)
-        preset_layout.setSpacing(4)  # Tighten spacing
-        self.btn_low = QtWidgets.QPushButton("Low")
-        self.btn_low.setProperty("label", "Low")
-        self.btn_low.clicked.connect(lambda: self._apply_preset("low"))
-        self.btn_medium = QtWidgets.QPushButton("Medium")
-        self.btn_medium.setProperty("label", "Medium")
-        self.btn_medium.clicked.connect(lambda: self._apply_preset("medium"))
-        self.btn_high = QtWidgets.QPushButton("High")
-        self.btn_high.setProperty("label", "High")
-        self.btn_high.clicked.connect(lambda: self._apply_preset("high"))
-
-        preset_layout.addWidget(self.btn_low)
-        preset_layout.addWidget(self.btn_medium)
-        preset_layout.addWidget(self.btn_high)
-        self.details_section.add_widget(preset_widget)
-
-        self.val_sharpen = 0.0  # Default to zero (disabled)
-        self.val_radius = 0.5  # Min radius
-        self.val_percent = 0.0  # Min percent
-
-        # Mapping function for combined sharpening
-        def update_sharpen_params(val):
-            # val is 0..100
-            # radius: 0.5 .. 1.25 (1/4 of original 0.5..5.0 range is ~1.125, but let's go with 1.25)
-            # percent: 0 .. 150 (half of original 300)
-            self.val_radius = 0.5 + (val / 100.0) * 0.75
-            self.val_percent = (val / 100.0) * 150.0
-            self.val_sharpen = val
-            self.request_update()
-
-        self._add_slider(
-            "Sharpening",
-            0,
-            100,
-            self.val_sharpen,
-            "val_sharpen",
-            1,
-            self.details_section,
-            custom_callback=update_sharpen_params,
-        )
-
-        self.val_denoise = 0
-        self._add_slider(
-            "De-noise", 0, 20, self.val_denoise, "val_denoise", 1, self.details_section
-        )
-
-        # Save Button
-        self.controls_layout.addSpacing(10)
-        self.btn_save = QtWidgets.QPushButton("Save Result")
-        self.btn_save.setObjectName("SaveButton")
-        self.btn_save.clicked.connect(self.save_file)
-        self.btn_save.setEnabled(False)
-        self.controls_layout.addWidget(self.btn_save)
-
-        self.controls_layout.addStretch()
-
-    def _add_slider(
-        self,
-        label_text,
-        min_val,
-        max_val,
-        default,
-        var_name,
-        step_size,
-        section=None,
-        flipped=False,
-        custom_callback=None,
-    ):
-        frame = QtWidgets.QFrame()
-        layout = QtWidgets.QVBoxLayout(frame)
-        layout.setContentsMargins(0, 2, 0, 2)
-        layout.setSpacing(0)
-
-        # Store flip state for programmatic updates
-        setattr(self, f"{var_name}_flipped", flipped)
-
-        # Top row: Label and Value
-        row = QtWidgets.QHBoxLayout()
-        lbl = QtWidgets.QLabel(label_text)
-        val_lbl = QtWidgets.QLabel(f"{default:.2f}")
-        val_lbl.setAlignment(QtCore.Qt.AlignRight)
-        row.addWidget(lbl)
-        row.addWidget(val_lbl)
-        layout.addLayout(row)
-
-        slider = ResetableSlider(QtCore.Qt.Horizontal)
-        multiplier = 1000
-        slider.setRange(int(min_val * multiplier), int(max_val * multiplier))
-        # Default value on initial setup
-        slider.default_slider_value = int(default * multiplier)
-        slider.setValue(int(default * multiplier))
-
-        def on_change(val):
-            actual = val / multiplier
-            if flipped:
-                # Map slider min..max to max..min
-                # Formula: actual = s_max + s_min - actual
-                actual = max_val + min_val - actual
-
-            val_lbl.setText(f"{actual:.2f}")
-            setattr(self, var_name, actual)
-
-            if custom_callback:
-                custom_callback(actual)
-            else:
-                self.request_update()
-
-            # Trigger auto-save
-            self.save_timer.start(1000)  # Save after 1 second of inactivity
-
-            # Trigger undo state (batched)
-            self._schedule_undo_state(f"Adjust {label_text}")
-
-        slider.valueChanged.connect(on_change)
-
-        # Store refs
-        setattr(self, f"{var_name}_slider", slider)
-        setattr(self, f"{var_name}_label", val_lbl)  # Store label for updates
-
-        layout.addWidget(slider)
-        if section:
-            section.add_widget(frame)
-        else:
-            self.panel_layout.addWidget(frame)
-
-    def _set_slider_value(self, var_name, value):
-        slider = getattr(self, f"{var_name}_slider", None)
-        label = getattr(self, f"{var_name}_label", None)
-        flipped = getattr(self, f"{var_name}_flipped", False)
-
-        if slider:
-            multiplier = 1000
-            if flipped:
-                # Need to find the min/max to calculate the flipped slider position
-                s_min = slider.minimum() / multiplier
-                s_max = slider.maximum() / multiplier
-                val_to_set = (s_max + s_min) - value
-                slider.setValue(int(val_to_set * multiplier))
-            else:
-                slider.setValue(int(value * multiplier))
-
-            # Since this is a programmatic update (likely from load),
-            # we also update the reset value.
-            slider.default_slider_value = slider.value()
-
-        if label:
-            label.setText(f"{value:.2f}")
-        setattr(self, var_name, value)
-
     def clear(self):
+        """Clear the editor state."""
         self.raw_path = None
         self.setWindowTitle("Editor")
-        self.current_settings = self._get_default_settings()
-        self.current_rating = 0
-        self.star_rating_widget.set_rating(0)
-        self.reset_sliders()
+        self.editing_controls.reset_sliders()
+        self.editing_controls.set_rating(0)
+        self.editing_controls.set_info_text("No file loaded")
+        self.editing_controls.set_save_enabled(False)
         self.view.reset_zoom()
         self.view.set_pixmaps(QtGui.QPixmap(), 0, 0)
-        self.carousel.clear()
-        self.controls_stack.setEnabled(False)
+        self.carousel_manager.clear()
+        self.settings_manager.clear_clipboard()
 
     def update_rating_for_path(self, path, rating):
+        """Update rating for a specific path."""
         if self.raw_path and str(self.raw_path) == path:
-            self.star_rating_widget.set_rating(rating)
-
-    def _on_rating_changed(self, rating):
-        self.current_rating = rating
-        self.save_timer.start(500)
-        if self.raw_path:
-            self.ratingChanged.emit(str(self.raw_path), rating)
-            # Push undo state for rating change immediately
-            self._push_undo_state_immediate(
-                f"Rating changed to {rating} star{'s' if rating != 1 else ''}"
-            )
-
-    def _auto_save_sidecar(self):
-        if not self.raw_path:
-            return
-
-        settings = {
-            "rating": self.current_rating,
-            "exposure": self.val_exposure,
-            "contrast": self.val_contrast,
-            "whites": self.val_whites,
-            "blacks": self.val_blacks,
-            "highlights": self.val_highlights,
-            "shadows": self.val_shadows,
-            "saturation": self.val_saturation,
-            "sharpen_method": "High Quality",
-            "sharpen_radius": self.val_radius,
-            "sharpen_percent": self.val_percent,
-            "sharpen_value": self.val_sharpen,
-            "denoise_method": "High Quality",
-            "de_noise": self.val_denoise,
-        }
-        pynegative.save_sidecar(self.raw_path, settings)
+            self.editing_controls.set_rating(rating)
 
     def load_image(self, path):
+        """Load an image for editing."""
         path = Path(path)
-        self.lbl_info.setText(f"Loading: {path.name}")
+        self.editing_controls.set_info_text(f"Loading: {path.name}")
         self.raw_path = path
 
         QtWidgets.QApplication.processEvents()
 
-        self.btn_save.setEnabled(False)  # Disable save until full load
+        self.editing_controls.set_save_enabled(False)  # Disable save until full load
 
         loader = RawLoader(path)
         loader.signals.finished.connect(self._on_raw_loaded)
         self.thread_pool.start(loader)
 
-    def _on_raw_loaded(self, path, img_arr, settings):
-        if Path(path) != self.raw_path:
-            return  # User switched images already
-
-        if img_arr is None:
-            QtWidgets.QMessageBox.critical(self, "Error", "Failed to load image")
-            return
-
-        # Apply Auto-Expose Settings
-        if settings:
-            self.current_rating = settings.get("rating", 0)
-            self.star_rating_widget.set_rating(self.current_rating)
-            self._set_slider_value("val_exposure", settings.get("exposure", 0.0))
-            self._set_slider_value("val_contrast", settings.get("contrast", 1.0))
-            self._set_slider_value("val_whites", settings.get("whites", 1.0))
-            self._set_slider_value("val_blacks", settings.get("blacks", 0.0))
-            self._set_slider_value("val_saturation", settings.get("saturation", 1.0))
-            self._set_slider_value("val_highlights", settings.get("highlights", 0.0))
-            self._set_slider_value("val_shadows", settings.get("shadows", 0.0))
-
-            sharpen_val = settings.get("sharpen_value")
-            if sharpen_val is not None:
-                self._set_slider_value("val_sharpen", sharpen_val)
-            else:
-                # Compatibility: try to infer from radius/percent
-                radius = settings.get("sharpen_radius", 2.0)
-                # Reverse mapping: s = (radius - 0.5) / 0.75 * 100
-                inferred_val = max(0, min(100, (radius - 0.5) / 0.75 * 100))
-                self._set_slider_value("val_sharpen", inferred_val)
-
-            self._set_slider_value("val_denoise", settings.get("de_noise", 0))
-
-        self.base_img_full = img_arr  # The half-res proxy
-
-        # Clear caches for the new image
-        self._base_img_uint8 = None
-        if hasattr(self, "_img_render_base"):
-            del self._img_render_base
-
-        self.btn_save.setEnabled(True)
-        self.request_update()
-
-        # Request a fit once the UI settles
-        QtCore.QTimer.singleShot(50, self.view.reset_zoom)
-        QtCore.QTimer.singleShot(200, self.view.reset_zoom)
-
-        self.lbl_info.setText(f"Loaded: {self.raw_path.name}")
-
-    def request_update(self):
-        """
-        Requests an image redraw. Uses a throttled timer to maintain 30 FPS.
-        """
-        if self.base_img_full is None:
-            return
-
-        self._render_pending = True
-
-        if not self._is_rendering_locked:
-            self._process_pending_update()
-
-    def _process_pending_update(self):
-        """Processes the actual redraw and manages the throttle lockout."""
-        if not self._render_pending or self.base_img_full is None:
-            return
-
-        # Perform the actual update
-        self.update_preview()
-        self._render_pending = False
-
-        # Lock rendering for 33ms (30 FPS)
-        self._is_rendering_locked = True
-        self.render_timer.start(33)  # 33ms interval for throttle
-
-    def _on_render_timer_timeout(self):
-        """Called when the 33ms throttle window expires."""
-        self._is_rendering_locked = False
-        # If another update was requested during the lockout, process it now
-        if self._render_pending:
-            self._process_pending_update()
-
-    def update_preview(self):
-        if self.base_img_full is None:
-            return
-
-        # Strategy: Single-Layer Dynamic ROI
-        # 1. Determine the viewport size
-        # 2. If zoomed out (Fit), process a 1500px global image.
-        # 3. If zoomed in, process a crop matching the viewport size from base_img_full.
-
-        full_h, full_w, _ = self.base_img_full.shape
-        zoom_scale = self.view.transform().m11()
-        vw, vh = self.view.viewport().width(), self.view.viewport().height()
-
-        # Calculate fit scale
-        fit_scale = 1.0
-        if vw > 0 and vh > 0:
-            fit_scale = min(vw / full_w, vh / full_h)
-
-        is_zoomed_in = not self.view._is_fitting and (
-            zoom_scale > fit_scale * 1.01 or zoom_scale > 0.99
-        )
-
-        # --- Part 1: Global Background ---
-        # Cache the 1500px base
-        if self._base_img_uint8 is None:
-            self._base_img_uint8 = (self.base_img_full * 255).astype(np.uint8)
-
-        scale = 1500 / max(full_h, full_w)
-        target_h, target_w = int(full_h * scale), int(full_w * scale)
-        if (
-            not hasattr(self, "_img_render_base")
-            or self._img_render_base.shape[0] != target_h
-        ):
-            temp_pil = Image.fromarray(self._base_img_uint8)
-            temp_pil = temp_pil.resize((target_w, target_h), Image.Resampling.BILINEAR)
-            self._img_render_base = np.array(temp_pil).astype(np.float32) / 255.0
-
-        # Process Background
-        processed_bg, _ = pynegative.apply_tone_map(
-            self._img_render_base,
-            exposure=self.val_exposure,
-            contrast=self.val_contrast,
-            blacks=self.val_blacks,
-            whites=self.val_whites,
-            shadows=self.val_shadows,
-            highlights=self.val_highlights,
-            saturation=self.val_saturation,
-        )
-        processed_bg *= 255
-        pil_bg = Image.fromarray(processed_bg.astype(np.uint8))
-        pix_bg = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_bg))
-
-        # --- Part 2: Detail ROI (Only if zoomed in) ---
-        pix_roi, roi_x, roi_y, roi_w, roi_h = None, 0, 0, 0, 0
-        if is_zoomed_in:
-            roi = self.view.mapToScene(self.view.viewport().rect()).boundingRect()
-            ix_min = max(0, int(roi.left()))
-            ix_max = min(full_w, int(roi.right()))
-            iy_min = max(0, int(roi.top()))
-            iy_max = min(full_h, int(roi.bottom()))
-
-            rw = ix_max - ix_min
-            rh = iy_max - iy_min
-
-            if rw > 10 and rh > 10:
-                # Performance Cap: Max 1.5 million pixels for real-time ROI
-                MAX_REALTIME_PIXELS = 1_500_000
-                current_pixels = rw * rh
-
-                crop = self.base_img_full[iy_min:iy_max, ix_min:ix_max]
-
-                if current_pixels > MAX_REALTIME_PIXELS:
-                    # Scale down for processing, then GPU upscale later
-                    p_scale = (MAX_REALTIME_PIXELS / current_pixels) ** 0.5
-                    p_w, p_h = int(rw * p_scale), int(rh * p_scale)
-
-                    pil_crop = Image.fromarray((crop * 255).astype(np.uint8))
-                    pil_crop = pil_crop.resize((p_w, p_h), Image.Resampling.BILINEAR)
-                    crop_to_proc = np.array(pil_crop).astype(np.float32) / 255.0
-                else:
-                    crop_to_proc = crop
-
-                processed_roi, _ = pynegative.apply_tone_map(
-                    crop_to_proc,
-                    exposure=self.val_exposure,
-                    contrast=self.val_contrast,
-                    blacks=self.val_blacks,
-                    whites=self.val_whites,
-                    shadows=self.val_shadows,
-                    highlights=self.val_highlights,
-                    saturation=self.val_saturation,
-                )
-                processed_roi *= 255
-                pil_roi = Image.fromarray(processed_roi.astype(np.uint8))
-
-                if self.val_sharpen > 0:
-                    pil_roi = pynegative.sharpen_image(
-                        pil_roi, self.val_radius, self.val_percent, "High Quality"
-                    )
-
-                if self.val_denoise > 0:
-                    pil_roi = pynegative.de_noise_image(
-                        pil_roi, self.val_denoise, "High Quality"
-                    )
-
-                pix_roi = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_roi))
-                roi_x, roi_y = ix_min, iy_min
-                roi_w, roi_h = rw, rh
-
-        # --- Final Update ---
-        self.view.set_pixmaps(
-            pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
-        )
-
     def save_file(self):
-        if self.base_img_full is None:
+        """Save the current image."""
+        if not self.image_processor.base_img_full:
             return
 
         input_dir = self.raw_path.parent
@@ -738,36 +206,39 @@ class EditorWidget(QtWidgets.QWidget):
             path = Path(path)
             try:
                 # RELOAD FULL RESOLUTION FOR SAVING
-                self.lbl_info.setText("Processing Full Res...")
+                self.editing_controls.set_info_text("Processing Full Res...")
                 QtWidgets.QApplication.processEvents()
 
                 # Explicitly request full size (half_size=False)
                 full_img = pynegative.open_raw(self.raw_path, half_size=False)
 
+                # Get current settings from image processor
+                settings = self.image_processor.get_current_settings()
+
                 # Process full resolution with current settings
                 img, _ = pynegative.apply_tone_map(
                     full_img,
-                    exposure=self.val_exposure,
-                    contrast=self.val_contrast,
-                    blacks=self.val_blacks,
-                    whites=self.val_whites,
-                    shadows=self.val_shadows,
-                    highlights=self.val_highlights,
-                    saturation=self.val_saturation,
+                    exposure=settings["exposure"],
+                    contrast=settings["contrast"],
+                    blacks=settings["blacks"],
+                    whites=settings["whites"],
+                    shadows=settings["shadows"],
+                    highlights=settings["highlights"],
+                    saturation=settings["saturation"],
                 )
                 pil_img = Image.fromarray((img * 255).astype(np.uint8))
 
-                if self.val_sharpen > 0:
+                if settings["sharpen_value"] > 0:
                     pil_img = pynegative.sharpen_image(
                         pil_img,
-                        self.val_radius,
-                        self.val_percent,
+                        settings["sharpen_radius"],
+                        settings["sharpen_percent"],
                         method="High Quality",
                     )
 
-                if self.val_denoise > 0:
+                if settings["de_noise"] > 0:
                     pil_img = pynegative.de_noise_image(
-                        pil_img, self.val_denoise, method="High Quality"
+                        pil_img, settings["de_noise"], method="High Quality"
                     )
 
                 pynegative.save_image(pil_img, path)
@@ -775,82 +246,193 @@ class EditorWidget(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.information(
                     self, "Saved", f"Saved full resolution to {path}"
                 )
-                self.lbl_info.setText(f"Saved: {path.name}")
+                self.editing_controls.set_info_text(f"Saved: {path.name}")
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Error", str(e))
-                self.lbl_info.setText("Error saving")
+                self.editing_controls.set_info_text("Error saving")
 
     def load_carousel_folder(self, folder):
+        """Load a folder of images into the carousel."""
         self.current_folder = Path(folder)
-        self.carousel.clear()
-        self._clear_clipboard()  # Clear clipboard on context change
-        self._update_circle_visibility()  # Update circle visibility
-
-        files = sorted(
-            [
-                f
-                for f in self.current_folder.iterdir()
-                if f.is_file() and f.suffix.lower() in pynegative.SUPPORTED_EXTS
-            ]
-        )
-
-        for path in files:
-            item = QtWidgets.QListWidgetItem(path.name)
-            item.setData(QtCore.Qt.UserRole, str(path))
-            item.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon))
-            self.carousel.addItem(item)
-
-            # Async load thumbnail
-            loader = ThumbnailLoader(path, size=100)
-            loader.signals.finished.connect(self._on_carousel_thumbnail_loaded)
-            self.thread_pool.start(loader)
+        self.settings_manager.clear_clipboard()  # Clear clipboard on context change
+        self.carousel_manager.load_folder(folder)
 
     def set_carousel_images(self, image_list, current_path):
-        self.carousel.clear()
-        self._clear_clipboard()  # Clear clipboard on context change
-
-        for path_str in image_list:
-            f = Path(path_str)
-            item = QtWidgets.QListWidgetItem(f.name)
-            item.setData(QtCore.Qt.UserRole, str(f))
-            item.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon))
-            self.carousel.addItem(item)
-            if f == current_path:
-                self.carousel.setCurrentItem(item)
-
-            # Async load thumbnail
-            loader = ThumbnailLoader(f, size=100)
-            loader.signals.finished.connect(self._on_carousel_thumbnail_loaded)
-            self.thread_pool.start(loader)
-
-        self._update_circle_visibility()  # Update circle visibility
-
-    def _on_carousel_thumbnail_loaded(self, path, pixmap):
-        for i in range(self.carousel.count()):
-            item = self.carousel.item(i)
-            if item.data(QtCore.Qt.UserRole) == path:
-                if pixmap:
-                    item.setIcon(QtGui.QIcon(pixmap))
-                break
-
-    def _on_carousel_item_clicked(self, item):
-        path = item.data(QtCore.Qt.UserRole)
-        # Avoid reloading if same image
-        if Path(path) != self.raw_path:
-            self.load_image(path)
+        """Set specific images in the carousel."""
+        self.carousel_manager.set_images(image_list, Path(current_path))
+        self.settings_manager.clear_clipboard()  # Clear clipboard on context change
 
     def show_toast(self, message):
         """Show a toast notification."""
         self.toast.show_message(message)
 
-    def _update_circle_visibility(self):
-        """Update circle visibility based on carousel state."""
-        show_circles = self.carousel.should_show_circles()
-        self.carousel_delegate.set_show_selection_circles(show_circles)
+    def set_preview_mode(self, enabled):
+        """Set preview mode (hide/show controls panel)."""
+        self.panel.setVisible(not enabled)
 
-    def _on_carousel_selection_changed(self):
+    def open(self, path, image_list=None):
+        """Open an image for editing."""
+        if not isinstance(path, Path):
+            path = Path(path)
+
+        if image_list:
+            self.set_carousel_images(image_list, path)
+        else:
+            self.load_carousel_folder(path.parent)
+            self.carousel_manager.select_image(path)
+
+        self.load_image(path)
+
+    # --- Signal handlers ---
+
+    def _on_setting_changed(self, setting_name, value):
+        """Handle setting change from editing controls."""
+        self.image_processor.set_processing_params(**{setting_name: value})
+        self._request_update_from_view()
+        self.save_timer.start(1000)  # Save after 1 second of inactivity
+
+        # Schedule undo state
+        current_settings = self.image_processor.get_current_settings()
+        self.settings_manager.schedule_undo_state(
+            f"Adjust {setting_name}", current_settings
+        )
+
+    def _on_rating_changed(self, rating):
+        """Handle rating change."""
+        self.settings_manager.set_current_settings(
+            self.image_processor.get_current_settings(), rating
+        )
+        self.save_timer.start(500)
+        if self.raw_path:
+            self.ratingChanged.emit(str(self.raw_path), rating)
+            # Push undo state for rating change immediately
+            self.settings_manager.push_immediate_undo_state(
+                f"Rating changed to {rating} star{'s' if rating != 1 else ''}",
+                self.image_processor.get_current_settings(),
+            )
+
+    def _on_preset_applied(self, preset_type):
+        """Handle preset application."""
+        self.image_processor.set_processing_params(
+            sharpen=self.editing_controls.val_sharpen,
+            radius=self.editing_controls.val_radius,
+            percent=self.editing_controls.val_percent,
+            denoise=self.editing_controls.val_denoise,
+        )
+        self._request_update_from_view()
+
+        # Push undo state for preset application
+        self.settings_manager.push_immediate_undo_state(
+            f"Apply {preset_type} preset", self.image_processor.get_current_settings()
+        )
+
+    def _on_raw_loaded(self, path, img_arr, settings):
+        """Handle raw image loading completion."""
+        if Path(path) != self.raw_path:
+            return  # User switched images already
+
+        if img_arr is None:
+            QtWidgets.QMessageBox.critical(self, "Error", "Failed to load image")
+            return
+
+        # Apply loaded settings
+        if settings:
+            # Set rating
+            rating = settings.get("rating", 0)
+            self.editing_controls.set_rating(rating)
+            self.settings_manager.set_current_settings(
+                self.image_processor.get_current_settings(), rating
+            )
+
+            # Apply settings to editing controls
+            self.editing_controls.apply_settings(settings)
+
+            # Apply settings to image processor
+            self.image_processor.set_processing_params(
+                exposure=settings.get("exposure", 0.0),
+                contrast=settings.get("contrast", 1.0),
+                whites=settings.get("whites", 1.0),
+                blacks=settings.get("blacks", 0.0),
+                highlights=settings.get("highlights", 0.0),
+                shadows=settings.get("shadows", 0.0),
+                saturation=settings.get("saturation", 1.0),
+            )
+
+            # Handle sharpening value
+            sharpen_val = settings.get("sharpen_value")
+            if sharpen_val is not None:
+                self.editing_controls.set_slider_value("val_sharpen", sharpen_val)
+            else:
+                # Compatibility: try to infer from radius/percent
+                radius = settings.get("sharpen_radius", 2.0)
+                # Reverse mapping: s = (radius - 0.5) / 0.75 * 100
+                inferred_val = max(0, min(100, (radius - 0.5) / 0.75 * 100))
+                self.editing_controls.set_slider_value("val_sharpen", inferred_val)
+
+            self.editing_controls.set_slider_value(
+                "val_denoise", settings.get("de_noise", 0)
+            )
+
+            # Update image processor with all settings
+            self.editing_controls._apply_preset("")  # Trigger the sharpening mapping
+            self.image_processor.set_processing_params(
+                **self.editing_controls.get_all_settings()
+            )
+
+        # Set image and trigger update
+        self.image_processor.set_image(img_arr)
+        self.editing_controls.set_save_enabled(True)
+        self._request_update_from_view()
+
+        # Request a fit once the UI settles
+        QtCore.QTimer.singleShot(50, self.view.reset_zoom)
+        QtCore.QTimer.singleShot(200, self.view.reset_zoom)
+
+        self.editing_controls.set_info_text(f"Loaded: {self.raw_path.name}")
+
+    def _request_update_from_view(self):
+        """Request image update from current view state."""
+        if (
+            self.view is not None
+            and hasattr(self, "image_processor")
+            and hasattr(self.image_processor, "base_img_full")
+            and self.image_processor.base_img_full is not None
+        ):
+            self.image_processor.request_update()
+
+    def _auto_save_sidecar(self):
+        """Auto-save settings to sidecar."""
+        if not self.raw_path:
+            return
+
+        settings = self.image_processor.get_current_settings()
+        self.settings_manager.auto_save_sidecar(
+            self.raw_path, settings, self.editing_controls.star_rating_widget.rating()
+        )
+
+    def _on_carousel_image_selected(self, path):
+        """Handle carousel image selection."""
+        # Avoid reloading if same image
+        if Path(path) != self.raw_path:
+            self.load_image(path)
+
+    def _on_carousel_selection_changed(self, selected_paths):
         """Handle carousel selection changes."""
-        self._update_circle_visibility()
+        pass  # Currently handled by carousel manager
+
+    def _on_settings_copied(self, source_path, settings):
+        """Handle settings copied event."""
+        pass  # Currently handled by settings manager
+
+    def _on_settings_pasted(self, target_paths, settings):
+        """Handle settings pasted event."""
+        pass  # Currently handled by settings manager
+
+    def _on_undo_state_changed(self):
+        """Handle undo/redo state changes."""
+        pass  # Can be used for UI updates if needed
+
+    # --- Context menus and shortcuts ---
 
     def _show_main_photo_context_menu(self, pos):
         """Show context menu for main photo view."""
@@ -860,246 +442,109 @@ class EditorWidget(QtWidgets.QWidget):
         menu = QtWidgets.QMenu(self)
 
         copy_action = menu.addAction("Copy Settings")
-        copy_action.triggered.connect(self._copy_settings_from_current)
+        copy_action.triggered.connect(
+            lambda: self.settings_manager.copy_settings_from_current(
+                self.image_processor.get_current_settings()
+            )
+        )
         copy_action.setShortcut(QtGui.QKeySequence.StandardKey.Copy)
 
         paste_action = menu.addAction("Paste Settings")
-        paste_action.triggered.connect(self._paste_settings_to_current)
-        paste_action.setEnabled(self.settings_clipboard is not None)
+        paste_action.triggered.connect(
+            lambda: self.settings_manager.paste_settings_to_current(
+                self.editing_controls.apply_settings
+            )
+        )
+        paste_action.setEnabled(self.settings_manager.has_clipboard_content())
         paste_action.setShortcut(QtGui.QKeySequence.StandardKey.Paste)
 
         menu.exec_(self.view.mapToGlobal(pos))
 
-    def _show_carousel_context_menu(self, pos):
-        """Show context menu for carousel."""
-        item = self.carousel.itemAt(pos)
-        if not item:
-            return
+    def _handle_carousel_context_menu(self, context_type, data):
+        """Handle carousel context menu request."""
+        if context_type == "carousel":
+            pos, item_path, carousel_widget = data
 
-        # Get item under mouse
-        item_path = item.data(QtCore.Qt.UserRole)
+            menu = QtWidgets.QMenu(self)
+            selected_paths = carousel_widget.get_selected_paths()
 
-        menu = QtWidgets.QMenu(self)
+            if item_path in selected_paths:
+                # Item is selected - can copy from selection
+                copy_action = menu.addAction("Copy Settings from Selected")
+                copy_action.triggered.connect(
+                    lambda: self.settings_manager.copy_settings_from_path(
+                        Path(selected_paths[0]) if selected_paths else Path(item_path)
+                    )
+                )
+                copy_action.setShortcut(QtGui.QKeySequence.StandardKey.Copy)
+            else:
+                # Item is not selected - can copy from this specific item
+                copy_action = menu.addAction(
+                    f"Copy Settings from {Path(item_path).name}"
+                )
+                copy_action.triggered.connect(
+                    lambda: self.settings_manager.copy_settings_from_path(item_path)
+                )
 
-        selected_paths = self.carousel.get_selected_paths()
-
-        if item_path in selected_paths:
-            # Item is selected - can copy from selection
-            copy_action = menu.addAction("Copy Settings from Selected")
-            copy_action.triggered.connect(self._copy_settings_from_selected)
-            copy_action.setShortcut(QtGui.QKeySequence.StandardKey.Copy)
-        else:
-            # Item is not selected - can copy from this specific item
-            copy_action = menu.addAction(f"Copy Settings from {item.text()}")
-            copy_action.triggered.connect(
-                lambda: self._copy_settings_from_path(item_path)
+            # Paste option
+            paste_action = menu.addAction("Paste Settings to Selected")
+            paste_action.triggered.connect(
+                lambda: self.settings_manager.paste_settings_to_selected(
+                    selected_paths, self.editing_controls.apply_settings
+                )
             )
+            paste_action.setEnabled(
+                self.settings_manager.has_clipboard_content()
+                and len(selected_paths) > 0
+            )
+            paste_action.setShortcut(QtGui.QKeySequence.StandardKey.Paste)
 
-        # Paste option
-        paste_action = menu.addAction("Paste Settings to Selected")
-        paste_action.triggered.connect(self._paste_settings_to_selected)
-        paste_action.setEnabled(
-            self.settings_clipboard is not None and len(selected_paths) > 0
-        )
-        paste_action.setShortcut(QtGui.QKeySequence.StandardKey.Paste)
+            menu.addSeparator()
 
-        menu.addSeparator()
+            select_all_action = menu.addAction("Select All")
+            select_all_action.triggered.connect(carousel_widget.select_all_items)
+            select_all_action.setShortcut(QtGui.QKeySequence.StandardKey.SelectAll)
 
-        select_all_action = menu.addAction("Select All")
-        select_all_action.triggered.connect(self.carousel.select_all_items)
-        select_all_action.setShortcut(QtGui.QKeySequence.StandardKey.SelectAll)
-
-        menu.exec_(self.carousel.mapToGlobal(pos))
-
-    def _copy_settings_from_current(self):
-        """Copy settings from currently loaded photo."""
-        if not self.raw_path:
-            return
-
-        settings = {
-            "exposure": self.val_exposure,
-            "contrast": self.val_contrast,
-            "whites": self.val_whites,
-            "blacks": self.val_blacks,
-            "highlights": self.val_highlights,
-            "shadows": self.val_shadows,
-            "saturation": self.val_saturation,
-            "sharpen_method": "High Quality",
-            "sharpen_radius": self.val_radius,
-            "sharpen_percent": self.val_percent,
-            "sharpen_value": self.val_sharpen,
-            "denoise_method": "High Quality",
-            "de_noise": self.val_denoise,
-        }
-
-        self.settings_clipboard = settings
-        self.clipboard_source_path = self.raw_path
-        self.show_toast(f"Settings copied from {self.raw_path.name}")
-
-    def _copy_settings_from_selected(self):
-        """Copy settings from the first selected carousel item."""
-        selected_paths = self.carousel.get_selected_paths()
-        if not selected_paths:
-            return
-
-        self._copy_settings_from_path(Path(selected_paths[0]))
-
-    def _copy_settings_from_path(self, path):
-        """Copy settings from a specific photo by path."""
-        settings = pynegative.load_sidecar(path)
-        if not settings:
-            return
-
-        # Remove rating from settings (we don't want to sync rating)
-        settings_copy = settings.copy()
-        settings_copy.pop("rating", None)
-
-        self.settings_clipboard = settings_copy
-        self.clipboard_source_path = Path(path)
-        self.show_toast(f"Settings copied from {Path(path).name}")
-
-    def _paste_settings_to_current(self):
-        """Paste settings to currently loaded photo."""
-        if not self.settings_clipboard or not self.raw_path:
-            return
-
-        self._apply_settings_to_photo(self.raw_path, self.settings_clipboard)
-        self.show_toast("Settings applied to current photo")
-
-    def _paste_settings_to_selected(self):
-        """Paste settings to all selected carousel items."""
-        if not self.settings_clipboard:
-            return
-
-        selected_paths = self.carousel.get_selected_paths()
-        if not selected_paths:
-            return
-
-        # Apply to each selected photo
-        for path_str in selected_paths:
-            path = Path(path_str)
-            self._apply_settings_to_photo(path, self.settings_clipboard)
-
-        # If current photo is among selected, apply immediately
-        if self.raw_path and str(self.raw_path) in selected_paths:
-            self._apply_settings_to_ui(self.settings_clipboard)
-
-        # Push undo state for the batch operation
-        self._push_undo_state_immediate(
-            f"Paste settings to {len(selected_paths)} photos"
-        )
-
-        self.show_toast(f"Settings applied to {len(selected_paths)} photos")
-
-    def _apply_settings_to_photo(self, path, settings):
-        """Apply settings to a photo by saving to its sidecar."""
-        # Load existing sidecar to preserve rating
-        existing_settings = pynegative.load_sidecar(path) or {}
-        rating = existing_settings.get("rating", 0)
-
-        # Apply new settings but preserve rating
-        combined_settings = settings.copy()
-        combined_settings["rating"] = rating
-
-        pynegative.save_sidecar(path, combined_settings)
-
-    def _apply_settings_to_ui(self, settings):
-        """Apply settings to current UI sliders."""
-        self._set_slider_value("val_exposure", settings.get("exposure", 0.0))
-        self._set_slider_value("val_contrast", settings.get("contrast", 1.0))
-        self._set_slider_value("val_whites", settings.get("whites", 1.0))
-        self._set_slider_value("val_blacks", settings.get("blacks", 0.0))
-        self._set_slider_value("val_highlights", settings.get("highlights", 0.0))
-        self._set_slider_value("val_shadows", settings.get("shadows", 0.0))
-        self._set_slider_value("val_saturation", settings.get("saturation", 1.0))
-
-        sharpen_val = settings.get("sharpen_value", 0.0)
-        if sharpen_val is not None:
-            self._set_slider_value("val_sharpen", sharpen_val)
-
-        self._set_slider_value("val_denoise", settings.get("de_noise", 0))
-
-        self.request_update()
-
-    def _push_undo_state(self):
-        """Push undo state after delay."""
-        if not self._undo_state_description:
-            return
-
-        settings = {
-            "exposure": self.val_exposure,
-            "contrast": self.val_contrast,
-            "whites": self.val_whites,
-            "blacks": self.val_blacks,
-            "highlights": self.val_highlights,
-            "shadows": self.val_shadows,
-            "saturation": self.val_saturation,
-            "sharpen_value": self.val_sharpen,
-            "de_noise": self.val_denoise,
-        }
-
-        self.undo_manager.push_state(
-            self._undo_state_description, settings, self.current_rating
-        )
-
-        self._undo_state_description = ""
-        self._undo_timer_active = False
-
-    def _push_undo_state_immediate(self, description):
-        """Push undo state immediately."""
-        settings = {
-            "exposure": self.val_exposure,
-            "contrast": self.val_contrast,
-            "whites": self.val_whites,
-            "blacks": self.val_blacks,
-            "highlights": self.val_highlights,
-            "shadows": self.val_shadows,
-            "saturation": self.val_saturation,
-            "sharpen_value": self.val_sharpen,
-            "de_noise": self.val_denoise,
-        }
-
-        self.undo_manager.push_state(description, settings, self.current_rating)
-
-    def _clear_clipboard(self):
-        """Clear settings clipboard."""
-        self.settings_clipboard = None
-        self.clipboard_source_path = None
+            menu.exec_(carousel_widget.mapToGlobal(pos))
 
     def _handle_copy_shortcut(self):
-        """Smart copy: copy from selection if multiple, else from current."""
-        selected_paths = self.carousel.get_selected_paths()
+        """Handle copy shortcut."""
+        selected_paths = self.carousel_manager.get_selected_paths()
         if len(selected_paths) > 0:
-            # If current photo is selected, we might want to copy its UI values
-            # otherwise copy from the first selected path's sidecar
             if self.raw_path and str(self.raw_path) in selected_paths:
-                self._copy_settings_from_current()
+                self.settings_manager.copy_settings_from_current(
+                    self.image_processor.get_current_settings()
+                )
             else:
-                self._copy_settings_from_selected()
+                self.settings_manager.copy_settings_from_path(Path(selected_paths[0]))
         else:
-            self._copy_settings_from_current()
+            self.settings_manager.copy_settings_from_current(
+                self.image_processor.get_current_settings()
+            )
 
     def _handle_paste_shortcut(self):
-        """Smart paste: paste to selection if any, else to current."""
-        selected_paths = self.carousel.get_selected_paths()
+        """Handle paste shortcut."""
+        selected_paths = self.carousel_manager.get_selected_paths()
         if len(selected_paths) > 0:
-            self._paste_settings_to_selected()
+            self.settings_manager.paste_settings_to_selected(
+                selected_paths, self.editing_controls.apply_settings
+            )
         else:
-            self._paste_settings_to_current()
+            self.settings_manager.paste_settings_to_current(
+                self.editing_controls.apply_settings
+            )
 
     def _undo(self):
         """Handle undo action."""
-        state = self.undo_manager.undo()
+        state = self.settings_manager.undo()
         if state:
             self._restore_state(state)
-            self.show_toast(f"Undone: {state['description']}")
 
     def _redo(self):
         """Handle redo action."""
-        state = self.undo_manager.redo()
+        state = self.settings_manager.redo()
         if state:
             self._restore_state(state)
-            self.show_toast(f"Redone: {state['description']}")
 
     def _restore_state(self, state):
         """Restore editor state from undo/redo state."""
@@ -1107,51 +552,10 @@ class EditorWidget(QtWidgets.QWidget):
         rating = state["rating"]
 
         # Apply all settings
-        self._apply_settings_to_ui(settings)
+        self.editing_controls.apply_settings(settings)
+        self.image_processor.set_processing_params(**settings)
+        self._request_update_from_view()
 
         # Restore rating
-        self.star_rating_widget.set_rating(rating)
-        self.current_rating = rating
-
-    def _schedule_undo_state(self, description):
-        """Schedule undo state push with batching."""
-        self._undo_state_description = description
-        self.undo_timer.start(1000)  # Batch within 1 second
-        self._undo_timer_active = True
-
-    def _apply_preset(self, preset_type):
-        """Apply preset values for sharpening and denoising."""
-        if preset_type == "low":
-            self._set_slider_value("val_sharpen", 30.0)
-            self._set_slider_value("val_denoise", 5.0)
-        elif preset_type == "medium":
-            self._set_slider_value("val_sharpen", 60.0)
-            self._set_slider_value("val_denoise", 15.0)
-        elif preset_type == "high":
-            self._set_slider_value("val_sharpen", 100.0)
-            self._set_slider_value("val_denoise", 25.0)
-
-        self.request_update()
-        # Push undo state for preset application
-        self._push_undo_state_immediate(f"Apply {preset_type} preset")
-
-    def set_preview_mode(self, enabled):
-        self.panel.setVisible(not enabled)
-        # In preview mode, we might want the carousel to be slightly different
-        # but for now, the user wants it exactly like edit mode.
-
-    def open(self, path, image_list=None):
-        if not isinstance(path, Path):
-            path = Path(path)
-
-        if image_list:
-            self.set_carousel_images(image_list, path)
-        else:
-            self.load_carousel_folder(path.parent)
-            for i in range(self.carousel.count()):
-                item = self.carousel.item(i)
-                if Path(item.data(QtCore.Qt.UserRole)) == path:
-                    self.carousel.setCurrentItem(item)
-                    break
-
-        self.load_image(path)
+        self.editing_controls.set_rating(rating)
+        self.settings_manager.set_current_settings(settings, rating)
