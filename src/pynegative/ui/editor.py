@@ -158,7 +158,6 @@ class EditorWidget(QtWidgets.QWidget):
         QtGui.QShortcut(
             QtGui.QKeySequence.StandardKey.Paste, self, self._handle_paste_shortcut
         )
-        QtGui.QShortcut(QtGui.QKeySequence("F12"), self, self._toggle_render_mode)
 
     def resizeEvent(self, event):
         """Handle widget resize."""
@@ -576,12 +575,3 @@ class EditorWidget(QtWidgets.QWidget):
     def _on_performance_measured(self, elapsed_ms):
         """Update the performance label."""
         self.perf_label.setText(f"{elapsed_ms:.1f} ms")
-
-    def _toggle_render_mode(self):
-        """Toggle between tiled and single-worker rendering."""
-        self.image_processor.use_tiled_rendering = (
-            not self.image_processor.use_tiled_rendering
-        )
-        mode = "Tiled" if self.image_processor.use_tiled_rendering else "Single"
-        self.show_toast(f"Render Mode: {mode}")
-        self._request_update_from_view()
