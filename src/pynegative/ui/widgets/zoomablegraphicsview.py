@@ -43,12 +43,24 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
             self.zoomChanged.emit(self._current_zoom)
 
     def set_pixmaps(
-        self, bg_pix, full_w, full_h, roi_pix=None, roi_x=0, roi_y=0, roi_w=0, roi_h=0
+        self,
+        bg_pix,
+        full_w,
+        full_h,
+        roi_pix=None,
+        roi_x=0,
+        roi_y=0,
+        roi_w=0,
+        roi_h=0,
     ):
         """Unified update for both layers to ensure alignment."""
+        if bg_pix is None:
+            bg_pix = QtGui.QPixmap()
+        if roi_pix is None:
+            roi_pix = QtGui.QPixmap()
         # 1. Update Background
         self._bg_item.setPixmap(bg_pix)
-        if bg_pix.width() > 0:
+        if not bg_pix.isNull() and bg_pix.width() > 0:
             s_w = full_w / bg_pix.width()
             s_h = full_h / bg_pix.height()
             self._bg_item.setTransform(QtGui.QTransform.fromScale(s_w, s_h))
@@ -57,7 +69,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self._scene.setSceneRect(0, 0, full_w, full_h)
 
         # 3. Update ROI
-        if roi_pix:
+        if not roi_pix.isNull():
             self._fg_item.setPixmap(roi_pix)
             self._fg_item.setPos(roi_x, roi_y)
             # GPU Scale ROI if it was processed at lower resolution for performance
@@ -72,7 +84,10 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
             self._fg_item.hide()
 
     def reset_zoom(self):
-        if self._bg_item.pixmap().isNull() and self._scene.sceneRect().isEmpty():
+        bg_pixmap = self._bg_item.pixmap()
+        if bg_pixmap is None or (
+            bg_pixmap.isNull() and self._scene.sceneRect().isEmpty()
+        ):
             return
         self.fitInView(self._scene.sceneRect(), Qt.KeepAspectRatio)
         self._current_zoom = self.transform().m11()
