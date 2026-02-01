@@ -81,10 +81,8 @@ uv run pytest
 Track planned features and project goals.
 
 -   [ ] **Enable multi-threaded**: Enable multi-threaded processing of the images in the edit view and gallery view.
--   [ ] **Sync Settings**: Copy/paste edit changes from one photo to others.
 -   [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
 -   [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
--   [ ] **Archival Export Preset**: Reduce storage footprint (e.g., 16-bit DNG or high-quality HEIF) while retaining latitude.
 -   [ ] **Batch Renaming**: Sequence-based renaming for folder exports.
 -   [ ] **Readme refactor** update readme, and create a readme structure that is easy to navigate. and covers larger sections of the codebase in more details. eg tests.
 

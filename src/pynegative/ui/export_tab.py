@@ -200,13 +200,21 @@ class ExportWidget(QtWidgets.QWidget):
         self.destination_group = QtWidgets.QGroupBox("Destination")
         self.destination_layout = QtWidgets.QVBoxLayout(self.destination_group)
 
-        # Destination path label
+        # Destination path label (shows shortened path)
         self.dest_path_label = QtWidgets.QLabel("No folder loaded")
         self.dest_path_label.setStyleSheet("color: #666;")
         self.dest_path_label.setWordWrap(True)
         self.destination_layout.addWidget(self.dest_path_label)
 
+        # Change button
+        self.change_dest_button = QtWidgets.QPushButton("Change...")
+        self.change_dest_button.clicked.connect(self._choose_export_destination)
+        self.destination_layout.addWidget(self.change_dest_button)
+
         self.settings_layout.addWidget(self.destination_group)
+
+        # Store the actual export destination path
+        self._export_destination = None
 
     def _connect_components(self):
         """Connect signals between components."""
@@ -307,6 +315,45 @@ class ExportWidget(QtWidgets.QWidget):
         self.heif_settings.setVisible(format == "HEIF")
         self.dng_settings.setVisible(format == "DNG")
 
+    def _format_destination_path(self, path):
+        """Format path to show only last 3 components (parent/parent/exported)."""
+        if not path:
+            return "No folder loaded"
+
+        path = Path(path)
+        parts = path.parts
+
+        # Show last 3 parts if path has enough components
+        if len(parts) >= 3:
+            return f".../{parts[-3]}/{parts[-2]}/{parts[-1]}"
+        elif len(parts) >= 2:
+            return f".../{parts[-2]}/{parts[-1]}"
+        else:
+            return str(path)
+
+    def _update_destination_display(self):
+        """Update the destination path label."""
+        if self._export_destination:
+            display_path = self._format_destination_path(self._export_destination)
+            self.dest_path_label.setText(display_path)
+            self.dest_path_label.setStyleSheet("")
+            self.dest_path_label.setToolTip(str(self._export_destination))
+        else:
+            self.dest_path_label.setText("No folder loaded")
+            self.dest_path_label.setStyleSheet("color: #666;")
+            self.dest_path_label.setToolTip("")
+
+    def _choose_export_destination(self):
+        """Open folder dialog for custom export destination."""
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Select Export Destination",
+            str(self._export_destination) if self._export_destination else "",
+        )
+        if folder:
+            self._export_destination = Path(folder)
+            self._update_destination_display()
+
     def _on_export_completed(self, success_count, total_count):
         """Handle export batch completion."""
         self.export_button.setEnabled(True)
@@ -329,10 +376,9 @@ class ExportWidget(QtWidgets.QWidget):
         """Load images from a folder."""
         self.current_folder = Path(folder)
 
-        # Update destination label
-        dest_path = self.current_folder / "exported"
-        self.dest_path_label.setText(str(dest_path))
-        self.dest_path_label.setStyleSheet("")
+        # Set default export destination to <folder>/exported
+        self._export_destination = self.current_folder / "exported"
+        self._update_destination_display()
 
         # Get filter settings from main window
         main_window = self.window()
@@ -365,15 +411,16 @@ class ExportWidget(QtWidgets.QWidget):
             )
             return
 
-        # Get destination: always use <current_directory>/exported
-        if not self.current_folder:
+        # Get destination
+        if not self._export_destination:
             QtWidgets.QMessageBox.warning(
-                self, "No folder loaded", "Please load a folder first."
+                self, "No destination set", "Please load a folder first."
             )
             return
 
-        destination = self.current_folder / "exported"
-        destination.mkdir(exist_ok=True)
+        # Create destination directory if it doesn't exist
+        self._export_destination.mkdir(exist_ok=True)
+        destination = self._export_destination
 
         # Update UI
         self.export_button.setEnabled(False)
