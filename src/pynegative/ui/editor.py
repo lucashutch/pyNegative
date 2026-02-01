@@ -119,6 +119,7 @@ class EditorWidget(QtWidgets.QWidget):
             self.perf_label, 0, 0, Qt.AlignBottom | Qt.AlignLeft
         )
         self.perf_label.setContentsMargins(10, 0, 0, 10)
+        self.perf_label.hide()
 
     def _setup_connections(self):
         """Setup signal/slot connections between components."""
@@ -157,6 +158,9 @@ class EditorWidget(QtWidgets.QWidget):
         )
         QtGui.QShortcut(
             QtGui.QKeySequence.StandardKey.Paste, self, self._handle_paste_shortcut
+        )
+        QtGui.QShortcut(
+            QtGui.QKeySequence("F12"), self, self._toggle_performance_overlay
         )
 
     def resizeEvent(self, event):
@@ -575,3 +579,9 @@ class EditorWidget(QtWidgets.QWidget):
     def _on_performance_measured(self, elapsed_ms):
         """Update the performance label."""
         self.perf_label.setText(f"{elapsed_ms:.1f} ms")
+
+    def _toggle_performance_overlay(self):
+        """Toggle the visibility of the performance metric overlay."""
+        is_visible = not self.perf_label.isVisible()
+        self.perf_label.setVisible(is_visible)
+        self.show_toast(f"Performance Overlay {'On' if is_visible else 'Off'}")
