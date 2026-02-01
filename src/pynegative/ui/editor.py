@@ -36,7 +36,7 @@ class EditorWidget(QtWidgets.QWidget):
 
     def _init_components(self):
         """Initialize all component instances."""
-        self.image_processor = ImageProcessingPipeline(self)
+        self.image_processor = ImageProcessingPipeline(self.thread_pool, self)
         self.editing_controls = EditingControls(self)
         self.settings_manager = SettingsManager(self)
         self.carousel_manager = CarouselManager(self.thread_pool, self)
