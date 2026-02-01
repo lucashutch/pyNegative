@@ -75,8 +75,13 @@ def test_is_click_on_circle_miss_below(delegate):
     assert delegate.is_click_on_circle(click_pos, item_rect) is False
 
 
-def test_is_click_on_circle_hit(delegate):
+def test_is_click_on_circle_hit(delegate, list_widget):
     """Test click detection - click on circle."""
+    # Ensure multiple items so circles are active
+    if list_widget.count() < 2:
+        list_widget.addItem(QtWidgets.QListWidgetItem("Item 1"))
+    delegate.set_show_selection_circles(True)
+
     item_rect = QtCore.QRect(0, 0, 100, 100)
     # Circle is at x=76, y=6 (right - 24, top + 6), size 18x18
     # Center is at (85, 15)
@@ -85,8 +90,13 @@ def test_is_click_on_circle_hit(delegate):
     assert delegate.is_click_on_circle(click_pos, item_rect) is True
 
 
-def test_is_click_on_circle_top_left_corner(delegate):
+def test_is_click_on_circle_top_left_corner(delegate, list_widget):
     """Test click detection - click on top-left of circle."""
+    # Ensure multiple items so circles are active
+    if list_widget.count() < 2:
+        list_widget.addItem(QtWidgets.QListWidgetItem("Item 1"))
+    delegate.set_show_selection_circles(True)
+
     item_rect = QtCore.QRect(0, 0, 100, 100)
     # Top-left of circle: (76, 6)
     click_pos = QtCore.QPoint(76, 6)
@@ -94,8 +104,13 @@ def test_is_click_on_circle_top_left_corner(delegate):
     assert delegate.is_click_on_circle(click_pos, item_rect) is True
 
 
-def test_is_click_on_circle_bottom_right_corner(delegate):
+def test_is_click_on_circle_bottom_right_corner(delegate, list_widget):
     """Test click detection - click on bottom-right of circle."""
+    # Ensure multiple items so circles are active
+    if list_widget.count() < 2:
+        list_widget.addItem(QtWidgets.QListWidgetItem("Item 1"))
+    delegate.set_show_selection_circles(True)
+
     item_rect = QtCore.QRect(0, 0, 100, 100)
     # Bottom-right of circle is at (93.99, 23.99) - Qt uses exclusive bottom-right
     # So click at (93, 23) should be inside
@@ -162,8 +177,13 @@ def test_paint_unselected_item(list_widget, delegate, qtbot):
     delegate.paint(painter, option, index)
 
 
-def test_circle_position_calculation(delegate):
+def test_circle_position_calculation(delegate, list_widget):
     """Test that circle position is calculated correctly from item rect."""
+    # Ensure multiple items so circles are active
+    if list_widget.count() < 2:
+        list_widget.addItem(QtWidgets.QListWidgetItem("Item 1"))
+    delegate.set_show_selection_circles(True)
+
     item_rect = QtCore.QRect(50, 50, 100, 100)
     # Circle should be at: x = 50+100-24=126, y=50+6=56
     # Circle rect: (126, 56, 18, 18)
