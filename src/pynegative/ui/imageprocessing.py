@@ -2,6 +2,7 @@ import numpy as np
 from PIL import Image, ImageQt
 from PySide6 import QtCore, QtGui
 import time
+import cv2
 from .. import core as pynegative
 
 
@@ -52,10 +53,12 @@ class ImageProcessorWorker(QtCore.QRunnable):
         base_img_uint8 = (self.base_img_full * 255).astype(np.uint8)
         scale = 1500 / max(full_h, full_w)
         target_h, target_w = int(full_h * scale), int(full_w * scale)
-        temp_pil = Image.fromarray(base_img_uint8).resize(
-            (target_w, target_h), Image.Resampling.BILINEAR
+
+        # Use OpenCV for faster resizing
+        resized_arr = cv2.resize(
+            base_img_uint8, (target_w, target_h), interpolation=cv2.INTER_LINEAR
         )
-        img_render_base = np.array(temp_pil).astype(np.float32) / 255.0
+        img_render_base = resized_arr.astype(np.float32) / 255.0
 
         tone_map_settings = {
             k: v
