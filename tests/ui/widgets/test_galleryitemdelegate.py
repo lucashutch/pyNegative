@@ -141,10 +141,6 @@ class TestGalleryItemDelegate:
         assert list_widget.get_hovered_item() is not None
         assert list_widget.get_hovered_item().text() == index.data()
 
-        # Check the star geometry calculations
-        y = option.rect.y() + 5  # Should be 5
-        x_start = option.rect.x() + 5  # Should be 5
-
         # Click position should be within first star bounds
         click_x = 10  # Within [5, 21]
         click_y = 10  # Within [5, 21]

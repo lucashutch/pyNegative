@@ -113,7 +113,6 @@ class TestZoomableGraphicsView:
 
         # Zoom in multiple times to reach max
         for _ in range(10):
-            angle_delta = QtCore.QPoint(0, 120)
             qtbot.wait(100)
             qtbot.keyClick(zoom_view, QtCore.Qt.Key_Plus)
 
