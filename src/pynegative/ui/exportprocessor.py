@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 from PIL import Image
 from PySide6 import QtCore
+import pillow_heif
 from .. import core as pynegative
 
 
@@ -51,8 +52,19 @@ class ExportProcessor(QtCore.QRunnable):
         file_path = Path(file)
         file_name = file_path.stem
 
+        # Determine bit depth for processing
+        heif_bit_depth_str = self.settings.get("heif_bit_depth", "8-bit")
+        output_bps = 8
+        if self.settings.get("format") == "HEIF" and heif_bit_depth_str in (
+            "10-bit",
+            "12-bit",
+        ):
+            output_bps = 16
+
         # Load full resolution image
-        full_img = pynegative.open_raw(str(file_path), half_size=False)
+        full_img = pynegative.open_raw(
+            str(file_path), half_size=False, output_bps=output_bps
+        )
 
         # Get sidecar settings
         sidecar_settings = pynegative.load_sidecar(str(file_path)) or {}
@@ -68,7 +80,12 @@ class ExportProcessor(QtCore.QRunnable):
             highlights=sidecar_settings.get("highlights", 0.0),
             saturation=sidecar_settings.get("saturation", 1.0),
         )
-        pil_img = Image.fromarray((img * 255).astype("uint8"))
+
+        # Convert to PIL Image
+        if output_bps == 16:
+            pil_img = Image.fromarray((img * 65535).astype("uint16"), "RGB")
+        else:
+            pil_img = Image.fromarray((img * 255).astype("uint8"))
 
         # Apply size constraints if specified
         max_w = self.settings.get("max_width")
@@ -82,9 +99,6 @@ class ExportProcessor(QtCore.QRunnable):
             self._save_jpeg(pil_img, file_name)
         elif format == "HEIF":
             self._save_heif(pil_img, file_name)
-        elif format == "DNG":
-            # DNG support is not implemented yet
-            pass
 
     def _save_jpeg(self, pil_img, file_name):
         """Save image as JPEG."""
@@ -95,8 +109,22 @@ class ExportProcessor(QtCore.QRunnable):
     def _save_heif(self, pil_img, file_name):
         """Save image as HEIF."""
         quality = self.settings.get("heif_quality", 90)
+        bit_depth_str = self.settings.get("heif_bit_depth", "8-bit")
         dest_path = os.path.join(self.destination_folder, f"{file_name}.heic")
-        pil_img.save(dest_path, format="HEIF", quality=quality)
+
+        if bit_depth_str == "12-bit":
+            original_setting = pillow_heif.options.SAVE_HDR_TO_12_BIT
+            pillow_heif.options.SAVE_HDR_TO_12_BIT = True
+            try:
+                pil_img.save(dest_path, format="HEIF", quality=quality)
+            finally:
+                pillow_heif.options.SAVE_HDR_TO_12_BIT = original_setting
+        elif bit_depth_str == "10-bit":
+            # 16-bit images are saved as 10-bit by default
+            pil_img.save(dest_path, format="HEIF", quality=quality)
+        else:
+            # 8-bit
+            pil_img.save(dest_path, format="HEIF", quality=quality)
 
     def cancel(self):
         """Cancel the export batch."""

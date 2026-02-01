@@ -23,7 +23,7 @@ class ExportSettingsManager(QtCore.QObject):
             "format": "HEIF",
             "jpeg_quality": 95,
             "heif_quality": 95,
-            "dng_compression": "None",
+            "heif_bit_depth": "8-bit",
             "max_width": "",
             "max_height": "",
         }
@@ -62,8 +62,8 @@ class ExportSettingsManager(QtCore.QObject):
                 "jpeg_quality": 80,
                 "max_width": "1920",
                 "max_height": "1080",
-                "dng_compression": "None",
                 "heif_quality": 90,
+                "heif_bit_depth": "8-bit",
             }
         elif preset_name == "Photo Print":
             return {
@@ -71,8 +71,8 @@ class ExportSettingsManager(QtCore.QObject):
                 "jpeg_quality": 95,
                 "max_width": "3600",
                 "max_height": "2400",
-                "dng_compression": "None",
                 "heif_quality": 90,
+                "heif_bit_depth": "8-bit",
             }
         elif preset_name == "Archival":
             return {
@@ -81,7 +81,7 @@ class ExportSettingsManager(QtCore.QObject):
                 "max_width": "",
                 "max_height": "",
                 "jpeg_quality": 95,
-                "dng_compression": "None",
+                "heif_bit_depth": "8-bit",
             }
         elif preset_name == "Large Format Print":
             return {
@@ -90,7 +90,7 @@ class ExportSettingsManager(QtCore.QObject):
                 "max_width": "10800",
                 "max_height": "7200",
                 "heif_quality": 95,
-                "dng_compression": "None",
+                "heif_bit_depth": "8-bit",
             }
         elif preset_name == "Custom":
             return self._get_default_settings()
@@ -172,7 +172,7 @@ class ExportSettingsManager(QtCore.QObject):
 
     def get_supported_formats(self):
         """Get list of supported export formats."""
-        return ["JPEG", "HEIF", "DNG"]
+        return ["JPEG", "HEIF"]
 
     def validate_settings(self):
         """Validate current export settings."""

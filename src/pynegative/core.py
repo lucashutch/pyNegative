@@ -127,18 +127,26 @@ def calculate_auto_exposure(img):
 
 
 @lru_cache(maxsize=4)
-def open_raw(path, half_size=False):
+def open_raw(path, half_size=False, output_bps=8):
     """
     Opens a RAW file.
     Args:
         path: File path (str or Path)
         half_size: If True, decodes at 1/2 resolution (1/4 pixels) for speed.
+        output_bps: Bit depth of the output image (8 or 16).
     """
     path = str(path)  # rawpy requires str
     with rawpy.imread(path) as raw:
         rgb = raw.postprocess(
-            use_camera_wb=True, half_size=half_size, no_auto_bright=False, output_bps=8
+            use_camera_wb=True,
+            half_size=half_size,
+            no_auto_bright=False,
+            output_bps=output_bps,
         )
+
+    # Normalize to 0.0-1.0 range
+    if output_bps == 16:
+        return rgb.astype(np.float32) / 65535.0
     return rgb.astype(np.float32) / 255.0
 
 
