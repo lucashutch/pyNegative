@@ -1,169 +1,120 @@
-from PySide6 import QtWidgets, QtCore, QtGui
-from .widgets import GalleryListWidget, ComboBox, CarouselDelegate
-from .loaders import ThumbnailLoader
-from .. import core as pynegative
 from pathlib import Path
-import os
-from PIL import Image
-
-
-class ExporterSignals(QtCore.QObject):
-    finished = QtCore.Signal()
-    progress = QtCore.Signal(int)
-    error = QtCore.Signal(str)
-
-
-class Exporter(QtCore.QRunnable):
-    def __init__(self, signals, files, settings, destination_folder):
-        super().__init__()
-        self.signals = signals
-        self.files = files
-        self.settings = settings
-        self.destination_folder = destination_folder
-
-    def run(self):
-        count = len(self.files)
-        for i, file in enumerate(self.files):
-            try:
-                full_img = pynegative.open_raw(str(file), half_size=False)
-                sidecar_settings = pynegative.load_sidecar(str(file)) or {}
-
-                img, _ = pynegative.apply_tone_map(
-                    full_img,
-                    exposure=sidecar_settings.get("exposure", 0.0),
-                    contrast=sidecar_settings.get("contrast", 1.0),
-                    blacks=sidecar_settings.get("blacks", 0.0),
-                    whites=sidecar_settings.get("whites", 1.0),
-                    shadows=sidecar_settings.get("shadows", 0.0),
-                    highlights=sidecar_settings.get("highlights", 0.0),
-                    saturation=sidecar_settings.get("saturation", 1.0),
-                )
-                pil_img = Image.fromarray((img * 255).astype("uint8"))
-
-                max_w = self.settings.get("max_width")
-                max_h = self.settings.get("max_height")
-                if max_w and max_h:
-                    pil_img.thumbnail((int(max_w), int(max_h)))
-
-                file_name = Path(file).stem
-                format = self.settings.get("format")
-                if format == "JPEG":
-                    dest_path = os.path.join(
-                        self.destination_folder, f"{file_name}.jpg"
-                    )
-                    pil_img.save(
-                        dest_path, quality=self.settings.get("jpeg_quality", 90)
-                    )
-                elif format == "HEIF":
-                    dest_path = os.path.join(
-                        self.destination_folder, f"{file_name}.heic"
-                    )
-                    pil_img.save(
-                        dest_path,
-                        format="HEIF",
-                        quality=self.settings.get("heif_quality", 90),
-                    )
-                elif format == "DNG":
-                    # DNG support is not implemented yet
-                    pass
-
-                self.signals.progress.emit(int(100 * (i + 1) / count))
-            except Exception as e:
-                self.signals.error.emit(f"Failed to export {file}: {e}")
-                return
-        self.signals.finished.emit()
+from PySide6 import QtWidgets, QtCore, QtGui
+from .widgets import ComboBox, ToastWidget
+from .exportgallerymanager import ExportGalleryManager
+from .exportsettingsmanager import ExportSettingsManager
+from .exportprocessor import ExportJob
 
 
 class ExportWidget(QtWidgets.QWidget):
+    """Main export widget coordinating gallery, settings, and processing."""
+
     def __init__(self, thread_pool):
         super().__init__()
         self.thread_pool = thread_pool
         self.current_folder = None
-        self.settings = QtCore.QSettings("pyNegative", "Export")
+
+        # Initialize components
+        self.gallery_manager = ExportGalleryManager(thread_pool, self)
+        self.settings_manager = ExportSettingsManager(self)
+        self.export_job = ExportJob(thread_pool, self)
+
+        # Toast for export completion (longer duration: 8 seconds)
+        self.export_toast = ToastWidget(self, duration=8000)
+
         self._init_ui()
+        self._connect_components()
+        self._load_initial_settings()
 
     def _init_ui(self):
+        """Initialize the user interface."""
         self.main_layout = QtWidgets.QHBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
-        # Use a splitter to allow manual resizing of the settings panel
+        # Splitter for resizable panels
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.main_layout.addWidget(self.splitter)
 
         # Left side: Gallery
-        self.gallery_container = QtWidgets.QWidget()
-        self.gallery_layout = QtWidgets.QVBoxLayout(self.gallery_container)
-        self.gallery_layout.setContentsMargins(10, 10, 10, 10)
-        self.gallery_layout.setSpacing(10)
-        self.splitter.addWidget(self.gallery_container)
-
-        self.list_widget = GalleryListWidget()
-        self.list_widget.setObjectName("ExportGrid")
-        self.list_widget.setViewMode(QtWidgets.QListView.IconMode)
-        self.list_widget.setIconSize(QtCore.QSize(180, 180))
-        self.list_widget.setResizeMode(QtWidgets.QListView.Adjust)
-        self.list_widget.setSpacing(10)
-        self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-
-        # Set up carousel delegate for selection circles
-        self.carousel_delegate = CarouselDelegate(self.list_widget)
-        self.list_widget.setItemDelegate(self.carousel_delegate)
-        self.list_widget.selectionChanged.connect(self._on_gallery_selection_changed)
-
-        self.gallery_layout.addWidget(self.list_widget)
-
-        # Update circle visibility based on initial state
-        self._update_gallery_circle_visibility()
-
-        self.selection_label = QtWidgets.QLabel("0 items selected")
-        self.gallery_layout.addWidget(self.selection_label)
-        self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
+        self._setup_gallery_panel()
 
         # Right side: Settings
-        self.settings_container = QtWidgets.QFrame()
-        self.settings_container.setObjectName("EditorPanel")
-        self.settings_container.setMinimumWidth(320)
-        self.settings_container.setMaximumWidth(600)
+        self._setup_settings_panel()
 
-        outer_layout = QtWidgets.QVBoxLayout(self.settings_container)
-        outer_layout.setContentsMargins(0, 0, 0, 0)
+        # Set initial splitter sizes
+        self.splitter.setSizes([1000, 340])
 
+    def _setup_gallery_panel(self):
+        """Setup the gallery selection panel."""
+        gallery_container = QtWidgets.QWidget()
+        gallery_layout = QtWidgets.QVBoxLayout(gallery_container)
+        gallery_layout.setContentsMargins(10, 10, 10, 10)
+        gallery_layout.setSpacing(10)
+        self.splitter.addWidget(gallery_container)
+
+        # Add gallery widget from manager
+        gallery_layout.addWidget(self.gallery_manager.get_widget())
+
+        # Selection counter
+        self.selection_label = QtWidgets.QLabel("0 items selected")
+        gallery_layout.addWidget(self.selection_label)
+
+    def _setup_settings_panel(self):
+        """Setup the export settings panel."""
+        settings_container = QtWidgets.QFrame()
+        settings_container.setObjectName("EditorPanel")
+        settings_container.setMinimumWidth(320)
+        settings_container.setMaximumWidth(600)
+        self.splitter.addWidget(settings_container)
+
+        # Scroll area for settings
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
         scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+
+        outer_layout = QtWidgets.QVBoxLayout(settings_container)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.addWidget(scroll)
 
+        # Content widget
         content_widget = QtWidgets.QWidget()
         self.settings_layout = QtWidgets.QVBoxLayout(content_widget)
         self.settings_layout.setContentsMargins(10, 10, 10, 10)
         self.settings_layout.setSpacing(10)
         scroll.setWidget(content_widget)
 
-        # Dynamic margin adjustment for scrollbar
-        def _update_export_scroll_margins():
+        # Dynamic margin adjustment
+        self._setup_scrollbar_margin_adjustment(scroll)
+
+        # Export controls
+        self._setup_export_controls()
+
+        # Progress bar
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.settings_layout.addWidget(self.progress_bar)
+
+    def _setup_scrollbar_margin_adjustment(self, scroll):
+        """Setup dynamic margin adjustment for scrollbar."""
+
+        def _update_margins():
             try:
                 vbar = scroll.verticalScrollBar()
                 is_visible = vbar.isVisible()
                 right_margin = 26 if is_visible else 10
                 self.settings_layout.setContentsMargins(10, 10, right_margin, 10)
             except Exception:
-                pass  # Ignore errors during initialization
+                pass
 
-        # Connect to scrollbar visibility change
-        scroll.verticalScrollBar().rangeChanged.connect(_update_export_scroll_margins)
-        scroll.verticalScrollBar().valueChanged.connect(_update_export_scroll_margins)
+        scroll.verticalScrollBar().rangeChanged.connect(_update_margins)
+        scroll.verticalScrollBar().valueChanged.connect(_update_margins)
+        QtCore.QTimer.singleShot(100, _update_margins)
 
-        # Force initial check after UI is built
-        QtCore.QTimer.singleShot(100, _update_export_scroll_margins)
-
-        self.splitter.addWidget(self.settings_container)
-
-        # Set initial sizes for the splitter: gallery takes most space, settings at 340px
-        self.splitter.setSizes([1000, 340])
-
-        # Preset
+    def _setup_export_controls(self):
+        """Setup export settings controls."""
+        # Preset selector
         self.preset_label = QtWidgets.QLabel("Preset")
         self.settings_layout.addWidget(self.preset_label)
         self.preset_combo = ComboBox()
@@ -172,36 +123,50 @@ class ExportWidget(QtWidgets.QWidget):
 
         self.save_preset_button = QtWidgets.QPushButton("Save Preset")
         self.save_preset_button.setObjectName("SavePresetButton")
-        self.save_preset_button.clicked.connect(self.save_preset)
         self.settings_layout.addWidget(self.save_preset_button)
 
-        # Format
+        # Format selector
         self.format_label = QtWidgets.QLabel("Format")
         self.settings_layout.addWidget(self.format_label)
         self.format_combo = ComboBox()
         self.format_combo.setObjectName("ExportComboBox")
-        self.format_combo.addItems(["JPEG", "HEIF", "DNG"])
+        self.format_combo.addItems(self.settings_manager.get_supported_formats())
         self.settings_layout.addWidget(self.format_combo)
-        self.format_combo.currentIndexChanged.connect(self._on_format_changed)
-        self.preset_combo.currentIndexChanged.connect(self.apply_preset)
 
-        # Settings
+        # Format-specific settings
+        self._setup_format_settings()
+
+        # Size settings
+        self._setup_size_settings()
+
+        # Destination settings
+        self._setup_destination_settings()
+
+        self.settings_layout.addStretch()
+
+        # Export button
+        self.export_button = QtWidgets.QPushButton("Export")
+        self.settings_layout.addWidget(self.export_button)
+
+    def _setup_format_settings(self):
+        """Setup format-specific setting groups."""
+        # JPEG settings
         self.jpeg_settings = QtWidgets.QGroupBox("JPEG Settings")
         self.jpeg_layout = QtWidgets.QFormLayout(self.jpeg_settings)
         self.jpeg_quality = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.jpeg_quality.setRange(1, 100)
-        self.jpeg_quality.setValue(90)
         self.jpeg_layout.addRow("Quality", self.jpeg_quality)
         self.settings_layout.addWidget(self.jpeg_settings)
 
+        # HEIF settings
         self.heif_settings = QtWidgets.QGroupBox("HEIF Settings")
         self.heif_layout = QtWidgets.QFormLayout(self.heif_settings)
         self.heif_quality = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.heif_quality.setRange(1, 100)
-        self.heif_quality.setValue(90)
         self.heif_layout.addRow("Quality", self.heif_quality)
         self.settings_layout.addWidget(self.heif_settings)
 
+        # DNG settings
         self.dng_settings = QtWidgets.QGroupBox("DNG Settings")
         self.dng_layout = QtWidgets.QFormLayout(self.dng_settings)
         self.dng_compression = QtWidgets.QComboBox()
@@ -210,7 +175,8 @@ class ExportWidget(QtWidgets.QWidget):
         self.dng_layout.addRow("Compression", self.dng_compression)
         self.settings_layout.addWidget(self.dng_settings)
 
-        # Size (collapsible)
+    def _setup_size_settings(self):
+        """Setup size constraint settings."""
         self.size_group = QtWidgets.QGroupBox("Size")
         self.size_group.setCheckable(True)
         self.size_group.setChecked(False)
@@ -229,7 +195,8 @@ class ExportWidget(QtWidgets.QWidget):
         self.size_layout.addRow("Max Height", self.max_height)
         self.settings_layout.addWidget(self.size_group)
 
-        # Destination
+    def _setup_destination_settings(self):
+        """Setup destination folder settings."""
         self.destination_group = QtWidgets.QGroupBox("Destination")
         self.destination_layout = QtWidgets.QVBoxLayout(self.destination_group)
 
@@ -241,6 +208,7 @@ class ExportWidget(QtWidgets.QWidget):
         self.use_custom_dest = QtWidgets.QRadioButton("Save to custom folder")
         self.destination_layout.addWidget(self.use_custom_dest)
 
+        # Custom destination container
         self.custom_dest_container = QtWidgets.QWidget()
         self.custom_dest_layout = QtWidgets.QHBoxLayout(self.custom_dest_container)
         self.custom_dest_layout.setContentsMargins(20, 0, 0, 0)
@@ -257,270 +225,211 @@ class ExportWidget(QtWidgets.QWidget):
         self.destination_layout.addWidget(self.custom_dest_container)
         self.settings_layout.addWidget(self.destination_group)
 
-        self.settings_layout.addStretch()
+    def _connect_components(self):
+        """Connect signals between components."""
+        # Gallery manager signals
+        self.gallery_manager.selectionCountChanged.connect(
+            self._on_selection_count_changed
+        )
 
-        # Export Button
-        self.export_button = QtWidgets.QPushButton("Export")
+        # Settings manager signals
+        self.settings_manager.presetApplied.connect(self._on_preset_applied)
+        self.settings_manager.destinationChanged.connect(self._on_destination_changed)
+
+        # Export job signals
+        self.export_job.signals.progress.connect(self.progress_bar.setValue)
+        self.export_job.signals.batchCompleted.connect(self._on_export_completed)
+        self.export_job.signals.error.connect(self._on_export_error)
+
+        # UI control signals
+        self.preset_combo.currentIndexChanged.connect(self._apply_preset)
+        self.format_combo.currentIndexChanged.connect(self._on_format_changed)
+        self.save_preset_button.clicked.connect(self._save_preset)
         self.export_button.clicked.connect(self.start_export)
-        self.settings_layout.addWidget(self.export_button)
+        self.use_default_dest.toggled.connect(self._on_destination_mode_changed)
+        self.custom_dest_button.clicked.connect(self._choose_custom_destination)
 
-        # Load destination settings
-        self.custom_destination = self.settings.value(
-            "custom_destination", "", type=str
+        # Update settings manager when controls change
+        self.format_combo.currentTextChanged.connect(
+            lambda text: self.settings_manager.update_setting("format", text)
         )
-        use_default = self.settings.value("use_default_destination", True, type=bool)
-
-        # Set initial value before connecting signal
-        self.use_default_dest.setChecked(use_default)
-
-        # Connect destination signals
-        self.use_default_dest.toggled.connect(self.on_destination_mode_changed)
-        self.custom_dest_button.clicked.connect(self.on_choose_custom_destination)
-
-        if self.custom_destination:
-            self.custom_dest_label.setText(self.custom_destination)
-            self.custom_dest_label.setStyleSheet("")
-
-        self.progress_bar = QtWidgets.QProgressBar()
-        self.progress_bar.setVisible(False)
-        self.settings_layout.addWidget(self.progress_bar)
-
-        # Load presets after all UI components are created
-        self.load_presets()
-        self._on_format_changed(self.format_combo.currentIndex())
-
-    def _on_gallery_selection_changed(self):
-        """Handle gallery selection changes for circle visibility."""
-        self._update_gallery_circle_visibility()
-
-    def _on_format_changed(self, index):
-        format = self.format_combo.itemText(index)
-        self.jpeg_settings.setVisible(format == "JPEG")
-        self.heif_settings.setVisible(format == "HEIF")
-        self.dng_settings.setVisible(format == "DNG")
-
-    def _on_selection_changed(self):
-        count = len(self.list_widget.selectedItems())
-        self.selection_label.setText(f"{count} items selected")
-
-    def load_folder(self, folder):
-        self.current_folder = Path(folder)
-        self.list_widget.clear()
-
-        files = [
-            f
-            for f in self.current_folder.iterdir()
-            if f.is_file() and f.suffix.lower() in pynegative.SUPPORTED_EXTS
-        ]
-
-        main_window = self.window()
-        filter_mode = main_window.filter_combo.currentText()
-        filter_rating = main_window.filter_rating_widget.rating()
-
-        for path in files:
-            sidecar_settings = pynegative.load_sidecar(str(path))
-            rating = sidecar_settings.get("rating", 0) if sidecar_settings else 0
-
-            if filter_rating > 0:
-                if filter_mode == "Match" and rating != filter_rating:
-                    continue
-                if filter_mode == "Less" and rating >= filter_rating:
-                    continue
-                if filter_mode == "Greater" and rating <= filter_rating:
-                    continue
-
-            item = QtWidgets.QListWidgetItem(path.name)
-            item.setData(QtCore.Qt.UserRole, str(path))
-            item.setData(QtCore.Qt.UserRole + 1, rating)
-            item.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon))
-            self.list_widget.addItem(item)
-
-            loader = ThumbnailLoader(str(path))
-            loader.signals.finished.connect(self._on_thumbnail_loaded)
-            self.thread_pool.start(loader)
-
-        # Update circle visibility after loading items
-        self._update_gallery_circle_visibility()
-
-    def _update_gallery_circle_visibility(self):
-        """Update circle visibility based on gallery state."""
-        show_circles = self.list_widget.count() > 1
-        self.carousel_delegate.set_show_selection_circles(show_circles)
-
-    def _on_thumbnail_loaded(self, path, pixmap):
-        for i in range(self.list_widget.count()):
-            item = self.list_widget.item(i)
-            if item.data(QtCore.Qt.UserRole) == path:
-                if pixmap:
-                    item.setIcon(QtGui.QIcon(pixmap))
-                break
-
-    def apply_filter_from_main(self):
-        if self.current_folder:
-            self.load_folder(self.current_folder)
-
-    def on_destination_mode_changed(self, use_default):
-        """Handle toggle between default and custom destination."""
-        self.custom_dest_button.setEnabled(not use_default)
-        self.settings.setValue("use_default_destination", use_default)
-
-    def on_choose_custom_destination(self):
-        """Handle custom folder selection."""
-        folder = QtWidgets.QFileDialog.getExistingDirectory(
-            self, "Select Export Destination"
+        self.jpeg_quality.valueChanged.connect(
+            lambda val: self.settings_manager.update_setting("jpeg_quality", val)
         )
-        if folder:
-            self.custom_destination = folder
-            self.custom_dest_label.setText(folder)
-            self.custom_dest_label.setStyleSheet("")
-            self.settings.setValue("custom_destination", folder)
-
-    def get_export_destination(self):
-        """Get the export destination folder."""
-        if self.use_default_dest.isChecked():
-            # Use gallery folder + "exported" subfolder
-            if self.current_folder:
-                default_dest = self.current_folder / "exported"
-                default_dest.mkdir(exist_ok=True)
-                return str(default_dest)
-
-        # Use custom destination or show folder dialog
-        if self.custom_destination:
-            return self.custom_destination
-
-        # Fallback to folder selection
-        return QtWidgets.QFileDialog.getExistingDirectory(
-            self, "Select Destination Folder"
+        self.heif_quality.valueChanged.connect(
+            lambda val: self.settings_manager.update_setting("heif_quality", val)
+        )
+        self.dng_compression.currentTextChanged.connect(
+            lambda text: self.settings_manager.update_setting("dng_compression", text)
+        )
+        self.max_width.textChanged.connect(
+            lambda text: self.settings_manager.update_setting("max_width", text)
+        )
+        self.max_height.textChanged.connect(
+            lambda text: self.settings_manager.update_setting("max_height", text)
         )
 
-    def start_export(self):
-        files = [
-            item.data(QtCore.Qt.UserRole) for item in self.list_widget.selectedItems()
-        ]
-        if not files:
-            QtWidgets.QMessageBox.warning(
-                self, "No files selected", "Please select at least one file to export."
-            )
-            return
-
-        destination_folder = self.get_export_destination()
-        if not destination_folder:
-            return
-
-        settings = {
-            "format": self.format_combo.currentText(),
-            "jpeg_quality": self.jpeg_quality.value(),
-            "heif_quality": self.heif_quality.value(),
-            "dng_compression": self.dng_compression.currentText(),
-            "max_width": self.max_width.text(),
-            "max_height": self.max_height.text(),
-        }
-
-        self.export_button.setEnabled(False)
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
-
-        signals = ExporterSignals()
-        signals.progress.connect(self.progress_bar.setValue)
-        signals.finished.connect(self.on_export_finished)
-        signals.error.connect(self.on_export_error)
-
-        exporter = Exporter(signals, files, settings, destination_folder)
-        self.thread_pool.start(exporter)
-
-    def on_export_finished(self):
-        self.export_button.setEnabled(True)
-        self.progress_bar.setVisible(False)
-        QtWidgets.QMessageBox.information(
-            self, "Export finished", "All files have been exported successfully."
-        )
-
-    def on_export_error(self, error):
-        self.export_button.setEnabled(True)
-        self.progress_bar.setVisible(False)
-        QtWidgets.QMessageBox.critical(
-            self, "Export error", f"An error occurred during export:\n{error}"
-        )
-
-    def load_presets(self):
+    def _load_initial_settings(self):
+        """Load initial settings and presets."""
+        # Load presets
+        presets = self.settings_manager.load_presets()
         self.preset_combo.clear()
-        self.preset_combo.addItem("Custom")
-        self.preset_combo.addItem("Web")
-        self.preset_combo.addItem("Photo Print")
-        self.preset_combo.addItem("Archival")
-        self.preset_combo.addItem("Large Format Print")
-        self.settings.beginGroup("presets")
-        for preset_name in self.settings.childKeys():
-            self.preset_combo.addItem(preset_name)
-        self.settings.endGroup()
+        self.preset_combo.addItems(presets)
 
         # Set default to Archival
         archival_index = self.preset_combo.findText("Archival")
         if archival_index != -1:
             self.preset_combo.setCurrentIndex(archival_index)
 
-    def save_preset(self):
+        # Load destination settings
+        dest_settings = self.settings_manager.load_destination_settings()
+        self.use_default_dest.setChecked(dest_settings["use_default_destination"])
+
+        custom_dest = dest_settings["custom_destination"]
+        if custom_dest:
+            self.custom_dest_label.setText(custom_dest)
+            self.custom_dest_label.setStyleSheet("")
+
+        # Initial format display
+        self._on_format_changed(self.format_combo.currentIndex())
+
+    # Slot handlers
+
+    def _on_selection_count_changed(self, count):
+        """Update selection counter label."""
+        self.selection_label.setText(f"{count} items selected")
+
+    def _on_preset_applied(self, preset_name):
+        """Update UI when preset is applied."""
+        settings = self.settings_manager.get_current_settings()
+
+        self.format_combo.setCurrentText(settings["format"])
+        self.jpeg_quality.setValue(settings["jpeg_quality"])
+        self.heif_quality.setValue(settings["heif_quality"])
+        self.dng_compression.setCurrentText(settings["dng_compression"])
+        self.max_width.setText(str(settings["max_width"]))
+        self.max_height.setText(str(settings["max_height"]))
+
+        self._on_format_changed(self.format_combo.currentIndex())
+
+    def _apply_preset(self, index):
+        """Apply selected preset."""
+        preset_name = self.preset_combo.itemText(index)
+        if preset_name == "Custom":
+            return
+        self.settings_manager.apply_preset(preset_name)
+
+    def _save_preset(self):
+        """Save current settings as a preset."""
         preset_name, ok = QtWidgets.QInputDialog.getText(
             self, "Save Preset", "Preset Name:"
         )
         if ok and preset_name:
-            self.settings.beginGroup("presets")
-            self.settings.setValue(
-                preset_name,
-                {
-                    "format": self.format_combo.currentText(),
-                    "jpeg_quality": self.jpeg_quality.value(),
-                    "heif_quality": self.heif_quality.value(),
-                    "dng_compression": self.dng_compression.currentText(),
-                    "max_width": self.max_width.text(),
-                    "max_height": self.max_height.text(),
-                },
-            )
-            self.settings.endGroup()
-            self.load_presets()
+            self.settings_manager.save_preset(preset_name)
+            self._load_initial_settings()
             self.preset_combo.setCurrentText(preset_name)
 
-    def apply_preset(self, index):
-        preset_name = self.preset_combo.itemText(index)
-        if preset_name == "Custom":
+    def _on_format_changed(self, index):
+        """Show/hide format-specific settings."""
+        format = self.format_combo.itemText(index)
+        self.jpeg_settings.setVisible(format == "JPEG")
+        self.heif_settings.setVisible(format == "HEIF")
+        self.dng_settings.setVisible(format == "DNG")
+
+    def _on_destination_mode_changed(self, use_default):
+        """Handle destination mode change."""
+        self.custom_dest_button.setEnabled(not use_default)
+        self.settings_manager.save_destination_settings(use_default)
+
+    def _choose_custom_destination(self):
+        """Open folder dialog for custom destination."""
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Select Export Destination"
+        )
+        if folder:
+            self.settings_manager.set_custom_destination(folder)
+
+    def _on_destination_changed(self, folder):
+        """Update UI when destination changes."""
+        self.custom_dest_label.setText(folder)
+        self.custom_dest_label.setStyleSheet("")
+
+    def _on_export_completed(self, success_count, total_count):
+        """Handle export batch completion."""
+        self.export_button.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        self.export_toast.show_message(
+            f"Export finished: {success_count} of {total_count} files exported successfully."
+        )
+
+    def _on_export_error(self, error):
+        """Handle export error."""
+        self.export_button.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        QtWidgets.QMessageBox.critical(
+            self, "Export error", f"An error occurred during export:\n{error}"
+        )
+
+    # Public API
+
+    def load_folder(self, folder):
+        """Load images from a folder."""
+        self.current_folder = Path(folder)
+
+        # Get filter settings from main window
+        main_window = self.window()
+        filter_mode = main_window.filter_combo.currentText()
+        filter_rating = main_window.filter_rating_widget.rating()
+
+        self.gallery_manager.load_folder(folder, filter_mode, filter_rating)
+
+    def set_images(self, image_list):
+        """Set specific images for export."""
+        # Get filter settings from main window
+        main_window = self.window()
+        filter_mode = main_window.filter_combo.currentText()
+        filter_rating = main_window.filter_rating_widget.rating()
+
+        self.gallery_manager.set_images(image_list, filter_mode, filter_rating)
+
+    def apply_filter_from_main(self):
+        """Reapply filter when main window filter changes."""
+        if self.current_folder:
+            self.load_folder(self.current_folder)
+
+    def start_export(self):
+        """Start the export process."""
+        # Get selected files
+        files = self.gallery_manager.get_selected_paths()
+        if not files:
+            QtWidgets.QMessageBox.warning(
+                self, "No files selected", "Please select at least one file to export."
+            )
             return
 
-        if preset_name == "Web":
-            self.format_combo.setCurrentText("JPEG")
-            self.jpeg_quality.setValue(80)
-            self.max_width.setText("1920")
-            self.max_height.setText("1080")
-            return
+        # Get destination
+        use_default = self.use_default_dest.isChecked()
+        destination = self.settings_manager.get_destination(
+            use_default=use_default, gallery_folder=self.current_folder
+        )
 
-        if preset_name == "Photo Print":
-            self.format_combo.setCurrentText("JPEG")
-            self.jpeg_quality.setValue(95)
-            self.max_width.setText("3600")
-            self.max_height.setText("2400")
-            return
+        if not destination:
+            destination = QtWidgets.QFileDialog.getExistingDirectory(
+                self, "Select Destination Folder"
+            )
+            if not destination:
+                return
+            self.settings_manager.set_custom_destination(destination)
 
-        if preset_name == "Archival":
-            self.format_combo.setCurrentText("HEIF")
-            self.heif_quality.setValue(95)
-            self.max_width.setText("")
-            self.max_height.setText("")
-            return
+        # Update UI
+        self.export_button.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
 
-        if preset_name == "Large Format Print":
-            self.format_combo.setCurrentText("JPEG")
-            self.jpeg_quality.setValue(100)
-            self.max_width.setText("10800")
-            self.max_height.setText("7200")
-            return
+        # Start export
+        settings = self.settings_manager.get_current_settings()
+        self.export_job.start_export(files, settings, destination)
 
-        self.settings.beginGroup("presets")
-        preset = self.settings.value(preset_name)
-        self.settings.endGroup()
-
-        if preset:
-            self.format_combo.setCurrentText(preset.get("format", "JPEG"))
-            self.jpeg_quality.setValue(preset.get("jpeg_quality", 90))
-            self.heif_quality.setValue(preset.get("heif_quality", 90))
-            self.dng_compression.setCurrentText(preset.get("dng_compression", "None"))
-            self.max_width.setText(preset.get("max_width", ""))
-            self.max_height.setText(preset.get("max_height", ""))
+    def get_supported_formats(self):
+        """Get list of supported export formats."""
+        return self.settings_manager.get_supported_formats()
