@@ -81,7 +81,6 @@ uv run pytest
 Track planned features and project goals.
 
 -   [ ] **Enable multi-threaded**: Enable multi-threaded processing of the images in the edit view and gallery view.
--   [ ] **Batch Export**: Select and process multiple files at once.
 -   [ ] **Sync Settings**: Copy/paste edit changes from one photo to others.
 -   [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
 -   [ ] **Live Histogram**: Real-time luminance histogram display in the UI.

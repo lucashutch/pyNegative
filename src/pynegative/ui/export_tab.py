@@ -200,29 +200,12 @@ class ExportWidget(QtWidgets.QWidget):
         self.destination_group = QtWidgets.QGroupBox("Destination")
         self.destination_layout = QtWidgets.QVBoxLayout(self.destination_group)
 
-        self.use_default_dest = QtWidgets.QRadioButton(
-            "Save in same folder as original"
-        )
-        self.destination_layout.addWidget(self.use_default_dest)
+        # Destination path label
+        self.dest_path_label = QtWidgets.QLabel("No folder loaded")
+        self.dest_path_label.setStyleSheet("color: #666;")
+        self.dest_path_label.setWordWrap(True)
+        self.destination_layout.addWidget(self.dest_path_label)
 
-        self.use_custom_dest = QtWidgets.QRadioButton("Save to custom folder")
-        self.destination_layout.addWidget(self.use_custom_dest)
-
-        # Custom destination container
-        self.custom_dest_container = QtWidgets.QWidget()
-        self.custom_dest_layout = QtWidgets.QHBoxLayout(self.custom_dest_container)
-        self.custom_dest_layout.setContentsMargins(20, 0, 0, 0)
-
-        self.custom_dest_button = QtWidgets.QPushButton("Choose...")
-        self.custom_dest_layout.addWidget(self.custom_dest_button)
-
-        self.custom_dest_label = QtWidgets.QLabel("No folder selected")
-        self.custom_dest_label.setStyleSheet("color: #666;")
-        self.custom_dest_label.setWordWrap(True)
-        self.custom_dest_layout.addWidget(self.custom_dest_label)
-        self.custom_dest_layout.addStretch()
-
-        self.destination_layout.addWidget(self.custom_dest_container)
         self.settings_layout.addWidget(self.destination_group)
 
     def _connect_components(self):
@@ -234,7 +217,6 @@ class ExportWidget(QtWidgets.QWidget):
 
         # Settings manager signals
         self.settings_manager.presetApplied.connect(self._on_preset_applied)
-        self.settings_manager.destinationChanged.connect(self._on_destination_changed)
 
         # Export job signals
         self.export_job.signals.progress.connect(self.progress_bar.setValue)
@@ -246,8 +228,6 @@ class ExportWidget(QtWidgets.QWidget):
         self.format_combo.currentIndexChanged.connect(self._on_format_changed)
         self.save_preset_button.clicked.connect(self._save_preset)
         self.export_button.clicked.connect(self.start_export)
-        self.use_default_dest.toggled.connect(self._on_destination_mode_changed)
-        self.custom_dest_button.clicked.connect(self._choose_custom_destination)
 
         # Update settings manager when controls change
         self.format_combo.currentTextChanged.connect(
@@ -280,15 +260,6 @@ class ExportWidget(QtWidgets.QWidget):
         archival_index = self.preset_combo.findText("Archival")
         if archival_index != -1:
             self.preset_combo.setCurrentIndex(archival_index)
-
-        # Load destination settings
-        dest_settings = self.settings_manager.load_destination_settings()
-        self.use_default_dest.setChecked(dest_settings["use_default_destination"])
-
-        custom_dest = dest_settings["custom_destination"]
-        if custom_dest:
-            self.custom_dest_label.setText(custom_dest)
-            self.custom_dest_label.setStyleSheet("")
 
         # Initial format display
         self._on_format_changed(self.format_combo.currentIndex())
@@ -336,24 +307,6 @@ class ExportWidget(QtWidgets.QWidget):
         self.heif_settings.setVisible(format == "HEIF")
         self.dng_settings.setVisible(format == "DNG")
 
-    def _on_destination_mode_changed(self, use_default):
-        """Handle destination mode change."""
-        self.custom_dest_button.setEnabled(not use_default)
-        self.settings_manager.save_destination_settings(use_default)
-
-    def _choose_custom_destination(self):
-        """Open folder dialog for custom destination."""
-        folder = QtWidgets.QFileDialog.getExistingDirectory(
-            self, "Select Export Destination"
-        )
-        if folder:
-            self.settings_manager.set_custom_destination(folder)
-
-    def _on_destination_changed(self, folder):
-        """Update UI when destination changes."""
-        self.custom_dest_label.setText(folder)
-        self.custom_dest_label.setStyleSheet("")
-
     def _on_export_completed(self, success_count, total_count):
         """Handle export batch completion."""
         self.export_button.setEnabled(True)
@@ -375,6 +328,11 @@ class ExportWidget(QtWidgets.QWidget):
     def load_folder(self, folder):
         """Load images from a folder."""
         self.current_folder = Path(folder)
+
+        # Update destination label
+        dest_path = self.current_folder / "exported"
+        self.dest_path_label.setText(str(dest_path))
+        self.dest_path_label.setStyleSheet("")
 
         # Get filter settings from main window
         main_window = self.window()
@@ -407,19 +365,15 @@ class ExportWidget(QtWidgets.QWidget):
             )
             return
 
-        # Get destination
-        use_default = self.use_default_dest.isChecked()
-        destination = self.settings_manager.get_destination(
-            use_default=use_default, gallery_folder=self.current_folder
-        )
-
-        if not destination:
-            destination = QtWidgets.QFileDialog.getExistingDirectory(
-                self, "Select Destination Folder"
+        # Get destination: always use <current_directory>/exported
+        if not self.current_folder:
+            QtWidgets.QMessageBox.warning(
+                self, "No folder loaded", "Please load a folder first."
             )
-            if not destination:
-                return
-            self.settings_manager.set_custom_destination(destination)
+            return
+
+        destination = self.current_folder / "exported"
+        destination.mkdir(exist_ok=True)
 
         # Update UI
         self.export_button.setEnabled(False)
@@ -428,7 +382,7 @@ class ExportWidget(QtWidgets.QWidget):
 
         # Start export
         settings = self.settings_manager.get_current_settings()
-        self.export_job.start_export(files, settings, destination)
+        self.export_job.start_export(files, settings, str(destination))
 
     def get_supported_formats(self):
         """Get list of supported export formats."""
