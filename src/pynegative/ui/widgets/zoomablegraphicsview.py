@@ -110,7 +110,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
         self._current_zoom = self.transform().m11()
         new_zoom = self._current_zoom * factor
-        new_zoom = max(0.5, min(new_zoom, 4.0))
+        new_zoom = max(0.1, min(new_zoom, 4.0))
 
         if new_zoom != self._current_zoom:
             self.set_zoom(new_zoom, manual=True)

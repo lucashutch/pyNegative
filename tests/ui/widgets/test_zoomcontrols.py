@@ -51,8 +51,8 @@ def test_update_zoom_no_signal(zoom_controls, qtbot):
 def test_zoom_bounds_min(zoom_controls):
     """Test that zoom is clamped to minimum."""
     zoom_controls.slider.setValue(10)
-    # It should be clamped to 50
-    assert zoom_controls.slider.value() >= 50
+    # It should be clamped to 10
+    assert zoom_controls.slider.value() >= 10
 
 
 def test_zoom_bounds_max(zoom_controls):
@@ -90,13 +90,13 @@ def test_update_zoom_external(zoom_controls):
 
 def test_slider_range(zoom_controls):
     """Test that slider has correct range."""
-    assert zoom_controls.slider.minimum() == 50
+    assert zoom_controls.slider.minimum() == 10
     assert zoom_controls.slider.maximum() == 400
 
 
 def test_spinbox_range(zoom_controls):
     """Test that spinbox has correct range."""
-    assert zoom_controls.spin.minimum() == 50
+    assert zoom_controls.spin.minimum() == 10
     assert zoom_controls.spin.maximum() == 400
 
 
@@ -119,7 +119,7 @@ def test_signal_emits_normalized_value(zoom_controls, qtbot):
 def test_update_zoom_clamps_values(zoom_controls):
     """Test that update_zoom handles out-of-range values."""
     zoom_controls.update_zoom(0.1)  # Below minimum
-    assert zoom_controls.spin.value() == 50
+    assert zoom_controls.spin.value() == 10
 
     zoom_controls.update_zoom(10.0)  # Above maximum
     assert zoom_controls.spin.value() == 400
