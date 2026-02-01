@@ -373,3 +373,55 @@ def rename_sidecar(old_raw_path, new_raw_path):
     if old_sidecar.exists():
         new_sidecar.parent.mkdir(parents=True, exist_ok=True)
         old_sidecar.rename(new_sidecar)
+
+
+def get_exif_capture_date(raw_path):
+    """
+    Extracts the capture date from RAW file EXIF data.
+
+    Returns the date as a string in YYYY-MM-DD format, or None if unavailable.
+    Falls back to file modification date if EXIF date is not found.
+    """
+    from datetime import datetime
+
+    raw_path = Path(raw_path)
+
+    try:
+        with rawpy.imread(str(raw_path)) as raw:
+            # Try to extract EXIF DateTimeOriginal
+            # rawpy stores EXIF data that we can parse
+            try:
+                # Access the raw data structure
+                if hasattr(raw, "raw_image") and hasattr(raw, "extract_exif"):
+                    exif_data = raw.extract_exif()
+                    if exif_data:
+                        # Parse DateTimeOriginal from EXIF
+                        # Format in EXIF is typically: "2024:01:15 14:30:00"
+                        exif_str = exif_data.decode("utf-8", errors="ignore")
+
+                        # Look for DateTimeOriginal (0x9003) or DateTime (0x0132)
+                        import re
+
+                        # Search for date patterns in EXIF
+                        date_patterns = [
+                            r"DateTimeOriginal\s*\x00*\s*(\d{4}):(\d{2}):(\d{2})",
+                            r"DateTime\s*\x00*\s*(\d{4}):(\d{2}):(\d{2})",
+                            r"(\d{4}):(\d{2}):(\d{2})\s+(\d{2}):(\d{2}):(\d{2})",
+                        ]
+
+                        for pattern in date_patterns:
+                            match = re.search(pattern, exif_str)
+                            if match:
+                                year, month, day = match.groups()[:3]
+                                return f"{year}-{month}-{day}"
+
+            except Exception as e:
+                print(f"Error extracting EXIF from {raw_path}: {e}")
+
+        # Fallback: use file modification time
+        mtime = raw_path.stat().st_mtime
+        return datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+
+    except Exception as e:
+        print(f"Error reading file {raw_path}: {e}")
+        return None

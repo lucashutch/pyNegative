@@ -63,6 +63,7 @@ A graphical user interface (GUI) for interactively editing RAW files.
 -   **Intelligent Destinations**: Automatically suggests export paths based on the current folder structure.
 -   **Batch Exporting**: Process all currently filtered images at once with consistent settings.
 -   **Flexible Formats**: Support for exporting to JPEG and high-efficiency formats.
+-   **Batch Renaming**: Rename exported files with custom patterns using EXIF date and sequence numbers.
 
 ## Development
 
@@ -80,12 +81,10 @@ uv run pytest
 
 Track planned features and project goals.
 
--   [x] **Enable multi-threaded**: Enable multi-threaded processing of the images in the edit view.
--   [x] **Fix edit and preview zoom**: Fix edit and preview zoom to work as expected when fit to window vs zooming in.
 -   [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
 -   [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
--   [ ] **Batch Renaming**: Sequence-based renaming for folder exports.
 -   [ ] **Readme refactor**: Update readme, and create a readme structure that is easy to navigate and covers larger sections of the codebase in more detail (e.g., tests).
+-   [ ] **fix test warnings**: fix test warnings in all unit tests
 
 ## Testing Improvement Areas
 

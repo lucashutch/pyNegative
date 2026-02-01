@@ -1,9 +1,11 @@
 from pathlib import Path
 from PySide6 import QtWidgets, QtCore, QtGui
-from .widgets import ComboBox, ToastWidget
+from .widgets import ComboBox, ToastWidget, CollapsibleSection
 from .exportgallerymanager import ExportGalleryManager
 from .exportsettingsmanager import ExportSettingsManager
 from .exportprocessor import ExportJob
+from .renamesettingsmanager import RenameSettingsManager
+from .renamepreviewdialog import RenamePreviewDialog
 
 
 class ExportWidget(QtWidgets.QWidget):
@@ -18,9 +20,14 @@ class ExportWidget(QtWidgets.QWidget):
         self.gallery_manager = ExportGalleryManager(thread_pool, self)
         self.settings_manager = ExportSettingsManager(self)
         self.export_job = ExportJob(thread_pool, self)
+        self.rename_settings_manager = RenameSettingsManager(self)
 
         # Toast for export completion (longer duration: 8 seconds)
         self.export_toast = ToastWidget(self, duration=8000)
+
+        # Rename preview dialog (created on demand)
+        self._rename_preview_dialog = None
+        self._pending_rename_mapping = None
 
         self._init_ui()
         self._connect_components()
@@ -142,6 +149,9 @@ class ExportWidget(QtWidgets.QWidget):
         # Destination settings
         self._setup_destination_settings()
 
+        # Rename settings
+        self._setup_rename_settings()
+
         self.settings_layout.addStretch()
 
         # Export button
@@ -171,24 +181,30 @@ class ExportWidget(QtWidgets.QWidget):
         self.settings_layout.addWidget(self.heif_settings)
 
     def _setup_size_settings(self):
-        """Setup size constraint settings."""
-        self.size_group = QtWidgets.QGroupBox("Size")
-        self.size_group.setCheckable(True)
-        self.size_group.setChecked(False)
-        self.size_layout = QtWidgets.QFormLayout(self.size_group)
+        """Setup size constraint settings in a collapsible section."""
+        # Create collapsible section (collapsed by default for clean UI)
+        self.size_section = CollapsibleSection("SIZE", expanded=False)
+
+        # Form layout for size settings
+        size_form_widget = QtWidgets.QWidget()
+        size_form_layout = QtWidgets.QFormLayout(size_form_widget)
+        size_form_layout.setSpacing(10)
+        size_form_layout.setContentsMargins(0, 0, 0, 0)
 
         self.max_width = QtWidgets.QLineEdit()
         self.max_width.setObjectName("ExportLineEdit")
         self.max_width.setPlaceholderText("Width (px)")
         self.max_width.setValidator(QtGui.QIntValidator(1, 100000))
-        self.size_layout.addRow("Max Width", self.max_width)
+        size_form_layout.addRow("Max Width", self.max_width)
 
         self.max_height = QtWidgets.QLineEdit()
         self.max_height.setObjectName("ExportLineEdit")
         self.max_height.setPlaceholderText("Height (px)")
         self.max_height.setValidator(QtGui.QIntValidator(1, 100000))
-        self.size_layout.addRow("Max Height", self.max_height)
-        self.settings_layout.addWidget(self.size_group)
+        size_form_layout.addRow("Max Height", self.max_height)
+
+        self.size_section.add_widget(size_form_widget)
+        self.settings_layout.addWidget(self.size_section)
 
     def _setup_destination_settings(self):
         """Setup destination folder settings."""
@@ -210,6 +226,67 @@ class ExportWidget(QtWidgets.QWidget):
 
         # Store the actual export destination path
         self._export_destination = None
+
+    def _setup_rename_settings(self):
+        """Setup rename settings controls in a collapsible section."""
+        # Create collapsible section (collapsed by default for clean UI)
+        self.rename_section = CollapsibleSection("RENAME", expanded=False)
+
+        # Enable checkbox
+        self.rename_enabled_checkbox = QtWidgets.QCheckBox("Enable renaming")
+        self.rename_enabled_checkbox.setChecked(False)
+        self.rename_enabled_checkbox.toggled.connect(self._on_rename_toggled)
+        self.rename_section.add_widget(self.rename_enabled_checkbox)
+
+        # Form layout for settings
+        rename_form_widget = QtWidgets.QWidget()
+        rename_form_layout = QtWidgets.QFormLayout(rename_form_widget)
+        rename_form_layout.setSpacing(10)
+        rename_form_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Pattern selector
+        self.rename_pattern_combo = ComboBox()
+        self.rename_pattern_combo.setObjectName("ExportComboBox")
+        self.rename_pattern_combo.addItems(
+            self.rename_settings_manager.get_pattern_names()
+        )
+        # Set default to "Prefix + Sequence"
+        default_pattern_idx = self.rename_pattern_combo.findText("Prefix + Sequence")
+        if default_pattern_idx >= 0:
+            self.rename_pattern_combo.setCurrentIndex(default_pattern_idx)
+        rename_form_layout.addRow("Pattern", self.rename_pattern_combo)
+
+        # Prefix input
+        self.rename_prefix_input = QtWidgets.QLineEdit()
+        self.rename_prefix_input.setObjectName("ExportLineEdit")
+        self.rename_prefix_input.setPlaceholderText("e.g., Vacation")
+        rename_form_layout.addRow("Prefix", self.rename_prefix_input)
+
+        # Start number input
+        self.rename_start_seq = QtWidgets.QSpinBox()
+        self.rename_start_seq.setObjectName("ExportLineEdit")
+        self.rename_start_seq.setRange(1, 9999)
+        self.rename_start_seq.setValue(1)
+        rename_form_layout.addRow("Start #", self.rename_start_seq)
+
+        # Preview button
+        self.rename_preview_button = QtWidgets.QPushButton("Preview Names...")
+        self.rename_preview_button.clicked.connect(self._show_rename_preview)
+        rename_form_layout.addRow(self.rename_preview_button)
+
+        # Conflict warning label
+        self.rename_conflict_label = QtWidgets.QLabel()
+        self.rename_conflict_label.setStyleSheet("color: #e74c3c;")
+        self.rename_conflict_label.hide()
+        rename_form_layout.addRow(self.rename_conflict_label)
+
+        self.rename_section.add_widget(rename_form_widget)
+
+        # Initially disable the form when rename is not enabled
+        rename_form_widget.setEnabled(False)
+        self.rename_form_widget = rename_form_widget
+
+        self.settings_layout.addWidget(self.rename_section)
 
     def _connect_components(self):
         """Connect signals between components."""
@@ -250,6 +327,18 @@ class ExportWidget(QtWidgets.QWidget):
         )
         self.max_height.textChanged.connect(
             lambda text: self.settings_manager.update_setting("max_height", text)
+        )
+
+        # Rename settings connections
+        self.rename_enabled_checkbox.toggled.connect(self._on_rename_toggled)
+        self.rename_pattern_combo.currentTextChanged.connect(
+            lambda text: self.rename_settings_manager.update_setting("pattern", text)
+        )
+        self.rename_prefix_input.textChanged.connect(
+            lambda text: self.rename_settings_manager.update_setting("prefix", text)
+        )
+        self.rename_start_seq.valueChanged.connect(
+            lambda val: self.rename_settings_manager.update_setting("start_seq", val)
         )
 
     def _load_initial_settings(self):
@@ -348,13 +437,16 @@ class ExportWidget(QtWidgets.QWidget):
             self._export_destination = Path(folder)
             self._update_destination_display()
 
-    def _on_export_completed(self, success_count, total_count):
+    def _on_export_completed(self, success_count, skipped_count, total_count):
         """Handle export batch completion."""
         self.export_button.setEnabled(True)
         self.progress_bar.setVisible(False)
-        self.export_toast.show_message(
-            f"Export finished: {success_count} of {total_count} files exported successfully."
-        )
+
+        msg = f"Export finished: {success_count} of {total_count} files exported successfully."
+        if skipped_count > 0:
+            msg += f" ({skipped_count} skipped due to conflicts)"
+
+        self.export_toast.show_message(msg)
 
     def _on_export_error(self, error):
         """Handle export error."""
@@ -363,6 +455,85 @@ class ExportWidget(QtWidgets.QWidget):
         QtWidgets.QMessageBox.critical(
             self, "Export error", f"An error occurred during export:\n{error}"
         )
+
+    def _on_rename_toggled(self, enabled):
+        """Handle rename enable toggle."""
+        self.rename_settings_manager.set_enabled(enabled)
+        self.settings_manager.set_rename_enabled(enabled)
+
+        # Enable/disable the form based on checkbox state
+        self.rename_form_widget.setEnabled(enabled)
+
+        # Clear any previous rename mapping when disabled
+        if not enabled:
+            self._pending_rename_mapping = None
+            self.rename_conflict_label.hide()
+
+    def _show_rename_preview(self):
+        """Show rename preview dialog."""
+        files = self.gallery_manager.get_selected_paths()
+        if not files:
+            QtWidgets.QMessageBox.warning(
+                self, "No files selected", "Please select at least one file to preview."
+            )
+            return
+
+        # Validate settings
+        errors = self.rename_settings_manager.validate_settings()
+        if errors:
+            QtWidgets.QMessageBox.warning(
+                self, "Invalid Rename Settings", "\n".join(errors)
+            )
+            return
+
+        # Get current rename settings
+        settings = self.rename_settings_manager.get_current_settings()
+        pattern = settings.get("pattern", "Prefix + Date + Sequence")
+        prefix = settings.get("prefix", "")
+        start_seq = settings.get("start_seq", 1)
+
+        # Get format extension
+        format_name = self.format_combo.currentText()
+        format_ext = "jpg" if format_name == "JPEG" else "heic"
+
+        # Generate preview
+        preview_data = self.rename_settings_manager.generate_preview(
+            [Path(f) for f in files],
+            pattern,
+            prefix,
+            start_seq,
+            self._export_destination or Path("."),
+            format_ext,
+        )
+
+        # Count conflicts
+        conflicts = sum(1 for _, _, warning in preview_data if warning)
+        if conflicts > 0:
+            self.rename_conflict_label.setText(f"⚠️ {conflicts} file(s) will be skipped")
+            self.rename_conflict_label.show()
+        else:
+            self.rename_conflict_label.hide()
+
+        # Show preview dialog
+        if not self._rename_preview_dialog:
+            self._rename_preview_dialog = RenamePreviewDialog(self)
+
+        self._rename_preview_dialog.set_preview_data(preview_data)
+
+        if self._rename_preview_dialog.exec() == QtWidgets.QDialog.Accepted:
+            # Store the rename mapping for use during export
+            self._pending_rename_mapping = (
+                self._rename_preview_dialog.get_rename_mapping([Path(f) for f in files])
+            )
+            return True
+        else:
+            self._pending_rename_mapping = None
+            return False
+
+    def _get_format_extension(self):
+        """Get the file extension for the current export format."""
+        format_name = self.format_combo.currentText()
+        return "jpg" if format_name == "JPEG" else "heic"
 
     # Public API
 
@@ -416,14 +587,34 @@ class ExportWidget(QtWidgets.QWidget):
         self._export_destination.mkdir(exist_ok=True)
         destination = self._export_destination
 
+        # Check if rename is enabled - if so, require preview confirmation
+        rename_settings = self.rename_settings_manager.get_current_settings()
+        rename_mapping = None
+
+        if rename_settings.get("enabled", False):
+            # Validate rename settings first
+            errors = self.rename_settings_manager.validate_settings()
+            if errors:
+                QtWidgets.QMessageBox.warning(
+                    self, "Invalid Rename Settings", "\n".join(errors)
+                )
+                return
+
+            # Show preview dialog
+            preview_confirmed = self._show_rename_preview()
+            if not preview_confirmed:
+                return  # User cancelled the preview
+
+            rename_mapping = self._pending_rename_mapping
+
         # Update UI
         self.export_button.setEnabled(False)
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
 
-        # Start export
+        # Start export with rename mapping if available
         settings = self.settings_manager.get_current_settings()
-        self.export_job.start_export(files, settings, str(destination))
+        self.export_job.start_export(files, settings, str(destination), rename_mapping)
 
     def get_supported_formats(self):
         """Get list of supported export formats."""
