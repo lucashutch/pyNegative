@@ -6,7 +6,6 @@ import time
 from .. import core as pynegative
 
 # --- Tiled Rendering Constants ---
-TILE_SIZE = 256
 BORDER_SIZE = 32  # For filters like sharpen/denoise
 
 # --- Phase 1: Single Worker Classes ---
@@ -362,7 +361,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             self._measure_and_emit_perf()
             return
 
-        job = TileRenderJob(self._current_job_id, roi_w, roi_h, 0)
+        job = TileRenderJob(self._current_job_id, roi_w, roi_h, 4)  # Always 4 tiles
         job.jobFinished.connect(
             lambda pix: self._on_job_finished(
                 self._current_job_id,
@@ -378,41 +377,42 @@ class ImageProcessingPipeline(QtCore.QObject):
         )
         self._jobs[self._current_job_id] = job
 
-        tiles = []
-        for y in range(0, roi_h, TILE_SIZE):
-            for x in range(0, roi_w, TILE_SIZE):
-                img_x, img_y = roi_x + x, roi_y + y
-                crop_x_start, crop_y_start = (
-                    max(0, img_x - BORDER_SIZE),
-                    max(0, img_y - BORDER_SIZE),
-                )
-                crop_x_end, crop_y_end = (
-                    min(full_w, img_x + TILE_SIZE + BORDER_SIZE),
-                    min(full_h, img_y + TILE_SIZE + BORDER_SIZE),
-                )
-                image_crop = self.base_img_full[
-                    crop_y_start:crop_y_end, crop_x_start:crop_x_end
-                ]
-                tiles.append(
-                    TileWorker(
-                        self.tile_signals,
-                        self._current_job_id,
-                        x,
-                        y,
-                        image_crop,
-                        self.get_current_settings(),
-                    )
-                )
+        tile_w = roi_w // 2
+        tile_h = roi_h // 2
 
-        if not tiles:
-            self.previewUpdated.emit(
-                pix_bg, full_w, full_h, QtGui.QPixmap(), 0, 0, 0, 0
+        # (x, y, w, h) in ROI coordinates
+        tile_geometries = [
+            (0, 0, tile_w, tile_h),
+            (tile_w, 0, roi_w - tile_w, tile_h),
+            (0, tile_h, tile_w, roi_h - tile_h),
+            (tile_w, tile_h, roi_w - tile_w, roi_h - tile_h),
+        ]
+
+        for x, y, w, h in tile_geometries:
+            if w <= 0 or h <= 0:
+                continue
+
+            img_x, img_y = roi_x + x, roi_y + y
+            crop_x_start, crop_y_start = (
+                max(0, img_x - BORDER_SIZE),
+                max(0, img_y - BORDER_SIZE),
             )
-            self._measure_and_emit_perf()
-            return
+            crop_x_end, crop_y_end = (
+                min(full_w, img_x + w + BORDER_SIZE),
+                min(full_h, img_y + h + BORDER_SIZE),
+            )
+            image_crop = self.base_img_full[
+                crop_y_start:crop_y_end, crop_x_start:crop_x_end
+            ]
 
-        job.tiles_to_process = len(tiles)
-        for worker in tiles:
+            worker = TileWorker(
+                self.tile_signals,
+                self._current_job_id,
+                x,
+                y,
+                image_crop,
+                self.get_current_settings(),
+            )
             self.thread_pool.start(worker)
 
     def _on_render_timer_timeout(self):
