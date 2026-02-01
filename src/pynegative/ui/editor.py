@@ -4,16 +4,19 @@ from PIL import Image, ImageQt
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
 
-from .. import core as pynegative
 from .loaders import ThumbnailLoader, RawLoader
+from .undomanager import UndoManager
 from .widgets import (
     HorizontalListWidget,
     CollapsibleSection,
     ResetableSlider,
+    StarRatingWidget,
+    CarouselDelegate,
+    ToastWidget,
     ZoomableGraphicsView,
     ZoomControls,
-    StarRatingWidget,
 )
+from .. import core as pynegative
 
 
 class EditorWidget(QtWidgets.QWidget):
@@ -42,7 +45,30 @@ class EditorWidget(QtWidgets.QWidget):
         self._render_pending = False
         self._is_rendering_locked = False
 
+        # Sync Settings - Settings clipboard
+        self.settings_clipboard = None
+        self.clipboard_source_path = None
+
+        # Undo/Redo system
+        self.undo_manager = UndoManager()
+        self.undo_timer = QtCore.QTimer()
+        self.undo_timer.setSingleShot(True)
+        self.undo_timer.timeout.connect(self._push_undo_state)
+        self._undo_state_description = ""
+        self._undo_timer_active = False
+
         self._init_ui()
+
+        # Set up keyboard shortcuts
+        QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Undo, self, self._undo)
+        QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Redo, self, self._redo)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Z"), self, self._redo)
+        QtGui.QShortcut(
+            QtGui.QKeySequence.StandardKey.Copy, self, self._handle_copy_shortcut
+        )
+        QtGui.QShortcut(
+            QtGui.QKeySequence.StandardKey.Paste, self, self._handle_paste_shortcut
+        )
 
     def _init_ui(self):
         main_layout = QtWidgets.QHBoxLayout(self)
@@ -87,6 +113,10 @@ class EditorWidget(QtWidgets.QWidget):
         self.zoom_ctrl.zoomChanged.connect(lambda z: self.view.set_zoom(z, manual=True))
         self.view.zoomChanged.connect(self.zoom_ctrl.update_zoom)
 
+        # Set up context menus
+        self.view.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.view.customContextMenuRequested.connect(self._show_main_photo_context_menu)
+
         # Trigger ROI re-render when zoom or pan changes
         self.view.zoomChanged.connect(self.request_update)
         self.view.doubleClicked.connect(self.imageDoubleClicked.emit)
@@ -108,7 +138,43 @@ class EditorWidget(QtWidgets.QWidget):
         self.carousel.setIconSize(QtCore.QSize(100, 100))
         self.carousel.setSpacing(5)
         self.carousel.itemClicked.connect(self._on_carousel_item_clicked)
+
+        # Set up carousel delegate for selection circles
+        self.carousel_delegate = CarouselDelegate(self.carousel)
+        self.carousel.setItemDelegate(self.carousel_delegate)
+        self.carousel.selectionChanged.connect(self._on_carousel_selection_changed)
+
+        # Update circle visibility based on initial state
+        self._update_circle_visibility()
+
+        # Debug selection circle visibility issue temporarily resolved
+        # self.carousel_delegate.set_show_selection_circles(False)  # Uncomment to disable circles
+
+        # Set up carousel context menu
+        self.carousel.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.carousel.customContextMenuRequested.connect(
+            self._show_carousel_context_menu
+        )
+        self.carousel.setObjectName("Carousel")
+        self.carousel.setViewMode(QtWidgets.QListView.IconMode)
+        self.carousel.setFlow(QtWidgets.QListView.LeftToRight)  # Horizontal
+        self.carousel.setWrapping(False)
+        self.carousel.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.carousel.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.carousel.setFixedHeight(145)
+        self.carousel.setIconSize(QtCore.QSize(100, 100))
+        self.carousel.setSpacing(5)
+        self.carousel.itemClicked.connect(self._on_carousel_item_clicked)
+
+        # Set up carousel delegate for selection circles
+        self.carousel_delegate = CarouselDelegate(self.carousel)
+        self.carousel.setItemDelegate(self.carousel_delegate)
+        self.carousel.selectionChanged.connect(self._on_carousel_selection_changed)
+
         self.canvas_container.addWidget(self.carousel, 1, 0)
+
+        # Toast widget for notifications
+        self.toast = ToastWidget(self.canvas_frame)
 
         self._setup_controls()
 
@@ -364,6 +430,9 @@ class EditorWidget(QtWidgets.QWidget):
             # Trigger auto-save
             self.save_timer.start(1000)  # Save after 1 second of inactivity
 
+            # Trigger undo state (batched)
+            self._schedule_undo_state(f"Adjust {label_text}")
+
         slider.valueChanged.connect(on_change)
 
         # Store refs
@@ -421,6 +490,10 @@ class EditorWidget(QtWidgets.QWidget):
         self.save_timer.start(500)
         if self.raw_path:
             self.ratingChanged.emit(str(self.raw_path), rating)
+            # Push undo state for rating change immediately
+            self._push_undo_state_immediate(
+                f"Rating changed to {rating} star{'s' if rating != 1 else ''}"
+            )
 
     def _auto_save_sidecar(self):
         if not self.raw_path:
@@ -710,6 +783,8 @@ class EditorWidget(QtWidgets.QWidget):
     def load_carousel_folder(self, folder):
         self.current_folder = Path(folder)
         self.carousel.clear()
+        self._clear_clipboard()  # Clear clipboard on context change
+        self._update_circle_visibility()  # Update circle visibility
 
         files = sorted(
             [
@@ -732,6 +807,8 @@ class EditorWidget(QtWidgets.QWidget):
 
     def set_carousel_images(self, image_list, current_path):
         self.carousel.clear()
+        self._clear_clipboard()  # Clear clipboard on context change
+
         for path_str in image_list:
             f = Path(path_str)
             item = QtWidgets.QListWidgetItem(f.name)
@@ -745,6 +822,8 @@ class EditorWidget(QtWidgets.QWidget):
             loader = ThumbnailLoader(f, size=100)
             loader.signals.finished.connect(self._on_carousel_thumbnail_loaded)
             self.thread_pool.start(loader)
+
+        self._update_circle_visibility()  # Update circle visibility
 
     def _on_carousel_thumbnail_loaded(self, path, pixmap):
         for i in range(self.carousel.count()):
@@ -760,6 +839,286 @@ class EditorWidget(QtWidgets.QWidget):
         if Path(path) != self.raw_path:
             self.load_image(path)
 
+    def show_toast(self, message):
+        """Show a toast notification."""
+        self.toast.show_message(message)
+
+    def _update_circle_visibility(self):
+        """Update circle visibility based on carousel state."""
+        show_circles = self.carousel.should_show_circles()
+        self.carousel_delegate.set_show_selection_circles(show_circles)
+
+    def _on_carousel_selection_changed(self):
+        """Handle carousel selection changes."""
+        self._update_circle_visibility()
+
+    def _show_main_photo_context_menu(self, pos):
+        """Show context menu for main photo view."""
+        if not self.raw_path:
+            return
+
+        menu = QtWidgets.QMenu(self)
+
+        copy_action = menu.addAction("Copy Settings")
+        copy_action.triggered.connect(self._copy_settings_from_current)
+        copy_action.setShortcut(QtGui.QKeySequence.StandardKey.Copy)
+
+        paste_action = menu.addAction("Paste Settings")
+        paste_action.triggered.connect(self._paste_settings_to_current)
+        paste_action.setEnabled(self.settings_clipboard is not None)
+        paste_action.setShortcut(QtGui.QKeySequence.StandardKey.Paste)
+
+        menu.exec_(self.view.mapToGlobal(pos))
+
+    def _show_carousel_context_menu(self, pos):
+        """Show context menu for carousel."""
+        item = self.carousel.itemAt(pos)
+        if not item:
+            return
+
+        # Get item under mouse
+        item_path = item.data(QtCore.Qt.UserRole)
+
+        menu = QtWidgets.QMenu(self)
+
+        selected_paths = self.carousel.get_selected_paths()
+
+        if item_path in selected_paths:
+            # Item is selected - can copy from selection
+            copy_action = menu.addAction("Copy Settings from Selected")
+            copy_action.triggered.connect(self._copy_settings_from_selected)
+            copy_action.setShortcut(QtGui.QKeySequence.StandardKey.Copy)
+        else:
+            # Item is not selected - can copy from this specific item
+            copy_action = menu.addAction(f"Copy Settings from {item.text()}")
+            copy_action.triggered.connect(
+                lambda: self._copy_settings_from_path(item_path)
+            )
+
+        # Paste option
+        paste_action = menu.addAction("Paste Settings to Selected")
+        paste_action.triggered.connect(self._paste_settings_to_selected)
+        paste_action.setEnabled(
+            self.settings_clipboard is not None and len(selected_paths) > 0
+        )
+        paste_action.setShortcut(QtGui.QKeySequence.StandardKey.Paste)
+
+        menu.addSeparator()
+
+        select_all_action = menu.addAction("Select All")
+        select_all_action.triggered.connect(self.carousel.select_all_items)
+        select_all_action.setShortcut(QtGui.QKeySequence.StandardKey.SelectAll)
+
+        menu.exec_(self.carousel.mapToGlobal(pos))
+
+    def _copy_settings_from_current(self):
+        """Copy settings from currently loaded photo."""
+        if not self.raw_path:
+            return
+
+        settings = {
+            "exposure": self.val_exposure,
+            "contrast": self.val_contrast,
+            "whites": self.val_whites,
+            "blacks": self.val_blacks,
+            "highlights": self.val_highlights,
+            "shadows": self.val_shadows,
+            "saturation": self.val_saturation,
+            "sharpen_method": "High Quality",
+            "sharpen_radius": self.val_radius,
+            "sharpen_percent": self.val_percent,
+            "sharpen_value": self.val_sharpen,
+            "denoise_method": "High Quality",
+            "de_noise": self.val_denoise,
+        }
+
+        self.settings_clipboard = settings
+        self.clipboard_source_path = self.raw_path
+        self.show_toast(f"Settings copied from {self.raw_path.name}")
+
+    def _copy_settings_from_selected(self):
+        """Copy settings from the first selected carousel item."""
+        selected_paths = self.carousel.get_selected_paths()
+        if not selected_paths:
+            return
+
+        self._copy_settings_from_path(Path(selected_paths[0]))
+
+    def _copy_settings_from_path(self, path):
+        """Copy settings from a specific photo by path."""
+        settings = pynegative.load_sidecar(path)
+        if not settings:
+            return
+
+        # Remove rating from settings (we don't want to sync rating)
+        settings_copy = settings.copy()
+        settings_copy.pop("rating", None)
+
+        self.settings_clipboard = settings_copy
+        self.clipboard_source_path = Path(path)
+        self.show_toast(f"Settings copied from {Path(path).name}")
+
+    def _paste_settings_to_current(self):
+        """Paste settings to currently loaded photo."""
+        if not self.settings_clipboard or not self.raw_path:
+            return
+
+        self._apply_settings_to_photo(self.raw_path, self.settings_clipboard)
+        self.show_toast("Settings applied to current photo")
+
+    def _paste_settings_to_selected(self):
+        """Paste settings to all selected carousel items."""
+        if not self.settings_clipboard:
+            return
+
+        selected_paths = self.carousel.get_selected_paths()
+        if not selected_paths:
+            return
+
+        # Apply to each selected photo
+        for path_str in selected_paths:
+            path = Path(path_str)
+            self._apply_settings_to_photo(path, self.settings_clipboard)
+
+        # If current photo is among selected, apply immediately
+        if self.raw_path and str(self.raw_path) in selected_paths:
+            self._apply_settings_to_ui(self.settings_clipboard)
+
+        # Push undo state for the batch operation
+        self._push_undo_state_immediate(
+            f"Paste settings to {len(selected_paths)} photos"
+        )
+
+        self.show_toast(f"Settings applied to {len(selected_paths)} photos")
+
+    def _apply_settings_to_photo(self, path, settings):
+        """Apply settings to a photo by saving to its sidecar."""
+        # Load existing sidecar to preserve rating
+        existing_settings = pynegative.load_sidecar(path) or {}
+        rating = existing_settings.get("rating", 0)
+
+        # Apply new settings but preserve rating
+        combined_settings = settings.copy()
+        combined_settings["rating"] = rating
+
+        pynegative.save_sidecar(path, combined_settings)
+
+    def _apply_settings_to_ui(self, settings):
+        """Apply settings to current UI sliders."""
+        self._set_slider_value("val_exposure", settings.get("exposure", 0.0))
+        self._set_slider_value("val_contrast", settings.get("contrast", 1.0))
+        self._set_slider_value("val_whites", settings.get("whites", 1.0))
+        self._set_slider_value("val_blacks", settings.get("blacks", 0.0))
+        self._set_slider_value("val_highlights", settings.get("highlights", 0.0))
+        self._set_slider_value("val_shadows", settings.get("shadows", 0.0))
+        self._set_slider_value("val_saturation", settings.get("saturation", 1.0))
+
+        sharpen_val = settings.get("sharpen_value", 0.0)
+        if sharpen_val is not None:
+            self._set_slider_value("val_sharpen", sharpen_val)
+
+        self._set_slider_value("val_denoise", settings.get("de_noise", 0))
+
+        self.request_update()
+
+    def _push_undo_state(self):
+        """Push undo state after delay."""
+        if not self._undo_state_description:
+            return
+
+        settings = {
+            "exposure": self.val_exposure,
+            "contrast": self.val_contrast,
+            "whites": self.val_whites,
+            "blacks": self.val_blacks,
+            "highlights": self.val_highlights,
+            "shadows": self.val_shadows,
+            "saturation": self.val_saturation,
+            "sharpen_value": self.val_sharpen,
+            "de_noise": self.val_denoise,
+        }
+
+        self.undo_manager.push_state(
+            self._undo_state_description, settings, self.current_rating
+        )
+
+        self._undo_state_description = ""
+        self._undo_timer_active = False
+
+    def _push_undo_state_immediate(self, description):
+        """Push undo state immediately."""
+        settings = {
+            "exposure": self.val_exposure,
+            "contrast": self.val_contrast,
+            "whites": self.val_whites,
+            "blacks": self.val_blacks,
+            "highlights": self.val_highlights,
+            "shadows": self.val_shadows,
+            "saturation": self.val_saturation,
+            "sharpen_value": self.val_sharpen,
+            "de_noise": self.val_denoise,
+        }
+
+        self.undo_manager.push_state(description, settings, self.current_rating)
+
+    def _clear_clipboard(self):
+        """Clear settings clipboard."""
+        self.settings_clipboard = None
+        self.clipboard_source_path = None
+
+    def _handle_copy_shortcut(self):
+        """Smart copy: copy from selection if multiple, else from current."""
+        selected_paths = self.carousel.get_selected_paths()
+        if len(selected_paths) > 0:
+            # If current photo is selected, we might want to copy its UI values
+            # otherwise copy from the first selected path's sidecar
+            if self.raw_path and str(self.raw_path) in selected_paths:
+                self._copy_settings_from_current()
+            else:
+                self._copy_settings_from_selected()
+        else:
+            self._copy_settings_from_current()
+
+    def _handle_paste_shortcut(self):
+        """Smart paste: paste to selection if any, else to current."""
+        selected_paths = self.carousel.get_selected_paths()
+        if len(selected_paths) > 0:
+            self._paste_settings_to_selected()
+        else:
+            self._paste_settings_to_current()
+
+    def _undo(self):
+        """Handle undo action."""
+        state = self.undo_manager.undo()
+        if state:
+            self._restore_state(state)
+            self.show_toast(f"Undone: {state['description']}")
+
+    def _redo(self):
+        """Handle redo action."""
+        state = self.undo_manager.redo()
+        if state:
+            self._restore_state(state)
+            self.show_toast(f"Redone: {state['description']}")
+
+    def _restore_state(self, state):
+        """Restore editor state from undo/redo state."""
+        settings = state["settings"]
+        rating = state["rating"]
+
+        # Apply all settings
+        self._apply_settings_to_ui(settings)
+
+        # Restore rating
+        self.star_rating_widget.set_rating(rating)
+        self.current_rating = rating
+
+    def _schedule_undo_state(self, description):
+        """Schedule undo state push with batching."""
+        self._undo_state_description = description
+        self.undo_timer.start(1000)  # Batch within 1 second
+        self._undo_timer_active = True
+
     def _apply_preset(self, preset_type):
         """Apply preset values for sharpening and denoising."""
         if preset_type == "low":
@@ -773,6 +1132,8 @@ class EditorWidget(QtWidgets.QWidget):
             self._set_slider_value("val_denoise", 25.0)
 
         self.request_update()
+        # Push undo state for preset application
+        self._push_undo_state_immediate(f"Apply {preset_type} preset")
 
     def set_preview_mode(self, enabled):
         self.panel.setVisible(not enabled)

@@ -57,14 +57,15 @@ QPushButton#TabButton:checked {
 }
 
 /* ========== Gallery View ========== */
-QListWidget#GalleryGrid {
+QListWidget#GalleryGrid, QListWidget#ExportGrid {
     background-color: #1a1a1a;
     border: none;
     outline: none;
     padding: 16px;
+    selection-background-color: transparent;
 }
 
-QListWidget#GalleryGrid::item {
+QListWidget#GalleryGrid::item, QListWidget#ExportGrid::item {
     background-color: #242424;
     border: 2px solid #303030;
     border-radius: 8px;
@@ -72,14 +73,14 @@ QListWidget#GalleryGrid::item {
     margin: 4px;
 }
 
-QListWidget#GalleryGrid::item:hover {
+QListWidget#GalleryGrid::item:hover, QListWidget#ExportGrid::item:hover {
     border-color: #4a4a4a;
     background-color: #2b2b2b;
 }
 
-QListWidget#GalleryGrid::item:selected {
-    border: 2px solid #6366f1;
-    background-color: #2b2b2b;
+QListWidget#GalleryGrid::item:selected, QListWidget#ExportGrid::item:selected {
+    border: 1px solid #6366f1;
+    background-color: rgba(99, 102, 241, 0.15);
 }
 
 /* ========== Editor Panel ========== */
@@ -298,6 +299,7 @@ QListWidget#Carousel {
     border-top: 2px solid #303030;
     outline: none;
     padding: 8px;
+    selection-background-color: transparent;
 }
 
 QListWidget#Carousel::item {
@@ -314,12 +316,8 @@ QListWidget#Carousel::item:hover {
 }
 
 QListWidget#Carousel::item:selected {
-    border: 2px solid qlineargradient(
-        x1:0, y1:0, x2:1, y2:0,
-        stop:0 #6366f1,
-        stop:1 #8b5cf6
-    );
-    background-color: #303030;
+    border: 1px solid #6366f1;
+    background-color: rgba(99, 102, 241, 0.15);
 }
 
 /* ========== ScrollBars ========== */
