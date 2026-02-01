@@ -40,7 +40,7 @@ pyneg-ui
 A graphical user interface (GUI) for interactively editing RAW files.
 -   **Interactive Editing**: Live preview of changes as adjustments are made.
 -   **Comprehensive Adjustments**: Sliders for fine-tuning exposure, contrast, blacks, whites, shadows, highlights, sharpening, and de-noise.
--   **Advanced Processing**: 
+-   **Advanced Processing**:
     -   **Sharpening**: High-quality, edge-aware sharpening algorithms (Advanced/Standard).
     -   **Noise Reduction**: Multiple denoising methods including Non-Local Means (NLM), Bilateral, and Total Variation.
     -   **Processing Presets**: Quick "Subtle", "Medium", and "Aggressive" presets for detail enhancement.
@@ -87,6 +87,7 @@ Track planned features and project goals.
 -   [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
 -   [ ] **Archival Export Preset**: Reduce storage footprint (e.g., 16-bit DNG or high-quality HEIF) while retaining latitude.
 -   [ ] **Batch Renaming**: Sequence-based renaming for folder exports.
+-   [ ] **Readme refactor** update readme, and create a readme structure that is easy to navigate. and covers larger sections of the codebase in more details. eg tests.
 
 ## Testing Improvement Areas
 

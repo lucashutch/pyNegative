@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.12", "3.14"]
+        python-version: ["3.10", "3.12", "3.14"]
 
     steps:
     - uses: actions/checkout@v4
@@ -33,6 +33,25 @@ jobs:
       run: uv run xvfb-run -a pytest -v
       env:
         QT_QPA_PLATFORM: offscreen
+
+  # This job acts as a gatekeeper for the PR, making the required checks less fragile.
+  # Instead of requiring every individual matrix job, we only require this one.
+  check-success:
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check overall status
+        run: |
+          if [[ "${{ needs.test.result }}" != "success" ]]; then
+            echo "Test job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.lint.result }}" != "success" ]]; then
+            echo "Lint job failed"
+            exit 1
+          fi
+          echo "All checks passed"
 
   lint:
     runs-on: ubuntu-latest

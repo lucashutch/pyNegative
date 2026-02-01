@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets, QtCore, QtGui
-from .widgets import GalleryItemDelegate, GalleryListWidget, ComboBox
+from .widgets import GalleryListWidget, ComboBox, CarouselDelegate
 from .loaders import ThumbnailLoader
 from .. import core as pynegative
 from pathlib import Path
@@ -104,9 +104,17 @@ class ExportWidget(QtWidgets.QWidget):
         self.list_widget.setIconSize(QtCore.QSize(180, 180))
         self.list_widget.setResizeMode(QtWidgets.QListView.Adjust)
         self.list_widget.setSpacing(10)
-        self.list_widget.setItemDelegate(GalleryItemDelegate(self.list_widget))
         self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+
+        # Set up carousel delegate for selection circles
+        self.carousel_delegate = CarouselDelegate(self.list_widget)
+        self.list_widget.setItemDelegate(self.carousel_delegate)
+        self.list_widget.selectionChanged.connect(self._on_gallery_selection_changed)
+
         self.gallery_layout.addWidget(self.list_widget)
+
+        # Update circle visibility based on initial state
+        self._update_gallery_circle_visibility()
 
         self.selection_label = QtWidgets.QLabel("0 items selected")
         self.gallery_layout.addWidget(self.selection_label)
@@ -205,13 +213,19 @@ class ExportWidget(QtWidgets.QWidget):
         # Size (collapsible)
         self.size_group = QtWidgets.QGroupBox("Size")
         self.size_group.setCheckable(True)
-        self.size_group.setChecked(False)  # Collapsed by default
+        self.size_group.setChecked(False)
         self.size_layout = QtWidgets.QFormLayout(self.size_group)
+
         self.max_width = QtWidgets.QLineEdit()
         self.max_width.setObjectName("ExportLineEdit")
+        self.max_width.setPlaceholderText("Width (px)")
+        self.max_width.setValidator(QtGui.QIntValidator(1, 100000))
+        self.size_layout.addRow("Max Width", self.max_width)
+
         self.max_height = QtWidgets.QLineEdit()
         self.max_height.setObjectName("ExportLineEdit")
-        self.size_layout.addRow("Max Width", self.max_width)
+        self.max_height.setPlaceholderText("Height (px)")
+        self.max_height.setValidator(QtGui.QIntValidator(1, 100000))
         self.size_layout.addRow("Max Height", self.max_height)
         self.settings_layout.addWidget(self.size_group)
 
@@ -219,22 +233,24 @@ class ExportWidget(QtWidgets.QWidget):
         self.destination_group = QtWidgets.QGroupBox("Destination")
         self.destination_layout = QtWidgets.QVBoxLayout(self.destination_group)
 
-        self.use_default_dest = QtWidgets.QCheckBox("Use gallery folder /exported")
-        self.use_default_dest.setChecked(True)
+        self.use_default_dest = QtWidgets.QRadioButton(
+            "Save in same folder as original"
+        )
         self.destination_layout.addWidget(self.use_default_dest)
 
-        # Custom destination selection
+        self.use_custom_dest = QtWidgets.QRadioButton("Save to custom folder")
+        self.destination_layout.addWidget(self.use_custom_dest)
+
         self.custom_dest_container = QtWidgets.QWidget()
         self.custom_dest_layout = QtWidgets.QHBoxLayout(self.custom_dest_container)
-        self.custom_dest_layout.setContentsMargins(0, 0, 0, 0)
+        self.custom_dest_layout.setContentsMargins(20, 0, 0, 0)
 
-        self.custom_dest_button = QtWidgets.QPushButton("Choose Folder...")
-        self.custom_dest_button.setEnabled(False)
-        self.custom_dest_button.setMinimumWidth(140)
-        self.custom_dest_label = QtWidgets.QLabel("No folder selected")
-        self.custom_dest_label.setStyleSheet("color: gray;")
-
+        self.custom_dest_button = QtWidgets.QPushButton("Choose...")
         self.custom_dest_layout.addWidget(self.custom_dest_button)
+
+        self.custom_dest_label = QtWidgets.QLabel("No folder selected")
+        self.custom_dest_label.setStyleSheet("color: #666;")
+        self.custom_dest_label.setWordWrap(True)
         self.custom_dest_layout.addWidget(self.custom_dest_label)
         self.custom_dest_layout.addStretch()
 
@@ -272,6 +288,10 @@ class ExportWidget(QtWidgets.QWidget):
         # Load presets after all UI components are created
         self.load_presets()
         self._on_format_changed(self.format_combo.currentIndex())
+
+    def _on_gallery_selection_changed(self):
+        """Handle gallery selection changes for circle visibility."""
+        self._update_gallery_circle_visibility()
 
     def _on_format_changed(self, index):
         format = self.format_combo.itemText(index)
@@ -318,6 +338,14 @@ class ExportWidget(QtWidgets.QWidget):
             loader = ThumbnailLoader(str(path))
             loader.signals.finished.connect(self._on_thumbnail_loaded)
             self.thread_pool.start(loader)
+
+        # Update circle visibility after loading items
+        self._update_gallery_circle_visibility()
+
+    def _update_gallery_circle_visibility(self):
+        """Update circle visibility based on gallery state."""
+        show_circles = self.list_widget.count() > 1
+        self.carousel_delegate.set_show_selection_circles(show_circles)
 
     def _on_thumbnail_loaded(self, path, pixmap):
         for i in range(self.list_widget.count()):
