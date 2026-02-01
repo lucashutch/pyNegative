@@ -116,8 +116,10 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self.zoomChanged.emit(self._current_zoom)
 
     def set_zoom(self, scale, manual=True):
+        self._is_fitting = False  # Any call to set_zoom breaks fitting
         if manual:
-            self._is_fitting = False
+            # Clamp to the dynamic fit-in-view scale for manual user actions
+            scale = max(self._fit_in_view_scale, scale)
 
         self._current_zoom = scale
         self.setTransform(QtGui.QTransform.fromScale(scale, scale))

@@ -79,17 +79,17 @@ class TestZoomableGraphicsView:
 
     def test_reset_zoom_with_content(self, zoom_view, sample_pixmap):
         """Test reset_zoom with content."""
-        zoom_view.set_zoom(2.0)
+        zoom_view.set_zoom(2.0, manual=False)
         assert zoom_view._current_zoom == 2.0
         assert zoom_view._is_fitting is False
 
     def test_wheel_event_zoom_in(self, zoom_view, qtbot, sample_pixmap):
         """Test wheel event for zooming in."""
         zoom_view.set_pixmaps(sample_pixmap, 100, 100)
-        zoom_view.set_zoom(1.0)
+        zoom_view.set_zoom(1.0, manual=False)
 
         # Simulate zoom in
-        zoom_view.set_zoom(1.1)
+        zoom_view.set_zoom(1.1, manual=False)
 
         # Should zoom in to approximately 1.1x
         assert zoom_view._current_zoom > 1.0
@@ -98,10 +98,10 @@ class TestZoomableGraphicsView:
     def test_wheel_event_zoom_out(self, zoom_view, qtbot, sample_pixmap):
         """Test wheel event for zooming out."""
         zoom_view.set_pixmaps(sample_pixmap, 100, 100)
-        zoom_view.set_zoom(1.0)
+        zoom_view.set_zoom(1.0, manual=False)
 
         # Simulate zoom out
-        zoom_view.set_zoom(0.9)
+        zoom_view.set_zoom(0.9, manual=False)
 
         # Should zoom out to approximately 0.9x
         assert zoom_view._current_zoom < 1.0
@@ -142,7 +142,7 @@ class TestZoomableGraphicsView:
     def test_zoom_changed_signal(self, zoom_view, qtbot):
         """Test zoomChanged signal emission."""
         with qtbot.waitSignal(zoom_view.zoomChanged):
-            zoom_view.set_zoom(2.0)
+            zoom_view.set_zoom(2.0, manual=False)
 
     def test_zoom_changed_on_pan(self, zoom_view, qtbot, sample_pixmap):
         """Test zoomChanged signal emission during pan."""
