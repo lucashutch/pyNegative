@@ -26,6 +26,10 @@ class ExportSettingsManager(QtCore.QObject):
             "heif_bit_depth": "8-bit",
             "max_width": "",
             "max_height": "",
+            "rename_enabled": False,
+            "rename_pattern": "Prefix + Date + Sequence",
+            "rename_prefix": "",
+            "rename_start_seq": 1,
         }
 
     def get_current_settings(self):
@@ -192,3 +196,26 @@ class ExportSettingsManager(QtCore.QObject):
             errors.append("Max height must be a positive integer")
 
         return errors
+
+    def get_rename_settings(self):
+        """Get current rename settings as a dictionary."""
+        return {
+            "rename_enabled": self._current_settings.get("rename_enabled", False),
+            "rename_pattern": self._current_settings.get(
+                "rename_pattern", "Prefix + Date + Sequence"
+            ),
+            "rename_prefix": self._current_settings.get("rename_prefix", ""),
+            "rename_start_seq": self._current_settings.get("rename_start_seq", 1),
+        }
+
+    def set_rename_enabled(self, enabled):
+        """Enable or disable renaming."""
+        self._current_settings["rename_enabled"] = enabled
+        self.settingsChanged.emit(self._current_settings)
+
+    def update_rename_settings(self, settings_dict):
+        """Update rename settings."""
+        for key in ["rename_pattern", "rename_prefix", "rename_start_seq"]:
+            if key in settings_dict:
+                self._current_settings[key] = settings_dict[key]
+        self.settingsChanged.emit(self._current_settings)

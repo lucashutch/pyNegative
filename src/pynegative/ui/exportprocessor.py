@@ -11,46 +11,69 @@ class ExportProcessorSignals(QtCore.QObject):
 
     progress = QtCore.Signal(int)
     fileProcessed = QtCore.Signal(str)
-    batchCompleted = QtCore.Signal(int, int)  # success_count, total_count
+    batchCompleted = QtCore.Signal(
+        int, int, int
+    )  # success_count, skipped_count, total_count
     error = QtCore.Signal(str)
+    fileSkipped = QtCore.Signal(str, str, str)  # file_path, target_name, reason
 
 
 class ExportProcessor(QtCore.QRunnable):
     """Handles export processing in a background thread."""
 
-    def __init__(self, signals, files, settings, destination_folder):
+    def __init__(
+        self, signals, files, settings, destination_folder, rename_mapping=None
+    ):
         super().__init__()
         self.signals = signals
         self.files = files
         self.settings = settings
         self.destination_folder = destination_folder
+        self.rename_mapping = rename_mapping or {}
         self._cancelled = False
 
     def run(self):
         """Execute the export batch."""
         count = len(self.files)
         success_count = 0
+        skipped_count = 0
 
         for i, file in enumerate(self.files):
             if self._cancelled:
                 break
 
             try:
-                self._export_file(file)
-                success_count += 1
-                self.signals.fileProcessed.emit(str(file))
+                result = self._export_file(file)
+                if result == "skipped":
+                    skipped_count += 1
+                else:
+                    success_count += 1
+                    self.signals.fileProcessed.emit(str(file))
                 self.signals.progress.emit(int(100 * (i + 1) / count))
             except Exception as e:
                 self.signals.error.emit(f"Failed to export {file}: {e}")
                 break
 
         if not self._cancelled:
-            self.signals.batchCompleted.emit(success_count, count)
+            self.signals.batchCompleted.emit(success_count, skipped_count, count)
 
     def _export_file(self, file):
-        """Export a single file."""
+        """Export a single file.
+
+        Returns:
+            "success" if exported successfully, "skipped" if file exists and was skipped.
+        """
         file_path = Path(file)
-        file_name = file_path.stem
+
+        # Check if we have a rename mapping for this file
+        if file_path in self.rename_mapping:
+            target_name = self.rename_mapping[file_path]
+            # Remove extension from target_name if present, we'll add it based on format
+            target_stem = Path(target_name).stem
+        else:
+            target_stem = file_path.stem
+
+        file_name = target_stem
 
         # Determine bit depth for processing
         heif_bit_depth_str = self.settings.get("heif_bit_depth", "8-bit")
@@ -96,21 +119,47 @@ class ExportProcessor(QtCore.QRunnable):
         # Save in specified format
         format = self.settings.get("format")
         if format == "JPEG":
-            self._save_jpeg(pil_img, file_name)
+            return self._save_jpeg(pil_img, file_name)
         elif format == "HEIF":
-            self._save_heif(pil_img, file_name)
+            return self._save_heif(pil_img, file_name)
+
+        return "success"
 
     def _save_jpeg(self, pil_img, file_name):
-        """Save image as JPEG."""
+        """Save image as JPEG.
+
+        Returns:
+            "success" if saved, "skipped" if file already exists.
+        """
         quality = self.settings.get("jpeg_quality", 90)
         dest_path = os.path.join(self.destination_folder, f"{file_name}.jpg")
+
+        # Check if file already exists
+        if os.path.exists(dest_path):
+            self.signals.fileSkipped.emit(
+                str(dest_path), f"{file_name}.jpg", "File already exists"
+            )
+            return "skipped"
+
         pil_img.save(dest_path, quality=quality)
+        return "success"
 
     def _save_heif(self, pil_img, file_name):
-        """Save image as HEIF."""
+        """Save image as HEIF.
+
+        Returns:
+            "success" if saved, "skipped" if file already exists.
+        """
         quality = self.settings.get("heif_quality", 90)
         bit_depth_str = self.settings.get("heif_bit_depth", "8-bit")
         dest_path = os.path.join(self.destination_folder, f"{file_name}.heic")
+
+        # Check if file already exists
+        if os.path.exists(dest_path):
+            self.signals.fileSkipped.emit(
+                str(dest_path), f"{file_name}.heic", "File already exists"
+            )
+            return "skipped"
 
         if bit_depth_str == "12-bit":
             original_setting = pillow_heif.options.SAVE_HDR_TO_12_BIT
@@ -125,6 +174,8 @@ class ExportProcessor(QtCore.QRunnable):
         else:
             # 8-bit
             pil_img.save(dest_path, format="HEIF", quality=quality)
+
+        return "success"
 
     def cancel(self):
         """Cancel the export batch."""
@@ -177,7 +228,7 @@ class ExportJob(QtCore.QObject):
         self.signals = ExportProcessorSignals()
         self._current_processor = None
 
-    def start_export(self, files, settings, destination_folder):
+    def start_export(self, files, settings, destination_folder, rename_mapping=None):
         """Start a new export batch."""
         # Validate settings first
         errors = ExportProcessor.validate_export_settings(settings)
@@ -187,7 +238,9 @@ class ExportJob(QtCore.QObject):
             return False
 
         # Create and start processor
-        processor = ExportProcessor(self.signals, files, settings, destination_folder)
+        processor = ExportProcessor(
+            self.signals, files, settings, destination_folder, rename_mapping
+        )
         self._current_processor = processor
         self.thread_pool.start(processor)
         return True
