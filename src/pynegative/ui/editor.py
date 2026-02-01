@@ -329,10 +329,10 @@ class EditorWidget(QtWidgets.QWidget):
     def _on_preset_applied(self, preset_type):
         """Handle preset application."""
         self.image_processor.set_processing_params(
-            sharpen=self.editing_controls.val_sharpen,
-            radius=self.editing_controls.val_radius,
-            percent=self.editing_controls.val_percent,
-            denoise=self.editing_controls.val_denoise,
+            sharpen_value=self.editing_controls.val_sharpen_value,
+            sharpen_radius=self.editing_controls.val_sharpen_radius,
+            sharpen_percent=self.editing_controls.val_sharpen_percent,
+            de_noise=self.editing_controls.val_de_noise,
         )
         self._request_update_from_view()
 
