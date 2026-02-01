@@ -24,10 +24,10 @@ class EditingControls(QtWidgets.QWidget):
         self.val_highlights = 0.0
         self.val_shadows = 0.0
         self.val_saturation = 1.0
-        self.val_sharpen = 0.0
-        self.val_radius = 0.5
-        self.val_percent = 0.0
-        self.val_denoise = 0
+        self.val_sharpen_value = 0.0
+        self.val_sharpen_radius = 0.5
+        self.val_sharpen_percent = 0.0
+        self.val_de_noise = 0
 
         self._init_ui()
 
@@ -179,26 +179,32 @@ class EditingControls(QtWidgets.QWidget):
         # Mapping function for combined sharpening
         def update_sharpen_params(val):
             # val is 0..100
-            # radius: 0.5 .. 1.25 (1/4 of original 0.5..5.0 range is ~1.125, but let's go with 1.25)
-            # percent: 0 .. 150 (half of original 300)
-            self.val_radius = 0.5 + (val / 100.0) * 0.75
-            self.val_percent = (val / 100.0) * 150.0
-            self.val_sharpen = val
-            self.settingChanged.emit("sharpen", val)
+            self.val_sharpen_radius = 0.5 + (val / 100.0) * 0.75
+            self.val_sharpen_percent = (val / 100.0) * 150.0
+            self.val_sharpen_value = val
+            self.settingChanged.emit("sharpen_value", val)
+            self.settingChanged.emit("sharpen_radius", self.val_sharpen_radius)
+            self.settingChanged.emit("sharpen_percent", self.val_sharpen_percent)
 
         self._add_slider(
             "Sharpening",
             0,
             100,
-            self.val_sharpen,
-            "val_sharpen",
+            self.val_sharpen_value,
+            "val_sharpen_value",
             1,
             self.details_section,
             custom_callback=update_sharpen_params,
         )
 
         self._add_slider(
-            "De-noise", 0, 20, self.val_denoise, "val_denoise", 1, self.details_section
+            "De-noise",
+            0,
+            20,
+            self.val_de_noise,
+            "val_de_noise",
+            1,
+            self.details_section,
         )
 
         # Save Button
@@ -328,14 +334,14 @@ class EditingControls(QtWidgets.QWidget):
     def _apply_preset(self, preset_type):
         """Apply preset values for sharpening and denoising."""
         if preset_type == "low":
-            self.set_slider_value("val_sharpen", 30.0)
-            self.set_slider_value("val_denoise", 5.0)
+            self.set_slider_value("val_sharpen_value", 30.0)
+            self.set_slider_value("val_de_noise", 5.0)
         elif preset_type == "medium":
-            self.set_slider_value("val_sharpen", 60.0)
-            self.set_slider_value("val_denoise", 15.0)
+            self.set_slider_value("val_sharpen_value", 60.0)
+            self.set_slider_value("val_de_noise", 15.0)
         elif preset_type == "high":
-            self.set_slider_value("val_sharpen", 100.0)
-            self.set_slider_value("val_denoise", 25.0)
+            self.set_slider_value("val_sharpen_value", 100.0)
+            self.set_slider_value("val_de_noise", 25.0)
 
         self.presetApplied.emit(preset_type)
 
@@ -350,11 +356,11 @@ class EditingControls(QtWidgets.QWidget):
             "shadows": self.val_shadows,
             "saturation": self.val_saturation,
             "sharpen_method": "High Quality",
-            "sharpen_radius": self.val_radius,
-            "sharpen_percent": self.val_percent,
-            "sharpen_value": self.val_sharpen,
+            "sharpen_radius": self.val_sharpen_radius,
+            "sharpen_percent": self.val_sharpen_percent,
+            "sharpen_value": self.val_sharpen_value,
             "denoise_method": "High Quality",
-            "de_noise": self.val_denoise,
+            "de_noise": self.val_de_noise,
         }
 
     def apply_settings(self, settings):
@@ -369,6 +375,6 @@ class EditingControls(QtWidgets.QWidget):
 
         sharpen_val = settings.get("sharpen_value", 0.0)
         if sharpen_val is not None:
-            self.set_slider_value("val_sharpen", sharpen_val)
+            self.set_slider_value("val_sharpen_value", sharpen_val)
 
-        self.set_slider_value("val_denoise", settings.get("de_noise", 0))
+        self.set_slider_value("val_de_noise", settings.get("de_noise", 0))
