@@ -164,16 +164,11 @@ class ExportWidget(QtWidgets.QWidget):
         self.heif_quality = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.heif_quality.setRange(1, 100)
         self.heif_layout.addRow("Quality", self.heif_quality)
+        self.heif_bit_depth = QtWidgets.QComboBox()
+        self.heif_bit_depth.setObjectName("ExportComboBox")
+        self.heif_bit_depth.addItems(["8-bit", "10-bit", "12-bit"])
+        self.heif_layout.addRow("Bit Depth", self.heif_bit_depth)
         self.settings_layout.addWidget(self.heif_settings)
-
-        # DNG settings
-        self.dng_settings = QtWidgets.QGroupBox("DNG Settings")
-        self.dng_layout = QtWidgets.QFormLayout(self.dng_settings)
-        self.dng_compression = QtWidgets.QComboBox()
-        self.dng_compression.setObjectName("ExportComboBox")
-        self.dng_compression.addItems(["None", "Lossy"])
-        self.dng_layout.addRow("Compression", self.dng_compression)
-        self.settings_layout.addWidget(self.dng_settings)
 
     def _setup_size_settings(self):
         """Setup size constraint settings."""
@@ -247,8 +242,8 @@ class ExportWidget(QtWidgets.QWidget):
         self.heif_quality.valueChanged.connect(
             lambda val: self.settings_manager.update_setting("heif_quality", val)
         )
-        self.dng_compression.currentTextChanged.connect(
-            lambda text: self.settings_manager.update_setting("dng_compression", text)
+        self.heif_bit_depth.currentTextChanged.connect(
+            lambda text: self.settings_manager.update_setting("heif_bit_depth", text)
         )
         self.max_width.textChanged.connect(
             lambda text: self.settings_manager.update_setting("max_width", text)
@@ -285,7 +280,7 @@ class ExportWidget(QtWidgets.QWidget):
         self.format_combo.setCurrentText(settings["format"])
         self.jpeg_quality.setValue(settings["jpeg_quality"])
         self.heif_quality.setValue(settings["heif_quality"])
-        self.dng_compression.setCurrentText(settings["dng_compression"])
+        self.heif_bit_depth.setCurrentText(settings["heif_bit_depth"])
         self.max_width.setText(str(settings["max_width"]))
         self.max_height.setText(str(settings["max_height"]))
 
@@ -313,7 +308,6 @@ class ExportWidget(QtWidgets.QWidget):
         format = self.format_combo.itemText(index)
         self.jpeg_settings.setVisible(format == "JPEG")
         self.heif_settings.setVisible(format == "HEIF")
-        self.dng_settings.setVisible(format == "DNG")
 
     def _format_destination_path(self, path):
         """Format path to show only last 3 components (parent/parent/exported)."""
