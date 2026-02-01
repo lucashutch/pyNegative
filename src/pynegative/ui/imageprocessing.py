@@ -96,16 +96,17 @@ class TileRenderJob(QtCore.QObject):
         self.finished_tiles = 0
         self.output_image = QtGui.QImage(roi_w, roi_h, QtGui.QImage.Format_RGB888)
         self.output_image.fill(QtCore.Qt.black)
-        self.painter = QtGui.QPainter(self.output_image)
 
     def add_tile(self, tile_x, tile_y, image_data):
-        self.painter.drawImage(tile_x, tile_y, image_data)
+        painter = QtGui.QPainter(self.output_image)
+        painter.drawImage(tile_x, tile_y, image_data)
+        painter.end()
+
         self.finished_tiles += 1
         if self.finished_tiles == self.tiles_to_process:
             self.finish_job()
 
     def finish_job(self):
-        self.painter.end()
         self.jobFinished.emit(QtGui.QPixmap.fromImage(self.output_image))
 
 
@@ -263,6 +264,12 @@ class ImageProcessingPipeline(QtCore.QObject):
                         )
                         tiles.append(worker)
 
+                if not tiles:
+                    self.previewUpdated.emit(
+                        pix_bg, full_w, full_h, QtGui.QPixmap(), 0, 0, 0, 0
+                    )
+                    return
+
                 job.tiles_to_process = len(tiles)
                 for worker in tiles:
                     self.thread_pool.start(worker)
@@ -283,7 +290,8 @@ class ImageProcessingPipeline(QtCore.QObject):
     @QtCore.Slot(str, int, int, QtGui.QImage)
     def _on_tile_finished(self, job_id, tile_x, tile_y, image_data):
         if job_id in self._jobs:
-            self._jobs[job_id].add_tile(tile_x, tile_y, image_data)
+            # It's safer to copy the image data as it comes from another thread
+            self._jobs[job_id].add_tile(tile_x, tile_y, image_data.copy())
 
     def _on_job_finished(
         self, job_id, pix_bg, full_w, full_h, roi_x, roi_y, roi_w, roi_h, roi_pixmap
