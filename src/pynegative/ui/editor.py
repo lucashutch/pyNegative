@@ -110,6 +110,16 @@ class EditorWidget(QtWidgets.QWidget):
         # Toast widget for notifications
         self.toast = ToastWidget(self.canvas_frame)
 
+        # Performance metric label
+        self.perf_label = QtWidgets.QLabel(self.canvas_frame)
+        self.perf_label.setStyleSheet(
+            "background-color: rgba(0, 0, 0, 128); color: white; padding: 4px; border-radius: 4px;"
+        )
+        self.canvas_container.addWidget(
+            self.perf_label, 0, 0, Qt.AlignBottom | Qt.AlignLeft
+        )
+        self.perf_label.setContentsMargins(10, 0, 0, 10)
+
     def _setup_connections(self):
         """Setup signal/slot connections between components."""
         # Editing controls -> Image processor
@@ -120,6 +130,7 @@ class EditorWidget(QtWidgets.QWidget):
 
         # Image processor -> View
         self.image_processor.previewUpdated.connect(self.view.set_pixmaps)
+        self.image_processor.performanceMeasured.connect(self._on_performance_measured)
 
         # Settings manager
         self.settings_manager.showToast.connect(self.show_toast)
@@ -147,6 +158,7 @@ class EditorWidget(QtWidgets.QWidget):
         QtGui.QShortcut(
             QtGui.QKeySequence.StandardKey.Paste, self, self._handle_paste_shortcut
         )
+        QtGui.QShortcut(QtGui.QKeySequence("F12"), self, self._toggle_render_mode)
 
     def resizeEvent(self, event):
         """Handle widget resize."""
@@ -559,3 +571,17 @@ class EditorWidget(QtWidgets.QWidget):
         # Restore rating
         self.editing_controls.set_rating(rating)
         self.settings_manager.set_current_settings(settings, rating)
+
+    @QtCore.Slot(float)
+    def _on_performance_measured(self, elapsed_ms):
+        """Update the performance label."""
+        self.perf_label.setText(f"{elapsed_ms:.1f} ms")
+
+    def _toggle_render_mode(self):
+        """Toggle between tiled and single-worker rendering."""
+        self.image_processor.use_tiled_rendering = (
+            not self.image_processor.use_tiled_rendering
+        )
+        mode = "Tiled" if self.image_processor.use_tiled_rendering else "Single"
+        self.show_toast(f"Render Mode: {mode}")
+        self._request_update_from_view()
