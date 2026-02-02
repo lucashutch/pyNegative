@@ -1,34 +1,8 @@
-# pyNegative
-
-A modern, cross-platform desktop application for photographers, offering a fast and intuitive GUI to non-destructively edit, rate, and export RAW files.
-
-## Installation
-
-### Get the code
-```bash
-git clone https://github.com/lucashutch/pyNegative.git
-cd pyNegative
-```
-
-### Using `uv` (Preferred)
-uv automatically creates a virtual environment and installs the dependencies.
-```bash
-# Install in editable mode
-uv sync --all-groups
-
-# Run the UI
-uv run pyneg-ui
-```
-
-### Using `pip` (Legacy)
-This method is not recommended as it does not create a virtual environment. You can use the default python environment, but it is not recommended, especially on newer OSs.
-```bash
-# Install in editable mode
-pip install -e .
-
-# Run the UI
-pyneg-ui
-```
+<div align="center">
+  <img src="pynegative_icon.png" alt="pyNegative Logo" width="128" height="128">
+  <h1>pyNegative</h1>
+  <p>A modern, cross-platform desktop application for photographers, offering a fast and intuitive GUI to non-destructively edit, rate, and export RAW files.</p>
+</div>
 
 ## Features
 
@@ -64,6 +38,48 @@ A graphical user interface (GUI) for interactively editing RAW files.
 -   **Batch Exporting**: Process all currently filtered images at once with consistent settings.
 -   **Flexible Formats**: Support for exporting to JPEG and high-efficiency formats.
 -   **Batch Renaming**: Rename exported files with custom patterns using EXIF date and sequence numbers.
+
+## Installation
+
+### Quick Install
+**Windows:** Download `scripts/install-pynegative.bat` and double-click it.
+
+**macOS/Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/lucashutch/pyNegative/main/scripts/install-pynegative.sh | bash
+```
+Or download `scripts/install-pynegative.sh` and run `bash install-pynegative.sh`.
+
+Installers handle all dependencies and create Start Menu/Desktop shortcuts automatically.
+
+### Developer Setup
+If you want to contribute or run from source:
+
+#### Get the code
+```bash
+git clone https://github.com/lucashutch/pyNegative.git
+cd pyNegative
+```
+
+#### Using `uv` (Preferred)
+uv automatically creates a virtual environment and installs the dependencies.
+```bash
+# Install in editable mode
+uv sync --all-groups
+
+# Run the UI
+uv run pyneg-ui
+```
+
+#### Using `pip` (Legacy)
+This method is not recommended as it does not create a virtual environment. You can use the default python environment, but it is not recommended, especially on newer OSs.
+```bash
+# Install in editable mode
+pip install -e .
+
+# Run the UI
+pyneg-ui
+```
 
 ## Development
 
