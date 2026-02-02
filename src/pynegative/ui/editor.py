@@ -221,9 +221,11 @@ class EditorWidget(QtWidgets.QWidget):
                     partial(self._set_rating_by_number, key.value - Qt.Key_0.value),
                 )
 
-        # Navigation shortcuts
-        QtGui.QShortcut(Qt.Key_Left, self, self._navigate_previous)
-        QtGui.QShortcut(Qt.Key_Right, self, self._navigate_next)
+        # Navigation shortcuts - use ApplicationShortcut to work even when child widgets have focus
+        nav_left = QtGui.QShortcut(Qt.Key_Left, self, self._navigate_previous)
+        nav_left.setContext(Qt.ApplicationShortcut)
+        nav_right = QtGui.QShortcut(Qt.Key_Right, self, self._navigate_next)
+        nav_right.setContext(Qt.ApplicationShortcut)
 
     def resizeEvent(self, event):
         """Handle widget resize."""
