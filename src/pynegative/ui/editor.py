@@ -1,6 +1,7 @@
 from pathlib import Path
 import numpy as np
 from PIL import Image
+from functools import partial
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
 
@@ -211,9 +212,14 @@ class EditorWidget(QtWidgets.QWidget):
 
         # Rating shortcuts (1-5, 0)
         for key in [Qt.Key_1, Qt.Key_2, Qt.Key_3, Qt.Key_4, Qt.Key_5, Qt.Key_0]:
-            QtGui.QShortcut(
-                key, self, lambda rating=key: self._set_rating_shortcut(rating)
-            )
+            if key == Qt.Key_0:
+                QtGui.QShortcut(key, self, partial(self._set_rating_by_number, 0))
+            else:
+                QtGui.QShortcut(
+                    key,
+                    self,
+                    partial(self._set_rating_by_number, key.value - Qt.Key_0.value),
+                )
 
         # Navigation shortcuts
         QtGui.QShortcut(Qt.Key_Left, self, self._navigate_previous)
@@ -654,7 +660,13 @@ class EditorWidget(QtWidgets.QWidget):
         if key == Qt.Key_0:
             rating = 0
         else:
-            rating = int(key.name)
+            rating = key.value - Qt.Key_0.value
+        self.preview_rating_widget.set_rating(rating)
+        self.editing_controls.set_rating(rating)
+        self._on_rating_changed(rating)
+
+    def _set_rating_by_number(self, rating):
+        """Set rating by number (called from keyboard shortcuts)."""
         self.preview_rating_widget.set_rating(rating)
         self.editing_controls.set_rating(rating)
         self._on_rating_changed(rating)
