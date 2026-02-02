@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pynegative"
-version = "0.1.0"
-authors = [
-  { name="Lucas", email="lucas@example.com" },
-]
+version = "0.1.1"
+ authors = [
+   { name="Lucas Hutchinson" },
+ ]
 description = "A simple RAW image processor using rawpy and Pillow"
 readme = "README.md"
 requires-python = ">=3.10"
