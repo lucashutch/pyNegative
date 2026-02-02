@@ -12,11 +12,17 @@ title pyNegative Installer
 
 setlocal EnableDelayedExpansion
 
+REM Get the directory where this script is located
+set SCRIPT_DIR=%~dp0
+
 REM Configuration
 set REPO=lucashutch/pyNegative
 set APP_NAME=pyNegative
 set INSTALL_DIR=%USERPROFILE%\%APP_NAME%
 set VERSION_FILE=%INSTALL_DIR%\.version
+set SCRIPT_URL=https://raw.githubusercontent.com/lucashutch/pyNegative/main/scripts/download_release.py
+set TIMEOUT=15
+set TEMP_SCRIPT=%TEMP%\download_release.py.%RANDOM%
 
 REM Check for silent mode flags
 set SILENT_MODE=0
@@ -46,9 +52,10 @@ if %SILENT_MODE%==0 (
     echo ============================================================
     echo.
     echo This installer will:
-    echo   1. Download the latest pyNegative release ^(or main branch^)
-    echo   2. Install all dependencies
-    echo   3. Create Start Menu shortcuts
+    echo   1. Install uv ^(Python package manager^) if needed
+    echo   2. Download the latest pyNegative release ^(or main branch^)
+    echo   3. Install Python dependencies ^(PySide6, numpy, pillow, etc.^)
+    echo   4. Create Start Menu shortcuts
     echo.
     echo Installation location: %INSTALL_DIR%
     echo.
@@ -64,11 +71,14 @@ REM Download and install using uv's Python
 echo Checking for latest release...
 echo.
 
-REM Create Python script for download
-call :create_download_script
+REM Fetch the download script first
+call :fetch_download_script
+if %ERRORLEVEL% NEQ 0 (
+    exit /b 1
+)
 
-REM Run the download script using uv
-uv run --python 3 python %TEMP%\pynegative_download.py %INSTALL_DIR% %REPO%
+REM Run the downloaded script using uv
+uv run --python 3 python "%TEMP_SCRIPT%" --repo %REPO% --install-dir %INSTALL_DIR%
 set DOWNLOAD_RESULT=%ERRORLEVEL%
 
 if %DOWNLOAD_RESULT% EQU 0 (
@@ -77,9 +87,13 @@ if %DOWNLOAD_RESULT% EQU 0 (
     echo Already on latest version, skipping download.
 ) else (
     echo ERROR: Download failed
+    del "%TEMP_SCRIPT%" 2>nul
     pause
     exit /b 1
 )
+
+REM Clean up temp script
+del "%TEMP_SCRIPT%" 2>nul
 
 echo.
 echo Installing dependencies...
@@ -121,6 +135,42 @@ REM ============================================================
 REM Functions
 REM ============================================================
 
+:fetch_download_script
+if %SILENT_MODE%==0 echo Downloading installer script...
+
+REM Create PowerShell command to download the script
+powershell -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '%SCRIPT_URL%' -OutFile '%TEMP_SCRIPT%' -TimeoutSec %TIMEOUT%; exit 0 } catch { exit 1 }"
+if %ERRORLEVEL% NEQ 0 (
+    echo ERROR: Failed to download installer script. Please check your internet connection and try again.
+    exit /b 1
+)
+
+REM Validate the download
+if not exist "%TEMP_SCRIPT%" (
+    echo ERROR: Downloaded script file not found.
+    exit /b 1
+)
+
+REM Check if file is empty
+for %%A in ("%TEMP_SCRIPT%") do (
+    if %%~zA EQU 0 (
+        echo ERROR: Downloaded script is empty.
+        del "%TEMP_SCRIPT%" 2>nul
+        exit /b 1
+    )
+)
+
+REM Check if file has correct first line
+findstr /B /C:"#!/usr/bin/env python3" "%TEMP_SCRIPT%" >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo ERROR: Downloaded script is invalid or corrupted.
+    del "%TEMP_SCRIPT%" 2>nul
+    exit /b 1
+)
+
+if %SILENT_MODE%==0 echo Installer script downloaded successfully!
+exit /b 0
+
 :check_uv
 uv --version >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
@@ -139,115 +189,6 @@ if %ERRORLEVEL% NEQ 0 (
 REM Add uv to PATH for this session
 set PATH=%USERPROFILE%\.local\bin;%PATH%
 if %SILENT_MODE%==0 echo uv installed successfully!
-exit /b 0
-
-:create_download_script
-REM Create Python script for downloading and extracting
-echo import urllib.request > %TEMP%\pynegative_download.py
-echo import json >> %TEMP%\pynegative_download.py
-echo import zipfile >> %TEMP%\pynegative_download.py
-echo import io >> %TEMP%\pynegative_download.py
-echo import os >> %TEMP%\pynegative_download.py
-echo import sys >> %TEMP%\pynegative_download.py
-echo import shutil >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo INSTALL_DIR = sys.argv[1] >> %TEMP%\pynegative_download.py
-echo REPO = sys.argv[2] >> %TEMP%\pynegative_download.py
-echo VERSION_FILE = os.path.join(INSTALL_DIR, '.version') >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo def get_latest_version(): >> %TEMP%\pynegative_download.py
-echo     try: >> %TEMP%\pynegative_download.py
-echo         req = urllib.request.Request( >> %TEMP%\pynegative_download.py
-echo             f'https://api.github.com/repos/{REPO}/releases/latest', >> %TEMP%\pynegative_download.py
-echo             headers={'User-Agent': 'pyNegative-Installer', 'Accept': 'application/vnd.github.v3+json'} >> %TEMP%\pynegative_download.py
-echo         ) >> %TEMP%\pynegative_download.py
-echo         with urllib.request.urlopen(req, timeout=10) as response: >> %TEMP%\pynegative_download.py
-echo             data = json.loads(response.read().decode()) >> %TEMP%\pynegative_download.py
-echo             return data.get('tag_name', 'main') >> %TEMP%\pynegative_download.py
-echo     except Exception as e: >> %TEMP%\pynegative_download.py
-echo         print(f'Could not check releases: {e}') >> %TEMP%\pynegative_download.py
-echo         return 'main' >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo def download_and_extract(version, dest_dir): >> %TEMP%\pynegative_download.py
-echo     if version == 'main': >> %TEMP%\pynegative_download.py
-echo         url = f'https://github.com/{REPO}/archive/refs/heads/main.zip' >> %TEMP%\pynegative_download.py
-echo         print(f'Downloading main branch...') >> %TEMP%\pynegative_download.py
-echo     else: >> %TEMP%\pynegative_download.py
-echo         url = f'https://github.com/{REPO}/archive/refs/tags/{version}.zip' >> %TEMP%\pynegative_download.py
-echo         print(f'Downloading {version}...') >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo     try: >> %TEMP%\pynegative_download.py
-echo         with urllib.request.urlopen(url, timeout=60) as response: >> %TEMP%\pynegative_download.py
-echo             zip_data = io.BytesIO(response.read()) >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo         temp_extract = dest_dir + '.extracting' >> %TEMP%\pynegative_download.py
-echo         if os.path.exists(temp_extract): >> %TEMP%\pynegative_download.py
-echo             shutil.rmtree(temp_extract) >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo         with zipfile.ZipFile(zip_data, 'r') as zf: >> %TEMP%\pynegative_download.py
-echo             zf.extractall(temp_extract) >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo         subdirs = [d for d in os.listdir(temp_extract) if os.path.isdir(os.path.join(temp_extract, d))] >> %TEMP%\pynegative_download.py
-echo         if not subdirs: >> %TEMP%\pynegative_download.py
-echo             print('Error: No directory found in zip') >> %TEMP%\pynegative_download.py
-echo             sys.exit(1) >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo         source_dir = os.path.join(temp_extract, subdirs[0]) >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo         if os.path.exists(dest_dir): >> %TEMP%\pynegative_download.py
-echo             print('Removing old installation...') >> %TEMP%\pynegative_download.py
-echo             shutil.rmtree(dest_dir) >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo         shutil.move(source_dir, dest_dir) >> %TEMP%\pynegative_download.py
-echo         shutil.rmtree(temp_extract) >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo         # Generate icons if script exists >> %TEMP%\pynegative_download.py
-echo         icon_script = os.path.join(dest_dir, 'scripts', 'generate_icons.py') >> %TEMP%\pynegative_download.py
-echo         if os.path.exists(icon_script): >> %TEMP%\pynegative_download.py
-echo             print('Generating icons...') >> %TEMP%\pynegative_download.py
-echo             import subprocess >> %TEMP%\pynegative_download.py
-echo             result = subprocess.run( >> %TEMP%\pynegative_download.py
-echo                 ['uv', 'run', '--python', '3', 'python', icon_script], >> %TEMP%\pynegative_download.py
-echo                 capture_output=True, >> %TEMP%\pynegative_download.py
-echo                 text=True, >> %TEMP%\pynegative_download.py
-echo                 cwd=dest_dir >> %TEMP%\pynegative_download.py
-echo             ) >> %TEMP%\pynegative_download.py
-echo             if result.returncode == 0: >> %TEMP%\pynegative_download.py
-echo                 print('Icons generated successfully!') >> %TEMP%\pynegative_download.py
-echo             else: >> %TEMP%\pynegative_download.py
-echo                 print(f'Warning: Icon generation failed') >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo         with open(VERSION_FILE, 'w') as f: >> %TEMP%\pynegative_download.py
-echo             f.write(version) >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo         print(f'Successfully installed {version} to {dest_dir}') >> %TEMP%\pynegative_download.py
-echo         return True >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo     except Exception as e: >> %TEMP%\pynegative_download.py
-echo         print(f'Error downloading: {e}') >> %TEMP%\pynegative_download.py
-echo         sys.exit(1) >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo if __name__ == '__main__': >> %TEMP%\pynegative_download.py
-echo     latest = get_latest_version() >> %TEMP%\pynegative_download.py
-echo     current = None >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo     if os.path.exists(VERSION_FILE): >> %TEMP%\pynegative_download.py
-echo         try: >> %TEMP%\pynegative_download.py
-echo             with open(VERSION_FILE, 'r') as f: >> %TEMP%\pynegative_download.py
-echo                 current = f.read().strip() >> %TEMP%\pynegative_download.py
-echo         except: >> %TEMP%\pynegative_download.py
-echo             pass >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo     if current == latest and os.path.exists(os.path.join(INSTALL_DIR, 'pyproject.toml')): >> %TEMP%\pynegative_download.py
-echo         print(f'Already on latest version: {latest}') >> %TEMP%\pynegative_download.py
-echo         sys.exit(2) >> %TEMP%\pynegative_download.py
-echo     elif current: >> %TEMP%\pynegative_download.py
-echo         print(f'Update available: {current} -> {latest}') >> %TEMP%\pynegative_download.py
-echo     else: >> %TEMP%\pynegative_download.py
-echo         print(f'Installing {latest}...') >> %TEMP%\pynegative_download.py
-echo. >> %TEMP%\pynegative_download.py
-echo     download_and_extract(latest, INSTALL_DIR) >> %TEMP%\pynegative_download.py
-echo     sys.exit(0) >> %TEMP%\pynegative_download.py
 exit /b 0
 
 :create_shortcuts
@@ -285,7 +226,7 @@ echo $uninstall.Save() >> %TEMP%\create_shortcuts.ps1
 
 powershell -ExecutionPolicy Bypass -File %TEMP%\create_shortcuts.ps1
 
-REM Copy this batch file to install dir for future updates
+REM Copy installer files to install dir for future updates
 if not exist "%INSTALL_DIR%\scripts" mkdir "%INSTALL_DIR%\scripts"
 copy /Y "%~f0" "%INSTALL_DIR%\scripts\install-pynegative.bat" >nul 2>&1
 
