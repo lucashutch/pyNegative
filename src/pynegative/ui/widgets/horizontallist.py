@@ -15,6 +15,19 @@ class HorizontalListWidget(QtWidgets.QListWidget):
         self.selected_paths = set()
         self._last_clicked_item = None
 
+        # Sync selection state and emit custom signal
+        self.itemSelectionChanged.connect(self._sync_selection)
+        self.itemSelectionChanged.connect(self.selectionChanged.emit)
+
+    def _sync_selection(self):
+        """Sync internal selected_paths with actual QListWidget selection."""
+        self.selected_paths.clear()
+        for item in self.selectedItems():
+            path = item.data(QtCore.Qt.UserRole)
+            if path:
+                self.selected_paths.add(path)
+        self.update()
+
     def wheelEvent(self, event):
         if event.angleDelta().y():
             # Scroll horizontally instead of vertically
@@ -32,7 +45,6 @@ class HorizontalListWidget(QtWidgets.QListWidget):
         item = self.itemAt(event.pos())
 
         if item:
-            item_path = item.data(QtCore.Qt.UserRole)
             item_rect = self.visualItemRect(item)
 
             # Check if click is on the selection circle
@@ -42,10 +54,8 @@ class HorizontalListWidget(QtWidgets.QListWidget):
 
                 if is_circle_click:
                     # Toggle selection via circle click
-                    self.toggle_selection(item_path)
+                    item.setSelected(not item.isSelected())
                     self._last_clicked_item = item
-                    self.selectionChanged.emit()
-                    self.update()
                     # Accept and return to prevent base class from processing the click
                     event.accept()
                     return
@@ -55,77 +65,26 @@ class HorizontalListWidget(QtWidgets.QListWidget):
                 super().mousePressEvent(event)
                 return
 
-            # Normal selection logic
-            if event.modifiers() & QtCore.Qt.ControlModifier:
-                # Ctrl+Click: Toggle selection
-                self.toggle_selection(item_path)
-                self._last_clicked_item = item
-                return
-            elif (
-                event.modifiers() & QtCore.Qt.ShiftModifier and self._last_clicked_item
-            ):
-                # Shift+Click: Range selection
-                self._select_range(self._last_clicked_item, item)
-                self._last_clicked_item = item
-                return
-            else:
-                # Normal click: Select this item only and clear others
-                self.clear_selection()
-                self.selected_paths.add(item_path)
-                self._last_clicked_item = item
-                self.selectionChanged.emit()
-                self.update()
+            # Normal selection logic - let base class handle it but track last clicked
+            self._last_clicked_item = item
 
         super().mousePressEvent(event)
 
     def toggle_selection(self, item_path):
-        """Toggle selection of an item."""
-        if item_path in self.selected_paths:
-            self.selected_paths.remove(item_path)
-        else:
-            self.selected_paths.add(item_path)
-        self.selectionChanged.emit()
-        self.update()
+        """Toggle selection of an item by path."""
+        for i in range(self.count()):
+            item = self.item(i)
+            if item.data(QtCore.Qt.UserRole) == item_path:
+                item.setSelected(not item.isSelected())
+                break
 
     def clear_selection(self):
         """Clear all selections."""
-        self.selected_paths.clear()
-        self.selectionChanged.emit()
-        self.update()
-
-    def clear(self):
-        """Override clear to also update circle visibility."""
-        super().clear()
-        self.selected_paths.clear()
-        self.selectionChanged.emit()
-        self.update()
+        self.clearSelection()
 
     def select_all_items(self):
         """Select all items in the carousel."""
-        self.selected_paths.clear()
-        for i in range(self.count()):
-            item = self.item(i)
-            item_path = item.data(QtCore.Qt.UserRole)
-            self.selected_paths.add(item_path)
-        self.selectionChanged.emit()
-        self.update()
-
-    def _select_range(self, from_item, to_item):
-        """Select all items between from_item and to_item."""
-        from_idx = self.row(from_item)
-        to_idx = self.row(to_item)
-
-        start = min(from_idx, to_idx)
-        end = max(from_idx, to_idx)
-
-        self.selected_paths.clear()
-        for i in range(start, end + 1):
-            item = self.item(i)
-            item_path = item.data(QtCore.Qt.UserRole)
-            self.selected_paths.add(item_path)
-
-        self.selectionChanged.emit()
-        self.update()
+        self.selectAll()
 
     def get_selected_paths(self):
         """Get list of selected item paths."""
@@ -145,7 +104,7 @@ class HorizontalListWidget(QtWidgets.QListWidget):
             event.key() == QtCore.Qt.Key_A
             and event.modifiers() & QtCore.Qt.ControlModifier
         ):
-            self.select_all_items()
+            self.selectAll()
             event.accept()
             return
         super().keyPressEvent(event)

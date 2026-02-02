@@ -43,7 +43,7 @@ class CarouselManager(QtCore.QObject):
     def _setup_connections(self):
         """Setup signal connections."""
         self.carousel.itemClicked.connect(self._on_item_clicked)
-        self.carousel.selectionChanged.connect(self._on_selection_changed)
+        self.carousel.itemSelectionChanged.connect(self._on_selection_changed)
         self.carousel.customContextMenuRequested.connect(self._show_context_menu)
 
     def get_widget(self):
@@ -115,6 +115,10 @@ class CarouselManager(QtCore.QObject):
             return
         new_row = (current_row - 1) % total
         self.carousel.setCurrentRow(new_row)
+        item = self.carousel.item(new_row)
+        if item:
+            self.carousel.clearSelection()
+            item.setSelected(True)
 
     def select_next(self):
         """Select the next image in the carousel, wrapping to the start if at the end."""
@@ -124,6 +128,10 @@ class CarouselManager(QtCore.QObject):
             return
         new_row = (current_row + 1) % total
         self.carousel.setCurrentRow(new_row)
+        item = self.carousel.item(new_row)
+        if item:
+            self.carousel.clearSelection()
+            item.setSelected(True)
 
     def clear(self):
         """Clear the carousel."""
@@ -158,6 +166,12 @@ class CarouselManager(QtCore.QObject):
         """Handle selection changes."""
         selected_paths = self.get_selected_paths()
         self.selectionChanged.emit(selected_paths)
+        current_path = self.get_current_path()
+        if current_path and (
+            not selected_paths
+            or (len(selected_paths) == 1 and str(current_path) in selected_paths)
+        ):
+            self.imageSelected.emit(str(current_path))
         self._update_circle_visibility()
 
     def _update_circle_visibility(self):

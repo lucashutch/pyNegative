@@ -6,6 +6,7 @@
 - **Keep commit messages short and concise** - No need for a long explanation.
 - **Keep PR descriptions short and concise** - No need for a long explanation or lots of sections about testing. Just a brief summary of what was done.
 - **Add tests** - Always add tests for new features.
+- **dont use fix commits** ammend commits instead where possible
 
 ## Quick Commands (Always use `uv`)
 - **Install**: `uv sync --all-groups`
@@ -39,6 +40,7 @@
 - **Structure**: Inherit from standard QWidgets. Use signals/slots for inter-component communication.
 - **Performance**: Use `QTimer` for throttling expensive UI updates (see `editor.py`).
 - **Memory**: Ensure proper parent-child relationships for Qt object cleanup.
+- **Selection Sync**: When subclassing QListWidget with custom selection tracking, use `itemSelectionChanged` (built-in signal) and sync to custom state. Calling `setCurrentRow()` alone does not trigger selection signals - use `item.setSelected(True)` to ensure proper signal emission.
 
 ## Documentation Reference
 - `README.md`: User-facing features and installation.

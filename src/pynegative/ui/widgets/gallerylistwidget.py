@@ -12,6 +12,9 @@ class GalleryListWidget(QtWidgets.QListWidget):
         self.setMouseTracking(True)
         self._hovered_item = None
 
+        # Connect builtin signal to custom signal
+        self.itemSelectionChanged.connect(self.selectionChanged.emit)
+
     def mousePressEvent(self, event):
         """Handle mouse press with multi-selection support."""
         item = self.itemAt(event.position().toPoint())
@@ -29,7 +32,6 @@ class GalleryListWidget(QtWidgets.QListWidget):
                 if is_circle_click:
                     # Toggle selection via circle click
                     item.setSelected(not item.isSelected())
-                    self.selectionChanged.emit()
                     self.update()
                     event.accept()
                     return
@@ -58,7 +60,6 @@ class GalleryListWidget(QtWidgets.QListWidget):
         return self._hovered_item
 
     def selectionChange(self, selected, deselected):
-        """Override selectionChange to emit custom signal."""
-        # Call the base class implementation - but QListWidget doesn't override this
-        # so we skip the super call and just emit our signal
+        """Deprecated: use itemSelectionChanged or selectionChanged signal instead."""
+        # Kept for compatibility with existing tests
         self.selectionChanged.emit()

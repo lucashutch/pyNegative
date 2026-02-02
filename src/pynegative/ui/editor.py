@@ -131,7 +131,9 @@ class EditorWidget(QtWidgets.QWidget):
         self.zoom_ctrl.setContentsMargins(0, 0, 20, 20)
 
         # Add carousel from carousel manager
-        self.canvas_container.addWidget(self.carousel_manager.get_widget(), 1, 0)
+        self.carousel_widget = self.carousel_manager.get_widget()
+        self.canvas_container.addWidget(self.carousel_widget, 1, 0)
+        self.carousel_widget.installEventFilter(self)
 
         # Toast widget for notifications
         self.toast = ToastWidget(self.canvas_frame)
@@ -186,6 +188,9 @@ class EditorWidget(QtWidgets.QWidget):
         self.carousel_manager.selectionChanged.connect(
             self._on_carousel_selection_changed
         )
+        self.carousel_manager.selectionChanged.connect(
+            self._on_carousel_keyboard_navigation
+        )
         self.carousel_manager.contextMenuRequested.connect(
             self._handle_carousel_context_menu
         )
@@ -237,6 +242,17 @@ class EditorWidget(QtWidgets.QWidget):
             if getattr(self.view, "_is_fitting", False):
                 self.view.reset_zoom()
         super().resizeEvent(event)
+
+    def eventFilter(self, obj, event):
+        """Filter events to handle arrow key navigation in carousel."""
+        if obj == self.carousel_widget and event.type() == QtCore.QEvent.KeyPress:
+            if event.key() == Qt.Key_Left:
+                self._navigate_previous()
+                return True
+            elif event.key() == Qt.Key_Right:
+                self._navigate_next()
+                return True
+        return super().eventFilter(obj, event)
 
     def clear(self):
         """Clear the editor state."""
@@ -506,6 +522,12 @@ class EditorWidget(QtWidgets.QWidget):
         """Handle carousel selection changes."""
         pass  # Currently handled by carousel manager
 
+    def _on_carousel_keyboard_navigation(self, selected_paths):
+        """Handle carousel navigation from keyboard shortcuts."""
+        current_path = self.carousel_manager.get_current_path()
+        if current_path and current_path != self.raw_path:
+            self.load_image(str(current_path))
+
     def _on_settings_copied(self, source_path, settings):
         """Handle settings copied event."""
         pass  # Currently handled by settings manager
@@ -675,8 +697,12 @@ class EditorWidget(QtWidgets.QWidget):
 
     def _navigate_previous(self):
         """Navigate to previous image in carousel."""
+        if not self.isVisible():
+            return
         self.carousel_manager.select_previous()
 
     def _navigate_next(self):
         """Navigate to next image in carousel."""
+        if not self.isVisible():
+            return
         self.carousel_manager.select_next()
