@@ -1,16 +1,42 @@
 from pathlib import Path
 import numpy as np
 from PIL import Image
+from functools import partial
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
 
 from .loaders import RawLoader
-from .widgets import ZoomControls, ToastWidget, ZoomableGraphicsView
+from .widgets import ZoomControls, ToastWidget, ZoomableGraphicsView, StarRatingWidget
 from .imageprocessing import ImageProcessingPipeline
 from .editingcontrols import EditingControls
 from .settingsmanager import SettingsManager
 from .carouselmanager import CarouselManager
 from .. import core as pynegative
+
+
+class PreviewStarRatingWidget(StarRatingWidget):
+    """A larger star rating widget for preview mode with 30px stars."""
+
+    def _create_star_pixmap(self, filled):
+        size = 30
+        pixmap = QtGui.QPixmap(size, size)
+        pixmap.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        font = self.font()
+        font.setPointSize(24)
+        painter.setFont(font)
+
+        if filled:
+            painter.setPen(QtGui.QColor("#f0c419"))
+            painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "★")
+        else:
+            painter.setPen(QtGui.QColor("#808080"))
+            painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "☆")
+
+        painter.end()
+        return pixmap
 
 
 class EditorWidget(QtWidgets.QWidget):
@@ -105,7 +131,9 @@ class EditorWidget(QtWidgets.QWidget):
         self.zoom_ctrl.setContentsMargins(0, 0, 20, 20)
 
         # Add carousel from carousel manager
-        self.canvas_container.addWidget(self.carousel_manager.get_widget(), 1, 0)
+        self.carousel_widget = self.carousel_manager.get_widget()
+        self.canvas_container.addWidget(self.carousel_widget, 1, 0)
+        self.carousel_widget.installEventFilter(self)
 
         # Toast widget for notifications
         self.toast = ToastWidget(self.canvas_frame)
@@ -120,6 +148,22 @@ class EditorWidget(QtWidgets.QWidget):
         )
         self.perf_label.setContentsMargins(10, 0, 0, 10)
         self.perf_label.hide()
+
+        # Preview Rating Widget (Bottom Left overlay)
+        self.preview_rating_widget = PreviewStarRatingWidget(self.canvas_frame)
+        self.preview_rating_widget.setObjectName("PreviewRatingWidget")
+        self.preview_rating_widget.setStyleSheet("""
+            QWidget#PreviewRatingWidget {
+                background-color: rgba(0, 0, 0, 0.5);
+                border-radius: 8px;
+                padding: 8px;
+            }
+        """)
+        self.canvas_container.addWidget(
+            self.preview_rating_widget, 0, 0, Qt.AlignBottom | Qt.AlignLeft
+        )
+        self.preview_rating_widget.setContentsMargins(20, 0, 0, 20)
+        self.preview_rating_widget.hide()
 
     def _setup_connections(self):
         """Setup signal/slot connections between components."""
@@ -144,8 +188,16 @@ class EditorWidget(QtWidgets.QWidget):
         self.carousel_manager.selectionChanged.connect(
             self._on_carousel_selection_changed
         )
+        self.carousel_manager.selectionChanged.connect(
+            self._on_carousel_keyboard_navigation
+        )
         self.carousel_manager.contextMenuRequested.connect(
             self._handle_carousel_context_menu
+        )
+
+        # Preview rating widget
+        self.preview_rating_widget.ratingChanged.connect(
+            self._on_preview_rating_changed
         )
 
     def _setup_keyboard_shortcuts(self):
@@ -163,6 +215,23 @@ class EditorWidget(QtWidgets.QWidget):
             QtGui.QKeySequence("F12"), self, self._toggle_performance_overlay
         )
 
+        # Rating shortcuts (1-5, 0)
+        for key in [Qt.Key_1, Qt.Key_2, Qt.Key_3, Qt.Key_4, Qt.Key_5, Qt.Key_0]:
+            if key == Qt.Key_0:
+                QtGui.QShortcut(key, self, partial(self._set_rating_by_number, 0))
+            else:
+                QtGui.QShortcut(
+                    key,
+                    self,
+                    partial(self._set_rating_by_number, key.value - Qt.Key_0.value),
+                )
+
+        # Navigation shortcuts - use ApplicationShortcut to work even when child widgets have focus
+        nav_left = QtGui.QShortcut(Qt.Key_Left, self, self._navigate_previous)
+        nav_left.setContext(Qt.ApplicationShortcut)
+        nav_right = QtGui.QShortcut(Qt.Key_Right, self, self._navigate_next)
+        nav_right.setContext(Qt.ApplicationShortcut)
+
     def resizeEvent(self, event):
         """Handle widget resize."""
         # Auto-fit image if in fitting mode
@@ -173,6 +242,17 @@ class EditorWidget(QtWidgets.QWidget):
             if getattr(self.view, "_is_fitting", False):
                 self.view.reset_zoom()
         super().resizeEvent(event)
+
+    def eventFilter(self, obj, event):
+        """Filter events to handle arrow key navigation in carousel."""
+        if obj == self.carousel_widget and event.type() == QtCore.QEvent.KeyPress:
+            if event.key() == Qt.Key_Left:
+                self._navigate_previous()
+                return True
+            elif event.key() == Qt.Key_Right:
+                self._navigate_next()
+                return True
+        return super().eventFilter(obj, event)
 
     def clear(self):
         """Clear the editor state."""
@@ -191,6 +271,7 @@ class EditorWidget(QtWidgets.QWidget):
         """Update rating for a specific path."""
         if self.raw_path and str(self.raw_path) == path:
             self.editing_controls.set_rating(rating)
+            self.preview_rating_widget.set_rating(rating)
 
     def load_image(self, path):
         """Load an image for editing."""
@@ -284,6 +365,7 @@ class EditorWidget(QtWidgets.QWidget):
     def set_preview_mode(self, enabled):
         """Set preview mode (hide/show controls panel)."""
         self.panel.setVisible(not enabled)
+        self.preview_rating_widget.setVisible(enabled)
 
     def open(self, path, image_list=None):
         """Open an image for editing."""
@@ -320,11 +402,15 @@ class EditorWidget(QtWidgets.QWidget):
         self.save_timer.start(500)
         if self.raw_path:
             self.ratingChanged.emit(str(self.raw_path), rating)
-            # Push undo state for rating change immediately
             self.settings_manager.push_immediate_undo_state(
                 f"Rating changed to {rating} star{'s' if rating != 1 else ''}",
                 self.image_processor.get_current_settings(),
             )
+
+    def _on_preview_rating_changed(self, rating):
+        """Handle rating change from preview widget."""
+        self.editing_controls.set_rating(rating)
+        self._on_rating_changed(rating)
 
     def _on_preset_applied(self, preset_type):
         """Handle preset application."""
@@ -355,6 +441,7 @@ class EditorWidget(QtWidgets.QWidget):
             # Set rating
             rating = settings.get("rating", 0)
             self.editing_controls.set_rating(rating)
+            self.preview_rating_widget.set_rating(rating)
             self.settings_manager.set_current_settings(
                 self.image_processor.get_current_settings(), rating
             )
@@ -434,6 +521,12 @@ class EditorWidget(QtWidgets.QWidget):
     def _on_carousel_selection_changed(self, selected_paths):
         """Handle carousel selection changes."""
         pass  # Currently handled by carousel manager
+
+    def _on_carousel_keyboard_navigation(self, selected_paths):
+        """Handle carousel navigation from keyboard shortcuts."""
+        current_path = self.carousel_manager.get_current_path()
+        if current_path and current_path != self.raw_path:
+            self.load_image(str(current_path))
 
     def _on_settings_copied(self, source_path, settings):
         """Handle settings copied event."""
@@ -585,3 +678,31 @@ class EditorWidget(QtWidgets.QWidget):
         is_visible = not self.perf_label.isVisible()
         self.perf_label.setVisible(is_visible)
         self.show_toast(f"Performance Overlay {'On' if is_visible else 'Off'}")
+
+    def _set_rating_shortcut(self, key):
+        """Set rating from keyboard shortcut (1-5, 0)."""
+        if key == Qt.Key_0:
+            rating = 0
+        else:
+            rating = key.value - Qt.Key_0.value
+        self.preview_rating_widget.set_rating(rating)
+        self.editing_controls.set_rating(rating)
+        self._on_rating_changed(rating)
+
+    def _set_rating_by_number(self, rating):
+        """Set rating by number (called from keyboard shortcuts)."""
+        self.preview_rating_widget.set_rating(rating)
+        self.editing_controls.set_rating(rating)
+        self._on_rating_changed(rating)
+
+    def _navigate_previous(self):
+        """Navigate to previous image in carousel."""
+        if not self.isVisible():
+            return
+        self.carousel_manager.select_previous()
+
+    def _navigate_next(self):
+        """Navigate to next image in carousel."""
+        if not self.isVisible():
+            return
+        self.carousel_manager.select_next()
