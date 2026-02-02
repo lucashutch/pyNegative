@@ -1,111 +1,48 @@
 <div align="center">
   <img src="pynegative_icon.png" alt="pyNegative Logo" width="128" height="128">
   <h1>pyNegative</h1>
-  <p>A modern, cross-platform desktop application for photographers, offering a fast and intuitive GUI to non-destructively edit, rate, and export RAW files.</p>
+  <p>A modern, fast, and intuitive RAW photo editor for photographers who value speed and simplicity.</p>
 </div>
 
 ## Features
 
-### Core Functionality
--   **Non-destructive Editing**: Edits are stored in JSON sidecar files (`.xmp`) alongside the original RAW files.
--   **RAW Image Processing**: Adjustments for exposure, contrast, blacks, whites, shadows, highlights, sharpening, and de-noise.
+### ✨ Develop Your RAWs
+Get the most out of your photos with a powerful, non-destructive editing suite.
+- **Instant Previews**: See your changes in real-time as you move the sliders.
+- **Fine-tuned Control**: Precision adjustments for exposure, contrast, shadows, highlights, and more.
+- **Smart Sharpening & Denoise**: Professional-grade algorithms to bring out the details without the noise.
+- **Safe Editing**: Your original files stay untouched. Edits are saved in tiny sidecar files alongside your images.
 
-### UI Editor (`pyneg-ui`)
-A graphical user interface (GUI) for interactively editing RAW files.
--   **Interactive Editing**: Live preview of changes as adjustments are made.
--   **Multi-threaded Performance**: Image processing is done in a background thread, ensuring the UI remains smooth and responsive, even during heavy edits.
--   **Comprehensive Adjustments**: Sliders for fine-tuning exposure, contrast, blacks, whites, shadows, highlights, sharpening, and de-noise.
--   **Advanced Processing**:
-    -   **Sharpening**: High-quality, edge-aware sharpening algorithms.
-    -   **Noise Reduction**: Multiple denoising methods including a high-quality, chroma-aware bilateral filter.
-    -   **Processing Presets**: Quick "Subtle", "Medium", and "Aggressive" presets for detail enhancement.
--   **Dynamic Zoom**: Zoom into photos for precise control. The minimum zoom is dynamically calculated to perfectly fit the image to your window, preventing you from zooming out too far.
--   **Quick Reset**: Double-click sliders to reset them to their default values.
--   **Image Carousel**: Horizontal carousel for easy navigation through images in a folder.
--   **Integrated Rating System**: Assign star ratings (1-5) to photos directly within the editor.
--   **Performance Overlay (F12)**: A diagnostic overlay showing the render time for the last operation can be toggled by pressing F12.
+### 📁 Organize Your Shoots
+Cull and rate your photos faster than ever.
+- **Fluid Gallery**: Browse through hundreds of photos in a responsive grid.
+- **Instant Preview**: Toggle between a grid and a full-size, zoomable view with a double-click.
+- **Quick Rating**: Rate your best shots from 1-5 stars instantly.
+- **Smart Filtering**: Find exactly what you need by filtering your gallery by star ratings.
 
-### Gallery View
--   **Grid Browsing**: Browse images in a folder in a responsive grid layout.
--   **Full-size Preview Mode**: Toggle between grid layout and a high-quality, zoomable preview without leaving the gallery.
--   **Interactive Navigation**: Double-click any photo to jump into preview mode, and double-click the preview to return to the grid.
--   **Star Rating Display**: View assigned star ratings for each image thumbnail.
--   **Rating-based Filtering**: Filter displayed images by star rating (match, greater than, or less than a specified rating).
-
-### Export Management
--   **Dedicated Export Tab**: A specialized interface for managing the export pipeline.
--   **Intelligent Destinations**: Automatically suggests export paths based on the current folder structure.
--   **Batch Exporting**: Process all currently filtered images at once with consistent settings.
--   **Flexible Formats**: Support for exporting to JPEG and high-efficiency formats.
--   **Batch Renaming**: Rename exported files with custom patterns using EXIF date and sequence numbers.
+### 🚀 Export with Confidence
+Get your photos ready for the world with a streamlined export pipeline.
+- **Batch Processing**: Export your entire filtered selection in one go.
+- **Smart Destinations**: We'll suggest where to save your photos based on your folder structure.
+- **Flexible Formats**: High-quality JPEGs and modern high-efficiency formats.
+- **Custom Renaming**: Keep things organized with automatic renaming using EXIF dates and sequence numbers.
 
 ## Installation
 
 ### Quick Install
-**Windows:** Download `scripts/install-pynegative.bat` and double-click it.
+**Windows:** Download [scripts/install-pynegative.bat](scripts/install-pynegative.bat) and double-click it.
 
 **macOS/Linux:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lucashutch/pyNegative/main/scripts/install-pynegative.sh | bash
 ```
-Or download `scripts/install-pynegative.sh` and run `bash install-pynegative.sh`.
 
-Installers handle all dependencies and create Start Menu/Desktop shortcuts automatically.
+The installers handle all dependencies and create shortcuts for you automatically. No technical knowledge required!
 
-### Developer Setup
-If you want to contribute or run from source:
+---
 
-#### Get the code
-```bash
-git clone https://github.com/lucashutch/pyNegative.git
-cd pyNegative
-```
+### Want to contribute?
+Check out our [Contributing Guide](CONTRIBUTING.md) to get started with the source code and development setup.
 
-#### Using `uv` (Preferred)
-uv automatically creates a virtual environment and installs the dependencies.
-```bash
-# Install in editable mode
-uv sync --all-groups
-
-# Run the UI
-uv run pyneg-ui
-```
-
-#### Using `pip` (Legacy)
-This method is not recommended as it does not create a virtual environment. You can use the default python environment, but it is not recommended, especially on newer OSs.
-```bash
-# Install in editable mode
-pip install -e .
-
-# Run the UI
-pyneg-ui
-```
-
-## Development
-
-Install Dev dependencies:
-```bash
-uv sync --all-groups
-```
-
-Run tests with:
-```bash
-uv run pytest
-```
-
-## Roadmap / TODO
-
-Track planned features and project goals.
-
--   [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
--   [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
--   [ ] **Readme refactor**: Update readme, and create a readme structure that is easy to navigate and covers larger sections of the codebase in more detail (e.g., tests).
--   [ ] **fix test warnings**: fix test warnings in all unit tests
-
-## Testing Improvement Areas
-
-Based on recent project growth, the following areas would benefit from expanded unit testing:
-
-1.  **Image Adjustment Logic (`src/pynegative/core.py`)**: Test core functions like `apply_tone_map` and `sharpen_image` with known inputs to assert that the output image data is mathematically correct. (Ease: Medium)
-2.  **Gallery Filtering Logic (`src/pynegative/ui/gallery.py`)**: Mock a file system with sidecars to test and assert that the gallery correctly filters images based on different rating criteria. (Ease: Hard)
-3.  **Editor Rendering and Throttling (`src/pynegative/ui/editor.py`)**: Test the asynchronous `QTimer`-based rendering loop to ensure updates are correctly throttled and processed, preventing UI lag. (Ease: Hardest)
+### Project Roadmap
+See [TODO.md](TODO.md) for planned features and technical improvements.
