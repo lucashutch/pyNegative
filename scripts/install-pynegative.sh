@@ -38,6 +38,11 @@ for arg in "$@"; do
 	esac
 done
 
+# Auto-enable silent mode if stdin is not a terminal (e.g., when piped from curl)
+if [ ! -t 0 ]; then
+	SILENT=true
+fi
+
 # Print functions
 print_info() {
 	if [ "$SILENT" = false ]; then
