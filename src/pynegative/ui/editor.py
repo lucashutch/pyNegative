@@ -5,12 +5,37 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
 
 from .loaders import RawLoader
-from .widgets import ZoomControls, ToastWidget, ZoomableGraphicsView
+from .widgets import ZoomControls, ToastWidget, ZoomableGraphicsView, StarRatingWidget
 from .imageprocessing import ImageProcessingPipeline
 from .editingcontrols import EditingControls
 from .settingsmanager import SettingsManager
 from .carouselmanager import CarouselManager
 from .. import core as pynegative
+
+
+class PreviewStarRatingWidget(StarRatingWidget):
+    """A larger star rating widget for preview mode with 30px stars."""
+
+    def _create_star_pixmap(self, filled):
+        size = 30
+        pixmap = QtGui.QPixmap(size, size)
+        pixmap.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        font = self.font()
+        font.setPointSize(24)
+        painter.setFont(font)
+
+        if filled:
+            painter.setPen(QtGui.QColor("#f0c419"))
+            painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "★")
+        else:
+            painter.setPen(QtGui.QColor("#808080"))
+            painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "☆")
+
+        painter.end()
+        return pixmap
 
 
 class EditorWidget(QtWidgets.QWidget):
@@ -121,6 +146,22 @@ class EditorWidget(QtWidgets.QWidget):
         self.perf_label.setContentsMargins(10, 0, 0, 10)
         self.perf_label.hide()
 
+        # Preview Rating Widget (Bottom Left overlay)
+        self.preview_rating_widget = PreviewStarRatingWidget(self.canvas_frame)
+        self.preview_rating_widget.setObjectName("PreviewRatingWidget")
+        self.preview_rating_widget.setStyleSheet("""
+            QWidget#PreviewRatingWidget {
+                background-color: rgba(0, 0, 0, 0.5);
+                border-radius: 8px;
+                padding: 8px;
+            }
+        """)
+        self.canvas_container.addWidget(
+            self.preview_rating_widget, 0, 0, Qt.AlignBottom | Qt.AlignLeft
+        )
+        self.preview_rating_widget.setContentsMargins(20, 0, 0, 20)
+        self.preview_rating_widget.hide()
+
     def _setup_connections(self):
         """Setup signal/slot connections between components."""
         # Editing controls -> Image processor
@@ -148,6 +189,11 @@ class EditorWidget(QtWidgets.QWidget):
             self._handle_carousel_context_menu
         )
 
+        # Preview rating widget
+        self.preview_rating_widget.ratingChanged.connect(
+            self._on_preview_rating_changed
+        )
+
     def _setup_keyboard_shortcuts(self):
         """Setup keyboard shortcuts."""
         QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Undo, self, self._undo)
@@ -162,6 +208,16 @@ class EditorWidget(QtWidgets.QWidget):
         QtGui.QShortcut(
             QtGui.QKeySequence("F12"), self, self._toggle_performance_overlay
         )
+
+        # Rating shortcuts (1-5, 0)
+        for key in [Qt.Key_1, Qt.Key_2, Qt.Key_3, Qt.Key_4, Qt.Key_5, Qt.Key_0]:
+            QtGui.QShortcut(
+                key, self, lambda rating=key: self._set_rating_shortcut(rating)
+            )
+
+        # Navigation shortcuts
+        QtGui.QShortcut(Qt.Key_Left, self, self._navigate_previous)
+        QtGui.QShortcut(Qt.Key_Right, self, self._navigate_next)
 
     def resizeEvent(self, event):
         """Handle widget resize."""
@@ -191,6 +247,7 @@ class EditorWidget(QtWidgets.QWidget):
         """Update rating for a specific path."""
         if self.raw_path and str(self.raw_path) == path:
             self.editing_controls.set_rating(rating)
+            self.preview_rating_widget.set_rating(rating)
 
     def load_image(self, path):
         """Load an image for editing."""
@@ -284,6 +341,7 @@ class EditorWidget(QtWidgets.QWidget):
     def set_preview_mode(self, enabled):
         """Set preview mode (hide/show controls panel)."""
         self.panel.setVisible(not enabled)
+        self.preview_rating_widget.setVisible(enabled)
 
     def open(self, path, image_list=None):
         """Open an image for editing."""
@@ -320,11 +378,15 @@ class EditorWidget(QtWidgets.QWidget):
         self.save_timer.start(500)
         if self.raw_path:
             self.ratingChanged.emit(str(self.raw_path), rating)
-            # Push undo state for rating change immediately
             self.settings_manager.push_immediate_undo_state(
                 f"Rating changed to {rating} star{'s' if rating != 1 else ''}",
                 self.image_processor.get_current_settings(),
             )
+
+    def _on_preview_rating_changed(self, rating):
+        """Handle rating change from preview widget."""
+        self.editing_controls.set_rating(rating)
+        self._on_rating_changed(rating)
 
     def _on_preset_applied(self, preset_type):
         """Handle preset application."""
@@ -355,6 +417,7 @@ class EditorWidget(QtWidgets.QWidget):
             # Set rating
             rating = settings.get("rating", 0)
             self.editing_controls.set_rating(rating)
+            self.preview_rating_widget.set_rating(rating)
             self.settings_manager.set_current_settings(
                 self.image_processor.get_current_settings(), rating
             )
@@ -585,3 +648,21 @@ class EditorWidget(QtWidgets.QWidget):
         is_visible = not self.perf_label.isVisible()
         self.perf_label.setVisible(is_visible)
         self.show_toast(f"Performance Overlay {'On' if is_visible else 'Off'}")
+
+    def _set_rating_shortcut(self, key):
+        """Set rating from keyboard shortcut (1-5, 0)."""
+        if key == Qt.Key_0:
+            rating = 0
+        else:
+            rating = int(key.name)
+        self.preview_rating_widget.set_rating(rating)
+        self.editing_controls.set_rating(rating)
+        self._on_rating_changed(rating)
+
+    def _navigate_previous(self):
+        """Navigate to previous image in carousel."""
+        self.carousel_manager.select_previous()
+
+    def _navigate_next(self):
+        """Navigate to next image in carousel."""
+        self.carousel_manager.select_next()

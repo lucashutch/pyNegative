@@ -5,6 +5,7 @@
 - **NO COMMITS TO MAIN** - Always create a feature branch. Never commit directly to the main branch.
 - **Keep commit messages short and concise** - No need for a long explanation.
 - **Keep PR descriptions short and concise** - No need for a long explanation or lots of sections about testing. Just a brief summary of what was done.
+- **Add tests** - Always add tests for new features.
 
 ## Quick Commands (Always use `uv`)
 - **Install**: `uv sync --all-groups`

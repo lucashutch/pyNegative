@@ -107,6 +107,24 @@ class CarouselManager(QtCore.QObject):
                 self.carousel.setCurrentItem(item)
                 break
 
+    def select_previous(self):
+        """Select the previous image in the carousel, wrapping to the end if at the start."""
+        current_row = self.carousel.currentRow()
+        total = self.carousel.count()
+        if total == 0:
+            return
+        new_row = (current_row - 1) % total
+        self.carousel.setCurrentRow(new_row)
+
+    def select_next(self):
+        """Select the next image in the carousel, wrapping to the start if at the end."""
+        current_row = self.carousel.currentRow()
+        total = self.carousel.count()
+        if total == 0:
+            return
+        new_row = (current_row + 1) % total
+        self.carousel.setCurrentRow(new_row)
+
     def clear(self):
         """Clear the carousel."""
         self.carousel.clear()
