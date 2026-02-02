@@ -12,6 +12,9 @@ REPO="lucashutch/pyNegative"
 INSTALL_DIR="$HOME/.local/share/pyNegative"
 VERSION_FILE="$INSTALL_DIR/.version"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_URL="https://raw.githubusercontent.com/lucashutch/pyNegative/main/scripts/download_release.py"
+TIMEOUT=15
+TEMP_SCRIPT="/tmp/download_release.py.$$"
 
 # Detect OS
 OS=""
@@ -80,7 +83,7 @@ show_welcome() {
 	echo "This installer will:"
 	echo "  1. Install uv (Python package manager) if needed"
 	echo "  2. Download latest pyNegative release (or main branch)"
-	echo "  3. Install all dependencies"
+	echo "  3. Install Python dependencies (PySide6, numpy, pillow, etc.)"
 	echo "  4. Create application menu entries"
 	echo ""
 	echo "Installation location: $INSTALL_DIR"
@@ -125,110 +128,50 @@ install_uv() {
 	fi
 }
 
+# Fetch the download script from GitHub
+fetch_download_script() {
+	print_info "\nDownloading installer script..."
+
+	# Clean up temp file on exit
+	trap 'rm -f "$TEMP_SCRIPT"' EXIT
+
+	# Try to download the script from GitHub first
+	if curl -fsSL --max-time "$TIMEOUT" --output "$TEMP_SCRIPT" "$SCRIPT_URL"; then
+		# Validate the download
+		if [ -s "$TEMP_SCRIPT" ] && head -n1 "$TEMP_SCRIPT" | grep -q "^#!/usr/bin/env python3"; then
+			print_success "Installer script downloaded successfully!"
+			return 0
+		else
+			print_error "Downloaded script is invalid or corrupted"
+			return 1
+		fi
+	else
+		# Fallback: try to use local script if available (for development/testing)
+		if [ -f "${SCRIPT_DIR}/download_release.py" ]; then
+			print_warning "Using local installer script (development mode)"
+			cp "${SCRIPT_DIR}/download_release.py" "$TEMP_SCRIPT"
+			if [ -s "$TEMP_SCRIPT" ] && head -n1 "$TEMP_SCRIPT" | grep -q "^#!/usr/bin/env python3"; then
+				print_success "Local installer script prepared successfully!"
+				return 0
+			fi
+		fi
+
+		print_error "Failed to download installer script. Please check your internet connection and try again."
+		return 1
+	fi
+}
+
 # Download and install pyNegative using Python
 download_install() {
 	print_info "\nChecking for latest release..."
 
-	# Python script to handle download and extraction
-	# Uses uv to provide Python
-	uv run --python 3 python3 -c "
-import urllib.request
-import json
-import zipfile
-import io
-import os
-import sys
-import shutil
+	# Fetch the download script first
+	if ! fetch_download_script; then
+		return 1
+	fi
 
-REPO = '$REPO'
-INSTALL_DIR = '$INSTALL_DIR'
-VERSION_FILE = os.path.join(INSTALL_DIR, '.version')
-
-def get_latest_version():
-    try:
-        req = urllib.request.Request(
-            f'https://api.github.com/repos/{REPO}/releases/latest',
-            headers={'User-Agent': 'pyNegative-Installer', 'Accept': 'application/vnd.github.v3+json'}
-        )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            data = json.loads(response.read().decode())
-            return data.get('tag_name', 'main')
-    except Exception as e:
-        print(f'Could not check releases: {e}')
-        return 'main'
-
-def download_and_extract(version, dest_dir):
-    if version == 'main':
-        url = f'https://github.com/{REPO}/archive/refs/heads/main.zip'
-        print(f'Downloading main branch...')
-    else:
-        url = f'https://github.com/{REPO}/archive/refs/tags/{version}.zip'
-        print(f'Downloading {version}...')
-    
-    try:
-        # Download
-        with urllib.request.urlopen(url, timeout=60) as response:
-            zip_data = io.BytesIO(response.read())
-        
-        # Extract
-        temp_extract = dest_dir + '.extracting'
-        if os.path.exists(temp_extract):
-            shutil.rmtree(temp_extract)
-        
-        with zipfile.ZipFile(zip_data, 'r') as zf:
-            zf.extractall(temp_extract)
-        
-        # Find the extracted directory (usually like pyNegative-main/ or pyNegative-v1.0.0/)
-        subdirs = [d for d in os.listdir(temp_extract) if os.path.isdir(os.path.join(temp_extract, d))]
-        if not subdirs:
-            print('Error: No directory found in zip')
-            sys.exit(1)
-        
-        source_dir = os.path.join(temp_extract, subdirs[0])
-        
-        # Remove old install if exists
-        if os.path.exists(dest_dir):
-            print('Removing old installation...')
-            shutil.rmtree(dest_dir)
-        
-        # Move to final location
-        shutil.move(source_dir, dest_dir)
-        shutil.rmtree(temp_extract)
-        
-        # Save version
-        with open(VERSION_FILE, 'w') as f:
-            f.write(version)
-        
-        print(f'Successfully installed {version} to {dest_dir}')
-        return True
-        
-    except Exception as e:
-        print(f'Error downloading: {e}')
-        sys.exit(1)
-
-# Main logic
-latest = get_latest_version()
-current = None
-
-if os.path.exists(VERSION_FILE):
-    try:
-        with open(VERSION_FILE, 'r') as f:
-            current = f.read().strip()
-    except:
-        pass
-
-if current == latest and os.path.exists(os.path.join(INSTALL_DIR, 'pyproject.toml')):
-    print(f'Already on latest version: {latest}')
-    print('Skipping download, updating dependencies only...')
-    sys.exit(2)  # Exit code 2 = already on latest, skip to deps sync
-elif current:
-    print(f'Update available: {current} -> {latest}')
-else:
-    print(f'Installing {latest}...')
-
-download_and_extract(latest, INSTALL_DIR)
-sys.exit(0)
-"
+	# Run the downloaded Python script
+	uv run --python 3 python3 "$TEMP_SCRIPT" --repo "$REPO" --install-dir "$INSTALL_DIR"
 
 	EXIT_CODE=$?
 
@@ -457,6 +400,10 @@ do_install() {
 	if ! install_dependencies false; then
 		exit 1
 	fi
+
+	# Copy installer scripts for future updates
+	mkdir -p "$INSTALL_DIR/scripts"
+	cp "$SCRIPT_DIR/install-pynegative.sh" "$INSTALL_DIR/scripts/" 2>/dev/null || true
 
 	# Create shortcuts
 	create_shortcuts

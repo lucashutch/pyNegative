@@ -4,6 +4,8 @@ Cross-platform installers for pyNegative.
 
 ## Quick Start
 
+**Only ONE file needed to install!**
+
 ### Windows
 1. Download `scripts/install-pynegative.bat`
 2. Double-click it
@@ -14,6 +16,8 @@ curl -fsSL https://raw.githubusercontent.com/lucashutch/pyNegative/main/scripts/
 ```
 
 Or manually download `scripts/install-pynegative.sh` and run: `bash install-pynegative.sh`
+
+> **Note**: The installer automatically downloads any additional components needed during installation. You only need to download the single installer file.
 
 ## Silent Mode
 
@@ -33,9 +37,10 @@ Installations are tracked in a `.version` file - re-running the installer only d
 
 ## Files
 
-- `install-pynegative.bat` - Windows installer
-- `install-pynegative.sh` - macOS/Linux installer  
+- `install-pynegative.bat` - Windows installer (all-in-one)
+- `install-pynegative.sh` - macOS/Linux installer (all-in-one)
 - `generate_icons.py` - Icon generation (run automatically during install)
+- `download_release.py` - Download helper (fetched automatically by installers)
 - `icons/` - Generated icons directory (created during install, in `.gitignore`)
 
 ## Requirements
@@ -44,7 +49,7 @@ Installations are tracked in a `.version` file - re-running the installer only d
 - **macOS:** 10.12+, internet connection  
 - **Linux:** Modern distro with curl/wget, internet connection
 
-No need to install Python or git - the installer handles everything.
+No need to install Python or git - the single installer file handles everything, including downloading additional components automatically.
 
 ## Updating
 
