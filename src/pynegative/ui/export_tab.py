@@ -1,5 +1,7 @@
 from pathlib import Path
 from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QUrl
 from .widgets import ComboBox, ToastWidget, CollapsibleSection
 from .exportgallerymanager import ExportGalleryManager
 from .exportsettingsmanager import ExportSettingsManager
@@ -26,7 +28,7 @@ class ExportWidget(QtWidgets.QWidget):
         self.export_toast = ToastWidget(self, duration=8000)
 
         # Rename preview dialog (created on demand)
-        self._rename_preview_dialog = None
+        self._rename_preview_dialog = RenamePreviewDialog(self)
         self._pending_rename_mapping = None
 
         self._init_ui()
@@ -152,6 +154,11 @@ class ExportWidget(QtWidgets.QWidget):
         # Rename settings
         self._setup_rename_settings()
 
+        # Open folder on complete checkbox
+        self.open_folder_checkbox = QtWidgets.QCheckBox("Open folder when complete")
+        self.open_folder_checkbox.setChecked(False)
+        self.settings_layout.addWidget(self.open_folder_checkbox)
+
         self.settings_layout.addStretch()
 
         # Export button
@@ -232,12 +239,6 @@ class ExportWidget(QtWidgets.QWidget):
         # Create collapsible section (collapsed by default for clean UI)
         self.rename_section = CollapsibleSection("RENAME", expanded=False)
 
-        # Enable checkbox
-        self.rename_enabled_checkbox = QtWidgets.QCheckBox("Enable renaming")
-        self.rename_enabled_checkbox.setChecked(False)
-        self.rename_enabled_checkbox.toggled.connect(self._on_rename_toggled)
-        self.rename_section.add_widget(self.rename_enabled_checkbox)
-
         # Form layout for settings
         rename_form_widget = QtWidgets.QWidget()
         rename_form_layout = QtWidgets.QFormLayout(rename_form_widget)
@@ -288,6 +289,9 @@ class ExportWidget(QtWidgets.QWidget):
 
         self.settings_layout.addWidget(self.rename_section)
 
+        # Connect panel expansion to auto-enable/disable
+        self.rename_section.header.clicked.connect(self._on_rename_panel_expanded)
+
     def _connect_components(self):
         """Connect signals between components."""
         # Gallery manager signals
@@ -330,7 +334,6 @@ class ExportWidget(QtWidgets.QWidget):
         )
 
         # Rename settings connections
-        self.rename_enabled_checkbox.toggled.connect(self._on_rename_toggled)
         self.rename_pattern_combo.currentTextChanged.connect(
             lambda text: self.rename_settings_manager.update_setting("pattern", text)
         )
@@ -339,6 +342,13 @@ class ExportWidget(QtWidgets.QWidget):
         )
         self.rename_start_seq.valueChanged.connect(
             lambda val: self.rename_settings_manager.update_setting("start_seq", val)
+        )
+
+        # Open folder checkbox connection
+        self.open_folder_checkbox.stateChanged.connect(
+            lambda state: self.settings_manager.update_setting(
+                "open_folder_on_complete", state == QtCore.Qt.CheckState.Checked.value
+            )
         )
 
     def _load_initial_settings(self):
@@ -355,6 +365,12 @@ class ExportWidget(QtWidgets.QWidget):
 
         # Initial format display
         self._on_format_changed(self.format_combo.currentIndex())
+
+        # Load open folder on complete setting
+        current_settings = self.settings_manager.get_current_settings()
+        self.open_folder_checkbox.setChecked(
+            current_settings.get("open_folder_on_complete", False)
+        )
 
     # Slot handlers
 
@@ -437,6 +453,14 @@ class ExportWidget(QtWidgets.QWidget):
             self._export_destination = Path(folder)
             self._update_destination_display()
 
+    def _open_export_folder(self):
+        """Open the export destination folder in system file explorer."""
+        if not self._export_destination:
+            return
+
+        path = str(self._export_destination)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
     def _on_export_completed(self, success_count, skipped_count, total_count):
         """Handle export batch completion."""
         self.export_button.setEnabled(True)
@@ -445,6 +469,12 @@ class ExportWidget(QtWidgets.QWidget):
         msg = f"Export finished: {success_count} of {total_count} files exported successfully."
         if skipped_count > 0:
             msg += f" ({skipped_count} skipped due to conflicts)"
+
+        # NEW: Open folder if setting is enabled
+        if self.settings_manager.get_current_settings().get(
+            "open_folder_on_complete", False
+        ):
+            self._open_export_folder()
 
         self.export_toast.show_message(msg)
 
@@ -456,74 +486,49 @@ class ExportWidget(QtWidgets.QWidget):
             self, "Export error", f"An error occurred during export:\n{error}"
         )
 
-    def _on_rename_toggled(self, enabled):
-        """Handle rename enable toggle."""
-        self.rename_settings_manager.set_enabled(enabled)
-        self.settings_manager.set_rename_enabled(enabled)
+    def _on_rename_panel_expanded(self, expanded):
+        """Auto-enable/disable renaming when panel is expanded/collapsed."""
+        self.rename_settings_manager.set_enabled(expanded)
+        self.settings_manager.set_rename_enabled(expanded)
 
-        # Enable/disable the form based on checkbox state
-        self.rename_form_widget.setEnabled(enabled)
+        # Enable/disable the form based on panel expansion state
+        self.rename_form_widget.setEnabled(expanded)
 
-        # Clear any previous rename mapping when disabled
-        if not enabled:
+        # Clear any previous rename mapping when collapsed
+        if not expanded:
             self._pending_rename_mapping = None
             self.rename_conflict_label.hide()
 
     def _show_rename_preview(self):
-        """Show rename preview dialog."""
+        """Show the rename preview dialog and return True if confirmed."""
+        # Get selected files from gallery
         files = self.gallery_manager.get_selected_paths()
         if not files:
-            QtWidgets.QMessageBox.warning(
-                self, "No files selected", "Please select at least one file to preview."
-            )
-            return
+            return False
 
-        # Validate settings
-        errors = self.rename_settings_manager.validate_settings()
-        if errors:
-            QtWidgets.QMessageBox.warning(
-                self, "Invalid Rename Settings", "\n".join(errors)
-            )
-            return
+        # Get current rename settings from UI controls
+        pattern_name = self.rename_pattern_combo.currentText()
+        prefix = self.rename_prefix_input.text()
+        start_seq = self.rename_start_seq.value()
+        destination = (
+            self._export_destination if self._export_destination else Path.home()
+        )
+        format_ext = self._get_format_extension()
 
-        # Get current rename settings
-        settings = self.rename_settings_manager.get_current_settings()
-        pattern = settings.get("pattern", "Prefix + Date + Sequence")
-        prefix = settings.get("prefix", "")
-        start_seq = settings.get("start_seq", 1)
-
-        # Get format extension
-        format_name = self.format_combo.currentText()
-        format_ext = "jpg" if format_name == "JPEG" else "heic"
-
-        # Generate preview
+        # Generate preview data
+        files_as_paths = [Path(f) for f in files]
         preview_data = self.rename_settings_manager.generate_preview(
-            [Path(f) for f in files],
-            pattern,
-            prefix,
-            start_seq,
-            self._export_destination or Path("."),
-            format_ext,
+            files_as_paths, pattern_name, prefix, start_seq, destination, format_ext
         )
 
-        # Count conflicts
-        conflicts = sum(1 for _, _, warning in preview_data if warning)
-        if conflicts > 0:
-            self.rename_conflict_label.setText(f"⚠️ {conflicts} file(s) will be skipped")
-            self.rename_conflict_label.show()
-        else:
-            self.rename_conflict_label.hide()
-
-        # Show preview dialog
-        if not self._rename_preview_dialog:
-            self._rename_preview_dialog = RenamePreviewDialog(self)
-
+        # Set up the preview dialog with data
         self._rename_preview_dialog.set_preview_data(preview_data)
 
-        if self._rename_preview_dialog.exec() == QtWidgets.QDialog.Accepted:
-            # Store the rename mapping for use during export
+        # Show the dialog and wait for user response
+        if self._rename_preview_dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            # User clicked OK, store the rename mapping for use during export
             self._pending_rename_mapping = (
-                self._rename_preview_dialog.get_rename_mapping([Path(f) for f in files])
+                self._rename_preview_dialog.get_rename_mapping(files_as_paths)
             )
             return True
         else:
