@@ -13,7 +13,6 @@ class EditingControls(QtWidgets.QWidget):
     ratingChanged = QtCore.Signal(int)
     presetApplied = QtCore.Signal(str)
     autoWbRequested = QtCore.Signal()
-    saveRequested = QtCore.Signal()
     histogramModeChanged = QtCore.Signal(str)
 
     def __init__(self, parent=None):
@@ -273,14 +272,6 @@ class EditingControls(QtWidgets.QWidget):
             self.details_section,
         )
 
-        # Save Button
-        self.controls_layout.addSpacing(10)
-        self.btn_save = QtWidgets.QPushButton("Save Result")
-        self.btn_save.setObjectName("SaveButton")
-        self.btn_save.clicked.connect(self.saveRequested.emit)
-        self.btn_save.setEnabled(False)
-        self.controls_layout.addWidget(self.btn_save)
-
         self.controls_layout.addStretch()
 
     def _add_slider(
@@ -386,8 +377,8 @@ class EditingControls(QtWidgets.QWidget):
         self.star_rating_widget.set_rating(rating)
 
     def set_save_enabled(self, enabled):
-        """Enable or disable the save button."""
-        self.btn_save.setEnabled(enabled)
+        """No-op as save button is removed."""
+        pass
 
     def _on_rating_changed(self, rating):
         """Handle rating change."""
