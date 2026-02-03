@@ -7,6 +7,11 @@ class RenamePreviewDialog(QtWidgets.QDialog):
     """Modal dialog showing preview of file rename operations."""
 
     def __init__(self, parent=None):
+        """Initialize the dialog UI.
+
+        Args:
+            parent: Parent widget
+        """
         super().__init__(parent)
         self.setWindowTitle("Rename Preview")
         self.setModal(True)
@@ -70,16 +75,10 @@ class RenamePreviewDialog(QtWidgets.QDialog):
         self.conflict_label.setStyleSheet("color: #e74c3c;")
         layout.addWidget(self.conflict_label)
 
-        # Button box
+        # Button box - only OK and Cancel buttons
         button_box = QtWidgets.QDialogButtonBox()
-        self.export_button = button_box.addButton(
-            "Export with These Names", QtWidgets.QDialogButtonBox.AcceptRole
-        )
+        button_box.addButton(QtWidgets.QDialogButtonBox.Ok)
         button_box.addButton(QtWidgets.QDialogButtonBox.Cancel)
-
-        # Style the export button as primary
-        self.export_button.setObjectName("SaveButton")
-        self.export_button.setEnabled(False)  # Disabled until we have data
 
         button_box.accepted.connect(self._on_accept)
         button_box.rejected.connect(self.reject)
@@ -95,7 +94,6 @@ class RenamePreviewDialog(QtWidgets.QDialog):
         self._preview_data = preview_data
         self._populate_table()
         self._update_summary()
-        self.export_button.setEnabled(True)
 
     def _populate_table(self):
         """Populate the table with preview data."""

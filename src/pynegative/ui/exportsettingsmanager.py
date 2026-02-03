@@ -16,6 +16,10 @@ class ExportSettingsManager(QtCore.QObject):
         self.settings = QtCore.QSettings("pyNegative", "Export")
         self._current_settings = self._get_default_settings()
         self._custom_destination = ""
+        # Load persisted open_folder_on_complete setting
+        self._current_settings["open_folder_on_complete"] = self.settings.value(
+            "open_folder_on_complete", False, type=bool
+        )
 
     def _get_default_settings(self):
         """Get default export settings."""
@@ -30,6 +34,7 @@ class ExportSettingsManager(QtCore.QObject):
             "rename_pattern": "Prefix + Date + Sequence",
             "rename_prefix": "",
             "rename_start_seq": 1,
+            "open_folder_on_complete": False,
         }
 
     def get_current_settings(self):
@@ -40,6 +45,8 @@ class ExportSettingsManager(QtCore.QObject):
         """Update a single setting value."""
         if key in self._current_settings:
             self._current_settings[key] = value
+            if key == "open_folder_on_complete":
+                self.settings.setValue(key, value)
             self.settingsChanged.emit(self._current_settings)
 
     def update_settings(self, settings_dict):

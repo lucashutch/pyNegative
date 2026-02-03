@@ -7,6 +7,7 @@
 - **Keep PR descriptions short and concise** - No need for a long explanation or lots of sections about testing. Just a brief summary of what was done.
 - **Add tests** - Always add tests for new features.
 - **dont use fix commits** ammend commits instead where possible
+- **Ask questions, dont make assumptions** - Always ask questions instead of making assumptions
 
 ## Quick Commands (Always use `uv`)
 - **Install**: `uv sync --all-groups`
@@ -45,7 +46,7 @@
 ## Documentation Reference
 - `README.md`: User-facing features and installation.
 - `CONTRIBUTING.md`: Developer environment setup and contribution guide.
-- `TODO.md`: Feature roadmap and testing improvement areas.
+- `TODO.md`: Feature roadmap and testing improvement areas. When a feature is complete remove it from this file and update the readme accordingly if the feature is user facing and worth mentioning.
 - `AGENTS.md`: This file (AI agent guidelines).
 - `plan.md`: Technical implementation plans (Internal dev use).
 
