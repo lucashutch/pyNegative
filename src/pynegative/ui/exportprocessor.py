@@ -1,5 +1,4 @@
 from pathlib import Path
-import os
 from PIL import Image
 from PySide6 import QtCore
 import pillow_heif
@@ -132,16 +131,16 @@ class ExportProcessor(QtCore.QRunnable):
             "success" if saved, "skipped" if file already exists.
         """
         quality = self.settings.get("jpeg_quality", 90)
-        dest_path = os.path.join(self.destination_folder, f"{file_name}.jpg")
+        dest_path = Path(self.destination_folder) / f"{file_name}.jpg"
 
         # Check if file already exists
-        if os.path.exists(dest_path):
+        if dest_path.exists():
             self.signals.fileSkipped.emit(
                 str(dest_path), f"{file_name}.jpg", "File already exists"
             )
             return "skipped"
 
-        pil_img.save(dest_path, quality=quality)
+        pil_img.save(str(dest_path), quality=quality)
         return "success"
 
     def _save_heif(self, pil_img, file_name):
@@ -152,10 +151,10 @@ class ExportProcessor(QtCore.QRunnable):
         """
         quality = self.settings.get("heif_quality", 90)
         bit_depth_str = self.settings.get("heif_bit_depth", "8-bit")
-        dest_path = os.path.join(self.destination_folder, f"{file_name}.heic")
+        dest_path = Path(self.destination_folder) / f"{file_name}.heic"
 
         # Check if file already exists
-        if os.path.exists(dest_path):
+        if dest_path.exists():
             self.signals.fileSkipped.emit(
                 str(dest_path), f"{file_name}.heic", "File already exists"
             )
@@ -165,15 +164,15 @@ class ExportProcessor(QtCore.QRunnable):
             original_setting = pillow_heif.options.SAVE_HDR_TO_12_BIT
             pillow_heif.options.SAVE_HDR_TO_12_BIT = True
             try:
-                pil_img.save(dest_path, format="HEIF", quality=quality)
+                pil_img.save(str(dest_path), format="HEIF", quality=quality)
             finally:
                 pillow_heif.options.SAVE_HDR_TO_12_BIT = original_setting
         elif bit_depth_str == "10-bit":
             # 16-bit images are saved as 10-bit by default
-            pil_img.save(dest_path, format="HEIF", quality=quality)
+            pil_img.save(str(dest_path), format="HEIF", quality=quality)
         else:
             # 8-bit
-            pil_img.save(dest_path, format="HEIF", quality=quality)
+            pil_img.save(str(dest_path), format="HEIF", quality=quality)
 
         return "success"
 

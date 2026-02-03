@@ -5,7 +5,7 @@ Resizes the main icon to various sizes needed for different platforms.
 """
 
 from PIL import Image
-import os
+from pathlib import Path
 import sys
 
 
@@ -13,12 +13,12 @@ def generate_icons():
     """Generate all required icon formats from the main icon."""
 
     # Paths
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    source_icon = os.path.join(base_dir, "pynegative_icon.png")
-    icons_dir = os.path.join(base_dir, "scripts", "icons")
+    base_dir = Path(__file__).resolve().parent.parent
+    source_icon = base_dir / "pynegative_icon.png"
+    icons_dir = base_dir / "scripts" / "icons"
 
     # Ensure icons directory exists
-    os.makedirs(icons_dir, exist_ok=True)
+    icons_dir.mkdir(parents=True, exist_ok=True)
 
     print("Loading source icon...")
     try:
@@ -34,8 +34,8 @@ def generate_icons():
     # Generate 256x256 PNG (used by Linux and general purpose)
     print("Generating 256x256 PNG...")
     img_256 = img.resize((256, 256), Image.Resampling.LANCZOS)
-    png_path = os.path.join(icons_dir, "pynegative_256.png")
-    img_256.save(png_path, "PNG")
+    png_path = icons_dir / "pynegative_256.png"
+    img_256.save(str(png_path), "PNG")
     print(f"  Saved: {png_path}")
 
     # Generate Windows ICO file (multi-resolution)
@@ -47,10 +47,10 @@ def generate_icons():
         resized = img.resize((size, size), Image.Resampling.LANCZOS)
         ico_images.append(resized)
 
-    ico_path = os.path.join(icons_dir, "pynegative.ico")
+    ico_path = icons_dir / "pynegative.ico"
     # Save with the largest image first, then the rest
     ico_images[-1].save(
-        ico_path,
+        str(ico_path),
         format="ICO",
         sizes=[(s, s) for s in sizes],
         append_images=ico_images[:-1],
@@ -65,22 +65,22 @@ def generate_icons():
     # PIL doesn't directly support ICNS, so we'll use iconutil on macOS
     # or create a directory structure that can be converted
 
-    icns_dir = os.path.join(icons_dir, "pynegative.iconset")
-    os.makedirs(icns_dir, exist_ok=True)
+    icns_dir = icons_dir / "pynegative.iconset"
+    icns_dir.mkdir(parents=True, exist_ok=True)
 
     for size in mac_sizes:
         # Normal resolution
         resized = img.resize((size, size), Image.Resampling.LANCZOS)
         icon_name = f"icon_{size}x{size}.png"
-        icon_path = os.path.join(icns_dir, icon_name)
-        resized.save(icon_path, "PNG")
+        icon_path = icns_dir / icon_name
+        resized.save(str(icon_path), "PNG")
 
         # High resolution (@2x) for sizes <= 512
         if size <= 512:
             resized_2x = img.resize((size * 2, size * 2), Image.Resampling.LANCZOS)
             icon_name_2x = f"icon_{size}x{size}@2x.png"
-            icon_path_2x = os.path.join(icns_dir, icon_name_2x)
-            resized_2x.save(icon_path_2x, "PNG")
+            icon_path_2x = icns_dir / icon_name_2x
+            resized_2x.save(str(icon_path_2x), "PNG")
 
     print(f"  Created iconset directory: {icns_dir}")
     print("  To create .icns file on macOS, run:")
@@ -92,9 +92,9 @@ def generate_icons():
         try:
             import subprocess
 
-            icns_path = os.path.join(icons_dir, "pynegative.icns")
+            icns_path = icons_dir / "pynegative.icns"
             result = subprocess.run(
-                ["iconutil", "-c", "icns", icns_dir, "-o", icns_path],
+                ["iconutil", "-c", "icns", str(icns_dir), "-o", str(icns_path)],
                 capture_output=True,
                 text=True,
             )

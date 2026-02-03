@@ -7,10 +7,14 @@ This document tracks planned features, project goals, and areas for technical im
 - [x] **Add support for more image formats** (RAW: .arw, .nef, .raf, etc. | Standard: .jpg, .png, .webp, .tiff)
 - [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
 - [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
-- [ ] **fix test warnings**: fix test warnings in all unit tests
-- [ ] **remove use of os.path** move to favour pathlib
+- [x] **remove use of os.path** move to favour pathlib
 - [ ] **General code cleanup** analyse the codebase to look for redundant, duplicate or unused code. and clean it up
 - [ ] **Performance optimisation**: Analyse the codebase for potential performance optimisations. looks for quick wins in favour of larger more specific overhauls
+
+## Bugs
+
+- [ ] **fix test warnings**: fix test warnings in all unit tests
+
 
 ## Testing Improvement Areas
 

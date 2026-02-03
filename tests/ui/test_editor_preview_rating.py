@@ -1,13 +1,11 @@
 from unittest.mock import MagicMock, patch
 from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtCore import Qt
+from pathlib import Path
 
 import sys
-import os
 
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 
 class TestPreviewStarRatingWidget:

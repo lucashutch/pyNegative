@@ -3,7 +3,6 @@
 
 import io
 import json
-import os
 import sys
 import zipfile
 from pathlib import Path
@@ -97,8 +96,8 @@ class TestDownloadAndExtract:
                 result = download_and_extract("main", dest_dir, repo, verbose=False)
 
         assert result is True
-        assert os.path.exists(dest_dir)
-        assert os.path.exists(os.path.join(dest_dir, "README.md"))
+        assert Path(dest_dir).exists()
+        assert (Path(dest_dir) / "README.md").exists()
 
     def test_download_release_success(self, tmp_path):
         """Test downloading and extracting a release."""
@@ -136,7 +135,7 @@ class TestDownloadAndExtract:
         repo = "owner/repo"
 
         # Create existing installation
-        os.makedirs(dest_dir)
+        Path(dest_dir).mkdir()
         (tmp_path / "install" / "old_file.txt").write_text("old")
 
         # Create a mock zip file
@@ -153,8 +152,8 @@ class TestDownloadAndExtract:
                 result = download_and_extract("v1.0.0", dest_dir, repo, verbose=False)
 
         assert result is True
-        assert not os.path.exists(os.path.join(dest_dir, "old_file.txt"))
-        assert os.path.exists(os.path.join(dest_dir, "README.md"))
+        assert not (Path(dest_dir) / "old_file.txt").exists()
+        assert (Path(dest_dir) / "README.md").exists()
 
     def test_empty_zip_error(self, tmp_path):
         """Test handling of empty zip file."""
@@ -280,7 +279,7 @@ class TestVersionFileManagement:
         loaded = load_version(install_dir)
 
         assert loaded == version
-        assert os.path.exists(install_dir)
+        assert Path(install_dir).exists()
 
     def test_load_version_file_not_exists(self, tmp_path):
         """Test loading version when file doesn't exist."""
@@ -296,10 +295,10 @@ class TestVersionFileManagement:
         version_file.write_text("v1.0.0")
 
         # Make file unreadable (on Unix systems)
-        if os.name != "nt":
-            os.chmod(version_file, 0o000)
+        if sys.platform != "win32":
+            version_file.chmod(0o000)
             result = load_version(install_dir)
-            os.chmod(version_file, 0o644)  # Restore permissions
+            version_file.chmod(0o644)  # Restore permissions
             assert result is None
 
 
@@ -328,7 +327,7 @@ class TestMain:
         repo = "owner/repo"
 
         # Setup existing installation
-        os.makedirs(install_dir)
+        Path(install_dir).mkdir()
         (tmp_path / "install" / "pyproject.toml").write_text("[project]")
         save_version("v1.0.0", install_dir)
 
@@ -489,7 +488,7 @@ class TestIntegration:
 
                 assert result == 0
                 assert load_version(install_dir) == "v1.5.0"
-                assert os.path.exists(os.path.join(install_dir, "README.md"))
+                assert (Path(install_dir) / "README.md").exists()
 
                 # Second call - should detect already on latest
                 with patch(
@@ -515,7 +514,7 @@ class TestIntegration:
         repo = "owner/repo"
 
         # Setup existing v1.0.0 installation
-        os.makedirs(install_dir)
+        Path(install_dir).mkdir()
         (tmp_path / "install" / "pyproject.toml").write_text("[project]")
         save_version("v1.0.0", install_dir)
 
