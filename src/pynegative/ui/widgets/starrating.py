@@ -10,6 +10,7 @@ class StarRatingWidget(QtWidgets.QWidget):
         self._rating = 0
         self.star_filled_pixmap = self._create_star_pixmap(True)
         self.star_empty_pixmap = self._create_star_pixmap(False)
+        self.setFixedHeight(24)
         self.setMouseTracking(True)
         self._hover_rating = -1
 
@@ -46,6 +47,9 @@ class StarRatingWidget(QtWidgets.QWidget):
         return QtCore.QSize(
             self.star_empty_pixmap.width() * 5 + 4 * 4, self.star_empty_pixmap.height()
         )
+
+    def minimumSizeHint(self):
+        return self.sizeHint()
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)

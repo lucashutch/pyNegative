@@ -4,8 +4,8 @@ This document tracks planned features, project goals, and areas for technical im
 
 ## Roadmap / TODO
 
-- [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
-- [ ] **White Balance Control**: Add Temperature and Tint sliders for color correction.
+ - [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
+- [ ] **Kelvin White Balance**: Map relative temperature to absolute Kelvin values based on RAW metadata.
 - [ ] **Geometric Tools**: Implement cropping and straightening/rotation.
 - [ ] **User Presets**: Allow saving and applying named adjustment presets.
 - [ ] **Copy/Paste Settings**: Quickly sync adjustments across multiple images.

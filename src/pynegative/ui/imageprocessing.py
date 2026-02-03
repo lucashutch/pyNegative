@@ -70,6 +70,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
             for k, v in self.settings.items()
             if k
             in [
+                "temperature",
+                "tint",
                 "exposure",
                 "contrast",
                 "blacks",

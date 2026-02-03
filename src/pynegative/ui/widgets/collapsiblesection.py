@@ -22,6 +22,7 @@ class CollapsibleSection(QtWidgets.QWidget):
 
         # Content Area
         self.content = QtWidgets.QWidget()
+        self.content.setObjectName("SectionContent")
         self.content_layout = QtWidgets.QVBoxLayout(self.content)
         self.content_layout.setContentsMargins(4, 5, 4, 5)
         self.content_layout.setSpacing(2)
@@ -40,3 +41,9 @@ class CollapsibleSection(QtWidgets.QWidget):
 
     def add_widget(self, widget):
         self.content_layout.addWidget(widget)
+
+    def minimumSizeHint(self):
+        hint = self.header.sizeHint()
+        if self.header.isChecked():
+            hint.setHeight(hint.height() + self.content.minimumSizeHint().height())
+        return hint

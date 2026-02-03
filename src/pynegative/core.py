@@ -41,12 +41,32 @@ def apply_tone_map(
     shadows=0.0,
     highlights=0.0,
     saturation=1.0,
+    temperature=0.0,
+    tint=0.0,
 ):
     """
-    Applies Exposure -> Levels -> Tone EQ -> Saturation -> Base Curve
+    Applies White Balance -> Exposure -> Levels -> Tone EQ -> Saturation -> Base Curve
     """
     img = img.copy()  # Ensure we don't modify the input array in-place
     total_pixels = img.size
+
+    # 0. White Balance (Relative Scaling)
+    # We use a logarithmic scaling for Temperature and Tint.
+    # Temperature: Warm (+) increases Red, cool (-) increases Blue.
+    # Tint: Green (+) increases Green, Magenta (-) increases Red/Blue.
+    if temperature != 0.0 or tint != 0.0:
+        # Scale factors to keep adjustments subtle
+        t_scale = 0.4
+        tint_scale = 0.2
+
+        # Calculate channel multipliers
+        r_mult = np.exp(temperature * t_scale - tint * (tint_scale / 2))
+        g_mult = np.exp(tint * tint_scale)
+        b_mult = np.exp(-temperature * t_scale - tint * (tint_scale / 2))
+
+        img[:, :, 0] *= r_mult
+        img[:, :, 1] *= g_mult
+        img[:, :, 2] *= b_mult
 
     # 1. Exposure (2^stops)
     if exposure != 0.0:
@@ -136,6 +156,52 @@ def calculate_auto_exposure(img):
         "highlights": 0.0,
         "shadows": 0.0,
         "saturation": 1.10,  # 10% Saturation boost (Standard Profile)
+    }
+
+
+def calculate_auto_wb(img):
+    """
+    Calculates relative temperature and tint to neutralize the image (Gray World).
+    """
+    # Calculate channel means
+    r_avg = np.mean(img[:, :, 0])
+    g_avg = np.mean(img[:, :, 1])
+    b_avg = np.mean(img[:, :, 2])
+
+    # Avoid division by zero
+    if r_avg < 1e-6:
+        r_avg = 1e-6
+    if g_avg < 1e-6:
+        g_avg = 1e-6
+    if b_avg < 1e-6:
+        b_avg = 1e-6
+
+    # Log space calculation for relative offsets
+    # target_g = (r_avg * r_mult + g_avg * g_mult + b_avg * b_mult) / 3
+
+    # Simple Gray World: find multipliers to make R=G=B
+    # In our model:
+    # r_mult = exp(temp * 0.4 - tint * 0.1)
+    # g_mult = exp(tint * 0.2)
+    # b_mult = exp(-temp * 0.4 - tint * 0.1)
+
+    # log(g_mult) = tint * 0.2  => tint = log(g_mult) / 0.2
+    # log(r_mult/b_mult) = 0.8 * temp => temp = log(r_mult/b_mult) / 0.8
+
+    # Target: make R = G = B
+    # log(r) + temp * 0.4 - tint * 0.1 = log(g) + tint * 0.2
+    # log(b) - temp * 0.4 - tint * 0.1 = log(g) + tint * 0.2
+
+    # temp * 0.8 = log(b/r)
+    # tint * 0.6 = log(r*b / g^2)
+
+    temp = np.log(b_avg / r_avg) / 0.8
+    tint = np.log((r_avg * b_avg) / (g_avg**2)) / 0.6
+
+    # Clamp to slider range
+    return {
+        "temperature": float(np.clip(temp, -1.0, 1.0)),
+        "tint": float(np.clip(tint, -1.0, 1.0)),
     }
 
 
