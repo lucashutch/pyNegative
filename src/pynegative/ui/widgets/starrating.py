@@ -71,9 +71,9 @@ class StarRatingWidget(QtWidgets.QWidget):
         star_full_width = self.star_empty_pixmap.width() + 4  # Star width + spacing
 
         # Calculate which star is being hovered over
-        # Check if event.x() is within the bounds of the 5 stars
-        if 0 <= event.x() < (5 * star_full_width):
-            hovered_star_index = int(event.x() / star_full_width)
+        # Check if event.position().x() is within the bounds of the 5 stars
+        if 0 <= event.position().x() < (5 * star_full_width):
+            hovered_star_index = int(event.position().x() / star_full_width)
             self._hover_rating = hovered_star_index + 1
         else:
             self._hover_rating = -1  # Outside the star area

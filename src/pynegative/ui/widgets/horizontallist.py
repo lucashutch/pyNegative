@@ -42,7 +42,7 @@ class HorizontalListWidget(QtWidgets.QListWidget):
 
     def mousePressEvent(self, event):
         """Handle mouse press with multi-selection support."""
-        item = self.itemAt(event.pos())
+        item = self.itemAt(event.position().toPoint())
 
         if item:
             item_rect = self.visualItemRect(item)
@@ -50,7 +50,9 @@ class HorizontalListWidget(QtWidgets.QListWidget):
             # Check if click is on the selection circle
             delegate = self.itemDelegate()
             if hasattr(delegate, "is_click_on_circle"):
-                is_circle_click = delegate.is_click_on_circle(event.pos(), item_rect)
+                is_circle_click = delegate.is_click_on_circle(
+                    event.position().toPoint(), item_rect
+                )
 
                 if is_circle_click:
                     # Toggle selection via circle click
