@@ -4,6 +4,7 @@ This document tracks planned features, project goals, and areas for technical im
 
 ## Roadmap / TODO
 
+- [x] **Add support for more image formats** (RAW: .arw, .nef, .raf, etc. | Standard: .jpg, .png, .webp, .tiff)
 - [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
 - [ ] **Live Histogram**: Real-time luminance histogram display in the UI.
 - [ ] **fix test warnings**: fix test warnings in all unit tests
