@@ -1,6 +1,4 @@
 from pathlib import Path
-import numpy as np
-from PIL import Image
 from functools import partial
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
@@ -19,6 +17,7 @@ class PreviewStarRatingWidget(StarRatingWidget):
 
     def _create_star_pixmap(self, filled):
         size = 30
+        self.setFixedHeight(size)
         pixmap = QtGui.QPixmap(size, size)
         pixmap.fill(QtCore.Qt.transparent)
         painter = QtGui.QPainter(pixmap)
@@ -170,7 +169,7 @@ class EditorWidget(QtWidgets.QWidget):
         # Editing controls -> Image processor
         self.editing_controls.settingChanged.connect(self._on_setting_changed)
         self.editing_controls.ratingChanged.connect(self._on_rating_changed)
-        self.editing_controls.saveRequested.connect(self.save_file)
+        self.editing_controls.autoWbRequested.connect(self._on_auto_wb_requested)
         self.editing_controls.presetApplied.connect(self._on_preset_applied)
 
         # Histogram logic
@@ -268,7 +267,6 @@ class EditorWidget(QtWidgets.QWidget):
         self.setWindowTitle("Editor")
         self.editing_controls.reset_sliders()
         self.editing_controls.set_rating(0)
-        self.editing_controls.set_save_enabled(False)
         self.view.reset_zoom()
         self.view.set_pixmaps(QtGui.QPixmap(), 0, 0)
         self.carousel_manager.clear()
@@ -287,74 +285,9 @@ class EditorWidget(QtWidgets.QWidget):
 
         QtWidgets.QApplication.processEvents()
 
-        self.editing_controls.set_save_enabled(False)  # Disable save until full load
-
         loader = RawLoader(path)
         loader.signals.finished.connect(self._on_raw_loaded)
         self.thread_pool.start(loader)
-
-    def save_file(self):
-        """Save the current image."""
-        if not self.image_processor.base_img_full:
-            return
-
-        input_dir = self.raw_path.parent
-        default_name = self.raw_path.with_suffix(".jpg").name
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self.window(),
-            "Save",
-            str(input_dir / default_name),
-            "JPEG (*.jpg);;HEIF (*.heic)",
-            options=QtWidgets.QFileDialog.Option.DontUseNativeDialog,
-        )
-
-        if path:
-            path = Path(path)
-            try:
-                # RELOAD FULL RESOLUTION FOR SAVING
-                self.show_toast("Processing Full Resolution...")
-                QtWidgets.QApplication.processEvents()
-
-                # Explicitly request full size (half_size=False)
-                full_img = pynegative.open_raw(self.raw_path, half_size=False)
-
-                # Get current settings from image processor
-                settings = self.image_processor.get_current_settings()
-
-                # Process full resolution with current settings
-                img, _ = pynegative.apply_tone_map(
-                    full_img,
-                    exposure=settings["exposure"],
-                    contrast=settings["contrast"],
-                    blacks=settings["blacks"],
-                    whites=settings["whites"],
-                    shadows=settings["shadows"],
-                    highlights=settings["highlights"],
-                    saturation=settings["saturation"],
-                )
-                pil_img = Image.fromarray((img * 255).astype(np.uint8))
-
-                if settings["sharpen_value"] > 0:
-                    pil_img = pynegative.sharpen_image(
-                        pil_img,
-                        settings["sharpen_radius"],
-                        settings["sharpen_percent"],
-                        method="High Quality",
-                    )
-
-                if settings["de_noise"] > 0:
-                    pil_img = pynegative.de_noise_image(
-                        pil_img, settings["de_noise"], method="High Quality"
-                    )
-
-                pynegative.save_image(pil_img, path)
-
-                QtWidgets.QMessageBox.information(
-                    self, "Saved", f"Saved full resolution to {path}"
-                )
-            except Exception as e:
-                QtWidgets.QMessageBox.critical(self, "Error", str(e))
-                self.show_toast("Error saving")
 
     def load_carousel_folder(self, folder):
         """Load a folder of images into the carousel."""
@@ -416,6 +349,32 @@ class EditorWidget(QtWidgets.QWidget):
                 self.image_processor.get_current_settings(),
             )
 
+    def _on_auto_wb_requested(self):
+        """Handle auto white balance request."""
+        if self.image_processor.base_img_preview is None:
+            return
+
+        # Calculate Auto WB using current preview
+        wb_settings = pynegative.calculate_auto_wb(
+            self.image_processor.base_img_preview
+        )
+
+        # Apply to UI
+        self.editing_controls.set_slider_value(
+            "val_temperature", wb_settings["temperature"]
+        )
+        self.editing_controls.set_slider_value("val_tint", wb_settings["tint"])
+
+        # Update processor
+        self.image_processor.set_processing_params(**wb_settings)
+        self._request_update_from_view()
+        self.save_timer.start(1000)
+
+        # Push undo state
+        self.settings_manager.push_immediate_undo_state(
+            "Auto White Balance", self.image_processor.get_current_settings()
+        )
+
     def _on_preview_rating_changed(self, rating):
         """Handle rating change from preview widget."""
         self.editing_controls.set_rating(rating)
@@ -460,6 +419,8 @@ class EditorWidget(QtWidgets.QWidget):
 
             # Apply settings to image processor
             self.image_processor.set_processing_params(
+                temperature=settings.get("temperature", 0.0),
+                tint=settings.get("tint", 0.0),
                 exposure=settings.get("exposure", 0.0),
                 contrast=settings.get("contrast", 1.0),
                 whites=settings.get("whites", 1.0),
@@ -492,7 +453,6 @@ class EditorWidget(QtWidgets.QWidget):
 
         # Set image and trigger update
         self.image_processor.set_image(img_arr)
-        self.editing_controls.set_save_enabled(True)
         self._request_update_from_view()
 
         # Request a fit once the UI settles

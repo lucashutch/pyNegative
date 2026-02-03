@@ -12,13 +12,15 @@ class EditingControls(QtWidgets.QWidget):
     settingChanged = QtCore.Signal(str, object)  # setting_name, value
     ratingChanged = QtCore.Signal(int)
     presetApplied = QtCore.Signal(str)
-    saveRequested = QtCore.Signal()
+    autoWbRequested = QtCore.Signal()
     histogramModeChanged = QtCore.Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
         # Processing parameter values
+        self.val_temperature = 0.0
+        self.val_tint = 0.0
         self.val_exposure = 0.0
         self.val_contrast = 1.0
         self.val_whites = 1.0
@@ -149,9 +151,64 @@ class EditingControls(QtWidgets.QWidget):
         )
 
         # --- Color Section ---
-        self.color_section = CollapsibleSection("COLOR", expanded=False)
+        self.color_section = CollapsibleSection("COLOR", expanded=True)
         self.controls_layout.addWidget(self.color_section)
 
+        # WB Buttons
+        wb_btn_widget = QtWidgets.QWidget()
+        wb_btn_layout = QtWidgets.QHBoxLayout(wb_btn_widget)
+        wb_btn_layout.setContentsMargins(0, 0, 0, 5)
+        wb_btn_layout.setSpacing(8)  # Increase spacing slightly
+
+        wb_btn_layout.addStretch()  # Spacer left
+
+        self.btn_auto_wb = QtWidgets.QPushButton("Auto")
+        self.btn_auto_wb.setStyleSheet("""
+            QPushButton {
+                min-height: 18px;
+                max-height: 20px;
+                padding: 2px 8px;
+                font-size: 11px;
+            }
+        """)
+        self.btn_auto_wb.setFixedWidth(60)
+        self.btn_auto_wb.clicked.connect(self.autoWbRequested.emit)
+        wb_btn_layout.addWidget(self.btn_auto_wb)
+
+        self.btn_as_shot = QtWidgets.QPushButton("As Shot")
+        self.btn_as_shot.setStyleSheet("""
+            QPushButton {
+                min-height: 18px;
+                max-height: 20px;
+                padding: 2px 8px;
+                font-size: 11px;
+            }
+        """)
+        self.btn_as_shot.setFixedWidth(60)  # Consistent width
+        self.btn_as_shot.clicked.connect(self._reset_wb)
+        wb_btn_layout.addWidget(self.btn_as_shot)
+
+        wb_btn_layout.addStretch()  # Spacer right
+        self.color_section.add_widget(wb_btn_widget)
+
+        self._add_slider(
+            "Temperature",
+            -1.0,
+            1.0,
+            self.val_temperature,
+            "val_temperature",
+            0.01,
+            self.color_section,
+        )
+        self._add_slider(
+            "Tint",
+            -1.0,
+            1.0,
+            self.val_tint,
+            "val_tint",
+            0.01,
+            self.color_section,
+        )
         self._add_slider(
             "Saturation",
             0.0,
@@ -169,21 +226,39 @@ class EditingControls(QtWidgets.QWidget):
         # Preset Buttons at the top of Details
         preset_widget = QtWidgets.QWidget()
         preset_layout = QtWidgets.QHBoxLayout(preset_widget)
-        preset_layout.setContentsMargins(0, 5, 0, 5)
-        preset_layout.setSpacing(4)  # Tighten spacing
+        preset_layout.setContentsMargins(0, 0, 0, 5)
+        preset_layout.setSpacing(8)  # Tighten spacing
+
+        preset_layout.addStretch()  # Spacer left
+
+        btn_style = """
+            QPushButton {
+                min-height: 18px;
+                max-height: 20px;
+                padding: 2px 8px;
+                font-size: 11px;
+            }
+        """
+
         self.btn_low = QtWidgets.QPushButton("Low")
-        self.btn_low.setProperty("label", "Low")
+        self.btn_low.setStyleSheet(btn_style)
+        self.btn_low.setFixedWidth(60)
         self.btn_low.clicked.connect(lambda: self._apply_preset("low"))
+
         self.btn_medium = QtWidgets.QPushButton("Medium")
-        self.btn_medium.setProperty("label", "Medium")
+        self.btn_medium.setStyleSheet(btn_style)
+        self.btn_medium.setFixedWidth(60)
         self.btn_medium.clicked.connect(lambda: self._apply_preset("medium"))
+
         self.btn_high = QtWidgets.QPushButton("High")
-        self.btn_high.setProperty("label", "High")
+        self.btn_high.setStyleSheet(btn_style)
+        self.btn_high.setFixedWidth(60)
         self.btn_high.clicked.connect(lambda: self._apply_preset("high"))
 
         preset_layout.addWidget(self.btn_low)
         preset_layout.addWidget(self.btn_medium)
         preset_layout.addWidget(self.btn_high)
+        preset_layout.addStretch()  # Spacer right
         self.details_section.add_widget(preset_widget)
 
         # Mapping function for combined sharpening
@@ -216,14 +291,6 @@ class EditingControls(QtWidgets.QWidget):
             1,
             self.details_section,
         )
-
-        # Save Button
-        self.controls_layout.addSpacing(10)
-        self.btn_save = QtWidgets.QPushButton("Save Result")
-        self.btn_save.setObjectName("SaveButton")
-        self.btn_save.clicked.connect(self.saveRequested.emit)
-        self.btn_save.setEnabled(False)
-        self.controls_layout.addWidget(self.btn_save)
 
         self.controls_layout.addStretch()
 
@@ -330,8 +397,8 @@ class EditingControls(QtWidgets.QWidget):
         self.star_rating_widget.set_rating(rating)
 
     def set_save_enabled(self, enabled):
-        """Enable or disable the save button."""
-        self.btn_save.setEnabled(enabled)
+        """No-op as save button is removed."""
+        pass
 
     def _on_rating_changed(self, rating):
         """Handle rating change."""
@@ -341,6 +408,13 @@ class EditingControls(QtWidgets.QWidget):
         """Handle histogram mode change."""
         self.histogram_widget.set_mode(mode)
         self.histogramModeChanged.emit(mode)
+
+    def _reset_wb(self):
+        """Reset WB sliders to 0.0."""
+        self.set_slider_value("val_temperature", 0.0)
+        self.set_slider_value("val_tint", 0.0)
+        self.settingChanged.emit("temperature", 0.0)
+        self.settingChanged.emit("tint", 0.0)
 
     def _apply_preset(self, preset_type):
         """Apply preset values for sharpening and denoising."""
@@ -359,6 +433,8 @@ class EditingControls(QtWidgets.QWidget):
     def get_all_settings(self):
         """Get all current settings as a dictionary."""
         return {
+            "temperature": self.val_temperature,
+            "tint": self.val_tint,
             "exposure": self.val_exposure,
             "contrast": self.val_contrast,
             "whites": self.val_whites,
@@ -376,6 +452,8 @@ class EditingControls(QtWidgets.QWidget):
 
     def apply_settings(self, settings):
         """Apply settings from a dictionary."""
+        self.set_slider_value("val_temperature", settings.get("temperature", 0.0))
+        self.set_slider_value("val_tint", settings.get("tint", 0.0))
         self.set_slider_value("val_exposure", settings.get("exposure", 0.0))
         self.set_slider_value("val_contrast", settings.get("contrast", 1.0))
         self.set_slider_value("val_whites", settings.get("whites", 1.0))

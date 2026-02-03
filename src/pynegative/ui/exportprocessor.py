@@ -94,6 +94,8 @@ class ExportProcessor(QtCore.QRunnable):
         # Process image with tone mapping
         img, _ = pynegative.apply_tone_map(
             full_img,
+            temperature=sidecar_settings.get("temperature", 0.0),
+            tint=sidecar_settings.get("tint", 0.0),
             exposure=sidecar_settings.get("exposure", 0.0),
             contrast=sidecar_settings.get("contrast", 1.0),
             blacks=sidecar_settings.get("blacks", 0.0),
@@ -108,6 +110,23 @@ class ExportProcessor(QtCore.QRunnable):
             pil_img = Image.fromarray((img * 65535).astype("uint16"), "RGB")
         else:
             pil_img = Image.fromarray((img * 255).astype("uint8"))
+
+        # Apply Sharpening if present in sidecar
+        sharpen_val = sidecar_settings.get("sharpen_value", 0)
+        if sharpen_val > 0:
+            pil_img = pynegative.sharpen_image(
+                pil_img,
+                sidecar_settings.get("sharpen_radius", 0.5),
+                sidecar_settings.get("sharpen_percent", 0.0),
+                method="High Quality",
+            )
+
+        # Apply Denoise if present in sidecar
+        denoise_val = sidecar_settings.get("de_noise", 0)
+        if denoise_val > 0:
+            pil_img = pynegative.de_noise_image(
+                pil_img, denoise_val, method="High Quality"
+            )
 
         # Apply size constraints if specified
         max_w = self.settings.get("max_width")
