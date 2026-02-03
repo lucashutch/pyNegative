@@ -1,6 +1,4 @@
 from pathlib import Path
-import numpy as np
-from PIL import Image
 from functools import partial
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt

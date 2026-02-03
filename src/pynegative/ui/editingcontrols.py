@@ -158,7 +158,9 @@ class EditingControls(QtWidgets.QWidget):
         wb_btn_widget = QtWidgets.QWidget()
         wb_btn_layout = QtWidgets.QHBoxLayout(wb_btn_widget)
         wb_btn_layout.setContentsMargins(0, 0, 0, 5)
-        wb_btn_layout.setSpacing(4)
+        wb_btn_layout.setSpacing(8)  # Increase spacing slightly
+
+        wb_btn_layout.addStretch()  # Spacer left
 
         self.btn_auto_wb = QtWidgets.QPushButton("Auto")
         self.btn_auto_wb.setStyleSheet("""
@@ -171,6 +173,7 @@ class EditingControls(QtWidgets.QWidget):
         """)
         self.btn_auto_wb.setFixedWidth(60)
         self.btn_auto_wb.clicked.connect(self.autoWbRequested.emit)
+        wb_btn_layout.addWidget(self.btn_auto_wb)
 
         self.btn_as_shot = QtWidgets.QPushButton("As Shot")
         self.btn_as_shot.setStyleSheet("""
@@ -181,12 +184,11 @@ class EditingControls(QtWidgets.QWidget):
                 font-size: 11px;
             }
         """)
-        self.btn_as_shot.setFixedWidth(70)
+        self.btn_as_shot.setFixedWidth(60)  # Consistent width
         self.btn_as_shot.clicked.connect(self._reset_wb)
-
-        wb_btn_layout.addWidget(self.btn_auto_wb)
         wb_btn_layout.addWidget(self.btn_as_shot)
-        wb_btn_layout.addStretch()
+
+        wb_btn_layout.addStretch()  # Spacer right
         self.color_section.add_widget(wb_btn_widget)
 
         self._add_slider(
@@ -224,21 +226,39 @@ class EditingControls(QtWidgets.QWidget):
         # Preset Buttons at the top of Details
         preset_widget = QtWidgets.QWidget()
         preset_layout = QtWidgets.QHBoxLayout(preset_widget)
-        preset_layout.setContentsMargins(0, 5, 0, 5)
-        preset_layout.setSpacing(4)  # Tighten spacing
+        preset_layout.setContentsMargins(0, 0, 0, 5)
+        preset_layout.setSpacing(8)  # Tighten spacing
+
+        preset_layout.addStretch()  # Spacer left
+
+        btn_style = """
+            QPushButton {
+                min-height: 18px;
+                max-height: 20px;
+                padding: 2px 8px;
+                font-size: 11px;
+            }
+        """
+
         self.btn_low = QtWidgets.QPushButton("Low")
-        self.btn_low.setProperty("label", "Low")
+        self.btn_low.setStyleSheet(btn_style)
+        self.btn_low.setFixedWidth(60)
         self.btn_low.clicked.connect(lambda: self._apply_preset("low"))
+
         self.btn_medium = QtWidgets.QPushButton("Medium")
-        self.btn_medium.setProperty("label", "Medium")
+        self.btn_medium.setStyleSheet(btn_style)
+        self.btn_medium.setFixedWidth(60)
         self.btn_medium.clicked.connect(lambda: self._apply_preset("medium"))
+
         self.btn_high = QtWidgets.QPushButton("High")
-        self.btn_high.setProperty("label", "High")
+        self.btn_high.setStyleSheet(btn_style)
+        self.btn_high.setFixedWidth(60)
         self.btn_high.clicked.connect(lambda: self._apply_preset("high"))
 
         preset_layout.addWidget(self.btn_low)
         preset_layout.addWidget(self.btn_medium)
         preset_layout.addWidget(self.btn_high)
+        preset_layout.addStretch()  # Spacer right
         self.details_section.add_widget(preset_widget)
 
         # Mapping function for combined sharpening
