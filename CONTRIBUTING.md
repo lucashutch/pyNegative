@@ -19,7 +19,7 @@ cd pyNegative
 uv sync --all-groups
 
 # Run the UI
-uv run pyneg-ui
+uv run pynegative
 ```
 
 ### Using `pip` (Legacy)
@@ -29,7 +29,7 @@ If you prefer standard tools, you can use pip, though it's less recommended for 
 pip install -e .
 
 # Run the UI
-pyneg-ui
+pynegative
 ```
 
 ## Development Workflow

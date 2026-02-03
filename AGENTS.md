@@ -11,7 +11,7 @@
 
 ## Quick Commands (Always use `uv`)
 - **Install**: `uv sync --all-groups`
-- **Run UI**: `uv run pyneg-ui`
+- **Run UI**: `uv run pynegative`
 - **Run Tests**: `uv run pytest` (or `uv run pytest tests/path/to/test.py::TestClass::test_method`)
 - **Format**: `uv run ruff format .`
 - **Lint**: `uv run ruff check .` (use `--fix` to auto-fix)
@@ -48,7 +48,8 @@
 - `CONTRIBUTING.md`: Developer environment setup and contribution guide.
 - `TODO.md`: Feature roadmap and testing improvement areas. When a feature is complete remove it from this file and update the readme accordingly if the feature is user facing and worth mentioning.
 - `AGENTS.md`: This file (AI agent guidelines).
-- `plan.md`: Technical implementation plans (Internal dev use).
+- `.opencode/plans/`: Location for technical implementation plans. Create and reference markdown files here for complex tasks.
+- `plan.md`: Legacy technical implementation plans. Use `.opencode/plans/` for new plans.
 
 ## Common Patterns
 - **Image Data**: Work on copies. Use numpy for operations. Validate 0.0-1.0 ranges for normalized data.

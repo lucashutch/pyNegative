@@ -224,7 +224,7 @@ create_linux_desktop() {
 [Desktop Entry]
 Name=pyNegative
 Comment=RAW Image Processor
-Exec=uv run --directory $INSTALL_DIR pyneg-ui
+Exec=uv run --directory $INSTALL_DIR pynegative
 Icon=$INSTALL_DIR/pynegative_icon.png
 Type=Application
 Categories=Graphics;Photography;
@@ -282,7 +282,7 @@ EOF
 	cat >"$APP_BUNDLE/Contents/MacOS/pynegative" <<EOF
 #!/bin/bash
 cd "$INSTALL_DIR"
-exec uv run pyneg-ui
+exec uv run pynegative
 EOF
 	chmod +x "$APP_BUNDLE/Contents/MacOS/pynegative"
 
@@ -417,10 +417,10 @@ do_install() {
 	echo "You can now launch pyNegative from:"
 	if [ "$OS" = "macos" ]; then
 		echo "  - Applications folder: ~/Applications/pyNegative.app"
-		echo "  - Or by running: uv run pyneg-ui"
+		echo "  - Or by running: uv run pynegative"
 	else
 		echo "  - Application menu (search for 'pyNegative')"
-		echo "  - Or by running: uv run pyneg-ui"
+		echo "  - Or by running: uv run pynegative"
 	fi
 	echo ""
 
@@ -429,7 +429,7 @@ do_install() {
 		echo ""
 		if [[ $REPLY =~ ^[Yy]$ ]]; then
 			cd "$INSTALL_DIR"
-			uv run pyneg-ui &
+			uv run pynegative &
 		fi
 	fi
 }

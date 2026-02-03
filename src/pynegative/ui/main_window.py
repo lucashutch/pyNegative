@@ -204,7 +204,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def open_single_file(self):
         extensions = " ".join(["*" + e for e in pynegative.SUPPORTED_EXTS])
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Open Image", "", f"Images ({extensions})"
+            self.window(),
+            "Open Image",
+            "",
+            f"Images ({extensions})",
+            options=QtWidgets.QFileDialog.Option.DontUseNativeDialog,
         )
         if path:
             self.open_editor(path)

@@ -29,8 +29,8 @@ test = [
     "pytest-qt",
 ]
 
-[project.scripts]
-pyneg-ui = "pynegative.ui:main"
+[project.gui-scripts]
+pynegative = "pynegative.ui:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
