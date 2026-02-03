@@ -85,32 +85,146 @@ class ImageProcessorWorker(QtCore.QRunnable):
             img_render_base, **tone_map_settings
         )
 
-        # --- Part 1.5: Histogram (calculated on background preview for speed) ---
+        # Prepare image for geometry (convert to uint8 for OpenCV)
+        # Note: processed_bg is float 0-1 (from apply_tone_map)
+        img_uint8 = (processed_bg * 255).astype(np.uint8)
+
+        rotate_val = self.settings.get("rotation", 0.0)
+        crop_val = self.settings.get(
+            "crop", None
+        )  # (left, top, right, bottom) normalized
+
+        # 1. Apply Rotation using OpenCV (Much faster than PIL)
+        if abs(rotate_val) > 0.01:
+            h, w = img_uint8.shape[:2]
+            center = (w / 2, h / 2)
+
+            # Add alpha channel for transparency if rotating
+            img_uint8 = cv2.cvtColor(img_uint8, cv2.COLOR_RGB2RGBA)
+
+            # Rotation Matrix
+            M = cv2.getRotationMatrix2D(center, rotate_val, 1.0)
+
+            # Calculate new bounding box to avoid clipping (equivalent to expand=True)
+            cos_val = np.abs(M[0, 0])
+            sin_val = np.abs(M[0, 1])
+            new_w = int((h * sin_val) + (w * cos_val))
+            new_h = int((h * cos_val) + (w * sin_val))
+
+            # Adjust translation
+            M[0, 2] += (new_w / 2) - center[0]
+            M[1, 2] += (new_h / 2) - center[1]
+
+            # Perform rotation (INTER_NEAREST for speed during interactive preview)
+            # Use borderValue=(0,0,0,0) for transparent background
+            img_uint8 = cv2.warpAffine(
+                img_uint8,
+                M,
+                (new_w, new_h),
+                flags=cv2.INTER_NEAREST,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=(0, 0, 0, 0),
+            )
+
+        # 2. Apply Crop using Numpy Slicing
+        if crop_val is not None:
+            h, w = img_uint8.shape[:2]
+            c_left, c_top, c_right, c_bottom = crop_val
+
+            x1 = int(c_left * w)
+            y1 = int(c_top * h)
+            x2 = int(c_right * w)
+            y2 = int(c_bottom * h)
+
+            # Clamp
+            x1 = max(0, x1)
+            y1 = max(0, y1)
+            x2 = min(w, x2)
+            y2 = min(h, y2)
+
+            if x2 > x1 and y2 > y1:
+                img_uint8 = img_uint8[y1:y2, x1:x2]
+
+        # Convert back to RGB for PIL if we added an alpha channel for rotation
+        if img_uint8.shape[2] == 4:
+            # But wait, we want to keep transparency in the background if possible?
+            # Actually ZoomableGraphicsView background is black anyway.
+            # If we want transparent export later, we need RGBA.
+            # PIL supports RGBA.
+            pass
+
+        pil_bg = Image.fromarray(img_uint8)
+
+        # Calculate new virtual full dimensions
+        # The preview is a scaled down version. We need to project the new dimensions back to full resolution.
+        preview_h, preview_w = img_render_base.shape[:2]
+        full_h, full_w = self.base_img_full.shape[:2]
+        scale_x = full_w / preview_w
+        scale_y = full_h / preview_h
+
+        # New "Full" dimensions after geometry
+        new_full_w = int(pil_bg.width * scale_x)
+        new_full_h = int(pil_bg.height * scale_y)
+
+        # --- Part 1.5: Histogram ---
         if self.calculate_histogram:
             try:
-                hist_data = self._calculate_histograms(processed_bg)
+                # Convert back to numpy for histogram calculation
+                # This is slightly inefficient (PIL->Numpy) but ensures histogram matches the visible geometry
+                geom_numpy = np.array(pil_bg).astype(np.float32) / 255.0
+                hist_data = self._calculate_histograms(geom_numpy)
                 self.signals.histogramUpdated.emit(hist_data)
             except Exception as e:
                 print(f"Histogram calculation error: {e}")
 
-        pil_bg = Image.fromarray((processed_bg * 255).astype(np.uint8))
         pix_bg = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_bg))
 
         # --- Part 2: Detail ROI ---
         pix_roi, roi_x, roi_y, roi_w, roi_h = QtGui.QPixmap(), 0, 0, 0, 0
-        if is_zoomed_in:
+
+        # We only support High-Over ROI if NOT rotating.
+        # Rotation makes coordinate mapping from View -> Original too complex/slow to do smoothly on CPU.
+        if is_zoomed_in and abs(rotate_val) < 0.1:
             roi = self._view_ref.mapToScene(
                 self._view_ref.viewport().rect()
             ).boundingRect()
-            ix_min, iy_min = max(0, int(roi.left())), max(0, int(roi.top()))
-            ix_max, iy_max = (
-                min(full_w, int(roi.right())),
-                min(full_h, int(roi.bottom())),
-            )
 
-            if (rw := ix_max - ix_min) > 10 and (rh := iy_max - iy_min) > 10:
-                crop = self.base_img_full[iy_min:iy_max, ix_min:ix_max]
-                processed_roi, _ = pynegative.apply_tone_map(crop, **tone_map_settings)
+            # View coordinates are now in "Cropped Space" (if cropped)
+            # We need to map View Coords -> Original Image Coords
+
+            # View coords (v_x, v_y)
+            v_x, v_y, v_w, v_h = roi.x(), roi.y(), roi.width(), roi.height()
+
+            # Map to Original: Add Crop Offset
+            offset_x = 0
+            offset_y = 0
+
+            if crop_val:
+                # crop_val is normalized (l, t, r, b)
+                # We need pixel offsets in FULL resolution
+                orig_full_w = self.base_img_full.shape[1]
+                orig_full_h = self.base_img_full.shape[0]
+
+                offset_x = int(crop_val[0] * orig_full_w)
+                offset_y = int(crop_val[1] * orig_full_h)
+
+            # Source coordinates
+            src_x = int(v_x + offset_x)
+            src_y = int(v_y + offset_y)
+            src_w = int(v_w)
+            src_h = int(v_h)
+
+            # Clamp to original image bounds
+            src_x = max(0, src_x)
+            src_y = max(0, src_y)
+            src_x2 = min(self.base_img_full.shape[1], src_x + src_w)
+            src_y2 = min(self.base_img_full.shape[0], src_y + src_h)
+
+            if (req_w := src_x2 - src_x) > 10 and (req_h := src_y2 - src_y) > 10:
+                crop_chunk = self.base_img_full[src_y:src_y2, src_x:src_x2]
+                processed_roi, _ = pynegative.apply_tone_map(
+                    crop_chunk, **tone_map_settings
+                )
                 pil_roi = Image.fromarray((processed_roi * 255).astype(np.uint8))
 
                 if self.settings.get("sharpen_value", 0) > 0:
@@ -126,9 +240,14 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     )
 
                 pix_roi = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_roi))
-                roi_x, roi_y, roi_w, roi_h = ix_min, iy_min, rw, rh
 
-        return pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
+                # ROI position in View Coordinates
+                roi_x = src_x - offset_x
+                roi_y = src_y - offset_y
+                roi_w = req_w
+                roi_h = req_h
+
+        return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
 
     def _calculate_histograms(self, img_float):
         """Calculate RGB and YUV histograms with high performance."""

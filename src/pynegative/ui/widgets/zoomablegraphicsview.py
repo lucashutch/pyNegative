@@ -1,10 +1,12 @@
 from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QRectF
+from .crop_item import CropRectItem
 
 
 class ZoomableGraphicsView(QtWidgets.QGraphicsView):
     zoomChanged = Signal(float)
     doubleClicked = Signal()
+    cropRectChanged = Signal(QRectF)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -16,6 +18,8 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.setBackgroundBrush(QtGui.QBrush(QtGui.QColor("#1a1a1a")))
+        # Fix ghosting during interactive item moves
+        self.setViewportUpdateMode(QtWidgets.QGraphicsView.FullViewportUpdate)
 
         self._scene = QtWidgets.QGraphicsScene(self)
         self.setScene(self._scene)
@@ -27,8 +31,16 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
         # Foreground item (High-res ROI patch)
         self._fg_item = QtWidgets.QGraphicsPixmapItem()
-        self._scene.addItem(self._fg_item)
         self._fg_item.setZValue(1)
+
+        # Crop Item (Overlay)
+        self._crop_item = CropRectItem()
+        self._scene.addItem(self._crop_item)
+        self._crop_item.setZValue(10)  # On top of everything
+        self._crop_item.hide()
+        # forward signal
+        self._crop_item.cropChanged.connect(self.cropRectChanged.emit)
+        self._crop_item.cropChanged.connect(self._on_crop_rect_changed)
 
         self._current_zoom = 1.0
         self._fit_in_view_scale = 1.0
@@ -145,3 +157,48 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
     def mouseDoubleClickEvent(self, event):
         self.doubleClicked.emit()
         super().mouseDoubleClickEvent(event)
+
+    def set_crop_mode(self, enabled):
+        if enabled:
+            # If no rect set, default to scene rect
+            if self._crop_item.get_rect().isEmpty():
+                self._crop_item.set_rect(self._scene.sceneRect())
+            self._crop_item.show()
+        else:
+            self._crop_item.hide()
+
+    def set_crop_rect(self, rect):
+        """Set visual crop rect (in scene coordinates)"""
+        if rect:
+            self._crop_item.set_rect(rect)
+
+    def get_crop_rect(self):
+        """Get visual crop rect (in scene coordinates)"""
+        return self._crop_item.get_rect()
+
+    def set_aspect_ratio(self, ratio):
+        """Set crop aspect ratio lock (0.0 for free)"""
+        self._crop_item.set_aspect_ratio(ratio)
+
+    def set_crop_safe_bounds(self, rect):
+        """Set the bounds within which the crop rectangle must stay."""
+        self._crop_item.set_safe_bounds(rect)
+
+    def fit_crop_in_view(self):
+        """Scale the view to fit the current crop rectangle comfortably."""
+        rect = self._crop_item.get_rect()
+        if not rect.isEmpty():
+            self.fitInView(rect, Qt.KeepAspectRatio)
+            # Zoom out slightly for breathing room
+            self.scale(0.9, 0.9)
+            self._current_zoom = self.transform().m11()
+            self._is_fitting = False
+            self.zoomChanged.emit(self._current_zoom)
+
+    def _on_crop_rect_changed(self, rect):
+        """Keep the crop rectangle centered in the viewport."""
+        if not self._crop_item.isVisible() or rect.isEmpty():
+            return
+
+        # Center the view on the new crop rectangle
+        self.centerOn(rect.center())

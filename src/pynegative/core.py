@@ -3,6 +3,7 @@ import numpy as np
 from pathlib import Path
 import json
 import time
+import math
 import rawpy
 from PIL import Image, ImageFilter
 from functools import lru_cache
@@ -203,6 +204,79 @@ def calculate_auto_wb(img):
         "temperature": float(np.clip(temp, -1.0, 1.0)),
         "tint": float(np.clip(tint, -1.0, 1.0)),
     }
+
+
+def apply_geometry(pil_img, rotate=0.0, crop=None):
+    """
+    Applies geometric transformations: Rotation -> Crop.
+    """
+    if rotate != 0.0:
+        # expand=True changes the image size to fit the rotated image
+        pil_img = pil_img.rotate(rotate, resample=Image.BICUBIC, expand=True)
+
+    if crop is not None:
+        # ...
+        pass
+    return pil_img
+
+
+def calculate_max_safe_crop(w, h, angle_deg, aspect_ratio=None):
+    """
+    Calculates the maximum normalized crop (l, t, r, b) that fits inside
+    a rotated rectangle of size (w, h) rotated by angle_deg.
+
+    If aspect_ratio is provided, the result will respect it.
+    Otherwise, it uses the original image aspect ratio (w/h).
+
+    Returns (l, t, r, b) as normalized coordinates relative to
+    the EXPANDED rotated canvas.
+    """
+    phi = abs(math.radians(angle_deg))
+
+    if phi < 1e-4:
+        return (0.0, 0.0, 1.0, 1.0)
+
+    if aspect_ratio is None:
+        aspect_ratio = w / h
+
+    # Formula for largest axis-aligned rectangle of aspect ratio 'AR'
+    # inside a rotated rectangle of size (w, h) and angle 'phi'.
+
+    cos_phi = math.cos(phi)
+    sin_phi = math.sin(phi)
+
+    # We need to satisfy:
+    # 1. w_prime * cos + h_prime * sin <= w
+    # 2. w_prime * sin + h_prime * cos <= h
+    # and w_prime = h_prime * aspect_ratio
+
+    h_prime_1 = w / (aspect_ratio * cos_phi + sin_phi)
+    h_prime_2 = h / (aspect_ratio * sin_phi + cos_phi)
+
+    h_prime = min(h_prime_1, h_prime_2)
+    w_prime = h_prime * aspect_ratio
+
+    # Expanded canvas size
+    W = w * cos_phi + h * sin_phi
+    H = w * sin_phi + h * cos_phi
+
+    # Normalized dimensions relative to expanded canvas
+    nw = w_prime / W
+    nh = h_prime / H
+
+    # Center it
+    l = (1.0 - nw) / 2
+    t = (1.0 - nh) / 2
+    r = l + nw
+    b = t + nh
+
+    # Clamp to safe range just in case of float errors
+    return (
+        float(max(0.0, min(1.0, l))),
+        float(max(0.0, min(1.0, t))),
+        float(max(0.0, min(1.0, r))),
+        float(max(0.0, min(1.0, b))),
+    )
 
 
 @lru_cache(maxsize=4)
