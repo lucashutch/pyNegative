@@ -159,7 +159,10 @@ class GalleryWidget(QtWidgets.QWidget):
             start_dir = str(self.current_folder)
 
         folder = QtWidgets.QFileDialog.getExistingDirectory(
-            self, "Open Folder", start_dir
+            self.window(),
+            "Open Folder",
+            start_dir,
+            options=QtWidgets.QFileDialog.Option.DontUseNativeDialog,
         )
         if folder:
             self.load_folder(folder)

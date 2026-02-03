@@ -295,7 +295,11 @@ class EditorWidget(QtWidgets.QWidget):
         input_dir = self.raw_path.parent
         default_name = self.raw_path.with_suffix(".jpg").name
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save", str(input_dir / default_name), "JPEG (*.jpg);;HEIF (*.heic)"
+            self.window(),
+            "Save",
+            str(input_dir / default_name),
+            "JPEG (*.jpg);;HEIF (*.heic)",
+            options=QtWidgets.QFileDialog.Option.DontUseNativeDialog,
         )
 
         if path:

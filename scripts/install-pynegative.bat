@@ -131,13 +131,13 @@ echo ============================================================
 echo.
 echo You can now launch pyNegative from:
 echo   - Start Menu ^> pyNegative
-echo   - Or by running: uv run pyneg-ui
+echo   - Or by running: uv run pynegative
 echo.
 
 if %SILENT_MODE%==0 (
     set /p LAUNCH="Launch pyNegative now? (y/n): "
     if /I "!LAUNCH!"=="y" (
-        start /b uv run pyneg-ui
+        start /b uv run pynegative
     )
 )
 
@@ -334,7 +334,7 @@ echo. >> %TEMP%\create_shortcuts.ps1
 echo # Main app shortcut >> %TEMP%\create_shortcuts.ps1
 echo $shortcut = $wsh.CreateShortcut("$startMenuDir\$appName.lnk") >> %TEMP%\create_shortcuts.ps1
 echo $shortcut.TargetPath = "uv" >> %TEMP%\create_shortcuts.ps1
-echo $shortcut.Arguments = "run pyneg-ui" >> %TEMP%\create_shortcuts.ps1
+echo $shortcut.Arguments = "run pynegative" >> %TEMP%\create_shortcuts.ps1
 echo $shortcut.WorkingDirectory = $installDir >> %TEMP%\create_shortcuts.ps1
 echo $shortcut.Description = "pyNegative - RAW Image Processor" >> %TEMP%\create_shortcuts.ps1
 echo # Try to use generated icon, fall back to main icon >> %TEMP%\create_shortcuts.ps1

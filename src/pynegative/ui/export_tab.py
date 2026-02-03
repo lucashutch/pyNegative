@@ -445,9 +445,10 @@ class ExportWidget(QtWidgets.QWidget):
     def _choose_export_destination(self):
         """Open folder dialog for custom export destination."""
         folder = QtWidgets.QFileDialog.getExistingDirectory(
-            self,
+            self.window(),
             "Select Export Destination",
             str(self._export_destination) if self._export_destination else "",
+            options=QtWidgets.QFileDialog.Option.DontUseNativeDialog,
         )
         if folder:
             self._export_destination = Path(folder)
