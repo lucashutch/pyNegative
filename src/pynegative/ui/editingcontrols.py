@@ -14,6 +14,8 @@ class EditingControls(QtWidgets.QWidget):
     presetApplied = QtCore.Signal(str)
     autoWbRequested = QtCore.Signal()
     histogramModeChanged = QtCore.Signal(str)
+    cropToggled = QtCore.Signal(bool)
+    aspectRatioChanged = QtCore.Signal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -91,6 +93,7 @@ class EditingControls(QtWidgets.QWidget):
 
         # --- Tone Section ---
         self.tone_section = CollapsibleSection("TONE", expanded=True)
+        self.tone_section.resetClicked.connect(lambda: self._reset_section("tone"))
         self.controls_layout.addWidget(self.tone_section)
 
         self._add_slider(
@@ -152,6 +155,7 @@ class EditingControls(QtWidgets.QWidget):
 
         # --- Color Section ---
         self.color_section = CollapsibleSection("COLOR", expanded=True)
+        self.color_section.resetClicked.connect(lambda: self._reset_section("color"))
         self.controls_layout.addWidget(self.color_section)
 
         # WB Buttons
@@ -221,6 +225,9 @@ class EditingControls(QtWidgets.QWidget):
 
         # --- Details Section ---
         self.details_section = CollapsibleSection("DETAILS", expanded=False)
+        self.details_section.resetClicked.connect(
+            lambda: self._reset_section("details")
+        )
         self.controls_layout.addWidget(self.details_section)
 
         # Preset Buttons at the top of Details
@@ -292,6 +299,98 @@ class EditingControls(QtWidgets.QWidget):
             self.details_section,
         )
 
+        # 6. Geometry
+        self.geometry_section = CollapsibleSection("Geometry")
+        self.geometry_section.resetClicked.connect(
+            lambda: self._reset_section("geometry")
+        )
+        self.controls_layout.addWidget(self.geometry_section)
+
+        # Crop controls layout
+        crop_widget = QtWidgets.QWidget()
+        crop_layout = QtWidgets.QHBoxLayout(crop_widget)
+        crop_layout.setContentsMargins(0, 0, 0, 0)
+        crop_layout.setSpacing(5)
+
+        # Crop Button
+        self.crop_btn = QtWidgets.QPushButton("Crop Tool")
+        self.crop_btn.setCheckable(True)
+        self.crop_btn.setFixedWidth(80)
+        self.crop_btn.setStyleSheet("""
+             QPushButton {
+                 min-height: 18px;
+                 max-height: 20px;
+                 padding: 2px 8px;
+                 font-size: 11px;
+             }
+             QPushButton:checked {
+                 background-color: #9C27B0;
+                 color: white;
+                 border: 1px solid #7B1FA2;
+             }
+        """)
+
+        # Aspect Ratio Selector
+        self.aspect_ratio_combo = QtWidgets.QComboBox()
+        self.aspect_ratio_combo.addItems(["Unlocked", "1:1", "4:3", "3:2", "16:9"])
+        for i in range(self.aspect_ratio_combo.count()):
+            self.aspect_ratio_combo.setItemData(
+                i, QtCore.Qt.AlignCenter, QtCore.Qt.TextAlignmentRole
+            )
+
+        self.aspect_ratio_combo.setToolTip("Lock aspect ratio")
+        self.aspect_ratio_combo.setFixedWidth(75)
+        self.aspect_ratio_combo.setStyleSheet("""
+            QComboBox {
+                min-height: 18px;
+                max-height: 20px;
+                font-size: 11px;
+                padding: 0px 4px;
+            }
+        """)
+        self.aspect_ratio_combo.currentIndexChanged.connect(
+            self._on_aspect_ratio_changed
+        )
+
+        def on_crop_toggled(checked):
+            if checked:
+                self.crop_btn.setText("Done")
+                self.aspect_ratio_combo.show()
+                if hasattr(self, "rotation_frame"):
+                    self.rotation_frame.show()
+            else:
+                self.crop_btn.setText("Crop Tool")
+                self.aspect_ratio_combo.hide()
+                if hasattr(self, "rotation_frame"):
+                    self.rotation_frame.hide()
+            self.cropToggled.emit(checked)
+
+        self.crop_btn.toggled.connect(on_crop_toggled)
+
+        crop_layout.addWidget(self.crop_btn)
+        crop_layout.addStretch()
+        crop_layout.addWidget(self.aspect_ratio_combo)
+
+        # Hide aspect ratio combo initially
+        self.aspect_ratio_combo.hide()
+
+        self.geometry_section.add_widget(crop_widget)
+
+        # Rotation Slider
+        self._add_slider(
+            "Rotation",
+            -45.0,
+            45.0,
+            0.0,
+            "rotation",
+            0.1,
+            section=self.geometry_section,
+            unit="deg",
+        )
+        # Hide initially per user request
+        if hasattr(self, "rotation_frame"):
+            self.rotation_frame.hide()
+
         self.controls_layout.addStretch()
 
     def _add_slider(
@@ -305,6 +404,7 @@ class EditingControls(QtWidgets.QWidget):
         section=None,
         flipped=False,
         custom_callback=None,
+        unit="",
     ):
         frame = QtWidgets.QFrame()
         layout = QtWidgets.QVBoxLayout(frame)
@@ -317,10 +417,28 @@ class EditingControls(QtWidgets.QWidget):
         # Top row: Label and Value
         row = QtWidgets.QHBoxLayout()
         lbl = QtWidgets.QLabel(label_text)
-        val_lbl = QtWidgets.QLabel(f"{default:.2f}")
-        val_lbl.setAlignment(QtCore.Qt.AlignRight)
+
+        # Editable Value (DoubleSpinBox style or LineEdit)
+        # Using a QLineEdit that validates input
+        val_input = (
+            QtWidgets.QLineEdit()
+        )  # No QDoubleSpinBox style for now to keep it minimal
+        val_input.setText(f"{default:.2f}")
+        val_input.setAlignment(QtCore.Qt.AlignRight)
+        val_input.setFixedWidth(60)
+
+        # Unit Label
+        unit_lbl = None
+        if unit:
+            unit_lbl = QtWidgets.QLabel(unit)
+            unit_lbl.setStyleSheet("color: #888; font-size: 11px;")
+
         row.addWidget(lbl)
-        row.addWidget(val_lbl)
+        row.addStretch()
+        row.addWidget(val_input)
+        if unit_lbl:
+            row.addWidget(unit_lbl)
+
         layout.addLayout(row)
 
         slider = ResetableSlider(QtCore.Qt.Horizontal)
@@ -330,14 +448,18 @@ class EditingControls(QtWidgets.QWidget):
         slider.default_slider_value = int(default * multiplier)
         slider.setValue(int(default * multiplier))
 
-        def on_change(val):
+        def on_slider_change(val):
             actual = val / multiplier
             if flipped:
                 # Map slider min..max to max..min
                 # Formula: actual = s_max + s_min - actual
                 actual = max_val + min_val - actual
 
-            val_lbl.setText(f"{actual:.2f}")
+            # Update input without triggering signal loop if possible
+            val_input.blockSignals(True)
+            val_input.setText(f"{actual:.2f}")
+            val_input.blockSignals(False)
+
             setattr(self, var_name, actual)
 
             if custom_callback:
@@ -347,13 +469,105 @@ class EditingControls(QtWidgets.QWidget):
                 setting_name = var_name.replace("val_", "")
                 self.settingChanged.emit(setting_name, actual)
 
-        slider.valueChanged.connect(on_change)
+        def on_text_changed():
+            try:
+                text = val_input.text()
+                val = float(text)
+
+                # Clamp value
+                val = max(min_val, min(max_val, val))
+
+                # Update slider
+                slider.blockSignals(True)
+                if flipped:
+                    # val = s_max + s_min - slider_val (unscaled)
+                    # slider_val = s_max + s_min - val
+                    # BUT slider is int scaled
+                    slider_val = (max_val + min_val - val) * multiplier
+                    slider.setValue(int(slider_val))
+                else:
+                    slider.setValue(int(val * multiplier))
+                slider.blockSignals(False)
+
+                setattr(self, var_name, val)
+
+                if custom_callback:
+                    custom_callback(val)
+                else:
+                    setting_name = var_name.replace("val_", "")
+                    self.settingChanged.emit(setting_name, val)
+
+            except ValueError:
+                pass  # Ignore invalid float
+
+        slider.valueChanged.connect(on_slider_change)
+        val_input.editingFinished.connect(on_text_changed)
 
         # Store refs
         setattr(self, f"{var_name}_slider", slider)
-        setattr(self, f"{var_name}_label", val_lbl)  # Store label for updates
+        setattr(self, f"{var_name}_label", val_input)  # Store input for updates
 
-        layout.addWidget(slider)
+        # Rotation Specific: Add +/- buttons if requested (detected by var_name="rotation")
+        # Or generalize if needed. User asked specifically for rotation.
+        if var_name == "rotation":
+            # Add buttons row
+            btn_row = QtWidgets.QHBoxLayout()
+            btn_row.setContentsMargins(0, 0, 0, 0)
+
+            btn_minus = QtWidgets.QPushButton("-")
+            btn_plus = QtWidgets.QPushButton("+")
+            btn_reset = QtWidgets.QPushButton("Reset")
+
+            for b in [btn_minus, btn_plus, btn_reset]:
+                b.setFixedSize(22, 14)
+                b.setStyleSheet("""
+                    QPushButton {
+                        padding: 0px;
+                        margin: 0px;
+                        font-size: 10px;
+                        border: 1px solid #444;
+                        background-color: #333;
+                        color: #ccc;
+                        min-height: 0px;
+                        max-height: 14px;
+                    }
+                    QPushButton:hover {
+                        background-color: #444;
+                        border: 1px solid #555;
+                    }
+                """)
+
+            btn_reset.setFixedWidth(34)
+            btn_row.setSpacing(2)
+
+            def adjust_rot(delta):
+                new_val = getattr(self, var_name, 0.0) + delta
+                new_val = max(min_val, min(max_val, new_val))
+
+                # Update slider -> triggers everything else
+                slider.blockSignals(True)
+                slider.setValue(int(new_val * multiplier))
+                slider.blockSignals(False)
+                on_slider_change(int(new_val * multiplier))  # Force update
+
+            btn_minus.clicked.connect(lambda: adjust_rot(-0.1))
+            btn_plus.clicked.connect(lambda: adjust_rot(0.1))
+            btn_reset.clicked.connect(
+                lambda: adjust_rot(-getattr(self, var_name, 0.0))
+            )  # Reset to 0
+
+            btn_row.addWidget(slider)
+            btn_row.addWidget(btn_minus)
+            btn_row.addWidget(btn_plus)
+            btn_row.addWidget(btn_reset)
+            layout.addLayout(btn_row)
+
+        else:
+            layout.addWidget(slider)
+
+        # Store frame ref
+        setattr(self, f"{var_name}_frame", frame)
+
         if section:
             section.add_widget(frame)
         else:
@@ -384,6 +598,10 @@ class EditingControls(QtWidgets.QWidget):
             label.setText(f"{value:.2f}")
         setattr(self, var_name, value)
 
+    def set_crop_checked(self, checked):
+        if self.crop_btn:
+            self.crop_btn.setChecked(checked)
+
     def reset_sliders(self):
         """Reset all sliders to their default values."""
         for attr_name in dir(self):
@@ -391,6 +609,40 @@ class EditingControls(QtWidgets.QWidget):
                 slider = getattr(self, attr_name)
                 if hasattr(slider, "default_slider_value"):
                     slider.setValue(slider.default_slider_value)
+
+    def _reset_section(self, section_name):
+        """Reset all parameters within a specific section."""
+        params_to_reset = []
+        if section_name == "tone":
+            params_to_reset = [
+                ("val_exposure", 0.0, "exposure"),
+                ("val_contrast", 1.0, "contrast"),
+                ("val_highlights", 0.0, "highlights"),
+                ("val_shadows", 0.0, "shadows"),
+                ("val_whites", 1.0, "whites"),
+                ("val_blacks", 0.0, "blacks"),
+            ]
+        elif section_name == "color":
+            params_to_reset = [
+                ("val_temperature", 0.0, "temperature"),
+                ("val_tint", 0.0, "tint"),
+                ("val_saturation", 1.0, "saturation"),
+            ]
+        elif section_name == "details":
+            params_to_reset = [
+                ("val_sharpen_value", 40.0, "sharpen_value"),
+                ("val_de_noise", 0.0, "de_noise"),
+            ]
+        elif section_name == "geometry":
+            params_to_reset = [
+                ("rotation", 0.0, "rotation"),
+            ]
+            # Special case for crop: reset to full image
+            self.settingChanged.emit("crop", None)
+
+        for var_name, default, setting_name in params_to_reset:
+            self.set_slider_value(var_name, default)
+            self.settingChanged.emit(setting_name, default)
 
     def set_rating(self, rating):
         """Set the star rating."""
@@ -408,6 +660,21 @@ class EditingControls(QtWidgets.QWidget):
         """Handle histogram mode change."""
         self.histogram_widget.set_mode(mode)
         self.histogramModeChanged.emit(mode)
+
+    def _on_aspect_ratio_changed(self, index):
+        """Handle aspect ratio selection change."""
+        text = self.aspect_ratio_combo.currentText()
+        ratio = 0.0
+        if text == "1:1":
+            ratio = 1.0
+        elif text == "4:3":
+            ratio = 4.0 / 3.0
+        elif text == "3:2":
+            ratio = 3.0 / 2.0
+        elif text == "16:9":
+            ratio = 16.0 / 9.0
+
+        self.aspectRatioChanged.emit(ratio)
 
     def _reset_wb(self):
         """Reset WB sliders to 0.0."""
@@ -448,6 +715,7 @@ class EditingControls(QtWidgets.QWidget):
             "sharpen_value": self.val_sharpen_value,
             "denoise_method": "High Quality",
             "de_noise": self.val_de_noise,
+            "rotation": getattr(self, "rotation", 0.0),
         }
 
     def apply_settings(self, settings):
@@ -461,6 +729,9 @@ class EditingControls(QtWidgets.QWidget):
         self.set_slider_value("val_highlights", settings.get("highlights", 0.0))
         self.set_slider_value("val_shadows", settings.get("shadows", 0.0))
         self.set_slider_value("val_saturation", settings.get("saturation", 1.0))
+
+        # Geometry
+        self.set_slider_value("rotation", settings.get("rotation", 0.0))
 
         sharpen_val = settings.get("sharpen_value", 0.0)
         if sharpen_val is not None:
