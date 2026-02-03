@@ -6,7 +6,7 @@
 - **Keep commit messages short and concise** - No need for a long explanation.
 - **Keep PR descriptions short and concise** - No need for a long explanation or lots of sections about testing. Just a brief summary of what was done.
 - **Add tests** - Always add tests for new features.
-- **dont use fix commits** ammend commits instead where possible
+- **Don't use "fixup" commits.** Instead, amend the relevant commit. Force-pushing to your feature branch is encouraged to keep the history clean.
 - **Ask questions, dont make assumptions** - Always ask questions instead of making assumptions
 
 ## Quick Commands (Always use `uv`)
@@ -18,7 +18,7 @@
 
 ## Git Workflow
 - **Branch Strategy**: Feature branch -> Pull Request.
-- **Pre-commit**: Format → Test → Lint fix before any commit.
+- **Pre-commit**: Run `uv run ruff format .`, `uv run pytest`, and `uv run ruff check . --fix` before any commit.
 - **Commits**: Every commit must be buildable and pass tests.
 
 ## Project Architecture
