@@ -47,6 +47,7 @@ class TestGalleryListWidget:
         mouse_event = QtGui.QMouseEvent(
             QtCore.QEvent.Type.MouseMove,
             QtCore.QPointF(item_rect.center()),
+            QtCore.QPointF(item_rect.center()),
             QtCore.Qt.MouseButton.NoButton,
             QtCore.Qt.MouseButton.NoButton,
             QtCore.Qt.KeyboardModifier.NoModifier,
@@ -68,6 +69,7 @@ class TestGalleryListWidget:
         mouse_event0 = QtGui.QMouseEvent(
             QtCore.QEvent.Type.MouseMove,
             QtCore.QPointF(item0_rect.center()),
+            QtCore.QPointF(item0_rect.center()),
             QtCore.Qt.MouseButton.NoButton,
             QtCore.Qt.MouseButton.NoButton,
             QtCore.Qt.KeyboardModifier.NoModifier,
@@ -78,6 +80,7 @@ class TestGalleryListWidget:
         # Move to second item
         mouse_event1 = QtGui.QMouseEvent(
             QtCore.QEvent.Type.MouseMove,
+            QtCore.QPointF(item1_rect.center()),
             QtCore.QPointF(item1_rect.center()),
             QtCore.Qt.MouseButton.NoButton,
             QtCore.Qt.MouseButton.NoButton,
@@ -94,6 +97,7 @@ class TestGalleryListWidget:
         # Move into widget
         mouse_event = QtGui.QMouseEvent(
             QtCore.QEvent.Type.MouseMove,
+            QtCore.QPointF(item_rect.center()),
             QtCore.QPointF(item_rect.center()),
             QtCore.Qt.MouseButton.NoButton,
             QtCore.Qt.MouseButton.NoButton,

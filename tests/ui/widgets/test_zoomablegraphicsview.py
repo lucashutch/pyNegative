@@ -131,6 +131,7 @@ class TestZoomableGraphicsView:
         event = QtGui.QMouseEvent(
             QtCore.QEvent.Type.MouseButtonDblClick,
             QtCore.QPointF(200, 150),
+            QtCore.QPointF(200, 150),
             QtCore.Qt.MouseButton.LeftButton,
             QtCore.Qt.MouseButton.LeftButton,
             QtCore.Qt.KeyboardModifier.NoModifier,

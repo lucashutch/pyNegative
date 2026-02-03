@@ -62,6 +62,7 @@ def test_mouse_move_event_hover(star_rating_widget, qtbot):
     event = QtGui.QMouseEvent(
         QtCore.QEvent.MouseMove,
         QtCore.QPoint(x_pos, 5),
+        QtCore.QPoint(x_pos, 5),
         QtCore.Qt.NoButton,
         QtCore.Qt.NoButton,
         QtCore.Qt.NoModifier,
@@ -75,6 +76,7 @@ def test_mouse_move_event_hover(star_rating_widget, qtbot):
     event = QtGui.QMouseEvent(
         QtCore.QEvent.MouseMove,
         QtCore.QPoint(x_pos, 5),
+        QtCore.QPoint(x_pos, 5),
         QtCore.Qt.NoButton,
         QtCore.Qt.NoButton,
         QtCore.Qt.NoModifier,
@@ -86,6 +88,7 @@ def test_mouse_move_event_hover(star_rating_widget, qtbot):
     # Simulate mouse moving over the first star (x=0 is valid for the first star)
     event = QtGui.QMouseEvent(
         QtCore.QEvent.MouseMove,
+        QtCore.QPoint(0, 5),
         QtCore.QPoint(0, 5),
         QtCore.Qt.NoButton,
         QtCore.Qt.NoButton,
@@ -104,6 +107,7 @@ def test_mouse_leave_event(star_rating_widget, qtbot):
     event_move = QtGui.QMouseEvent(
         QtCore.QEvent.MouseMove,
         QtCore.QPoint(star_width * 2, 5),
+        QtCore.QPoint(star_width * 2, 5),
         QtCore.Qt.NoButton,
         QtCore.Qt.NoButton,
         QtCore.Qt.NoModifier,
@@ -116,6 +120,7 @@ def test_mouse_leave_event(star_rating_widget, qtbot):
     event_leave = QtGui.QMouseEvent(
         QtCore.QEvent.Leave,
         QtCore.QPoint(-1, -1),  # Coordinates don't matter much for Leave
+        QtCore.QPoint(-1, -1),
         QtCore.Qt.NoButton,
         QtCore.Qt.NoButton,
         QtCore.Qt.NoModifier,
@@ -134,6 +139,7 @@ def test_mouse_press_event_set_rating(star_rating_widget, qtbot):
     event_move = QtGui.QMouseEvent(
         QtCore.QEvent.MouseMove,
         QtCore.QPoint(x_pos, 5),
+        QtCore.QPoint(x_pos, 5),
         QtCore.Qt.NoButton,
         QtCore.Qt.NoButton,
         QtCore.Qt.NoModifier,
@@ -146,6 +152,7 @@ def test_mouse_press_event_set_rating(star_rating_widget, qtbot):
         event_press = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonPress,
             QtCore.QPoint(x_pos, 5),
+            QtCore.QPoint(x_pos, 5),
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.NoModifier,
@@ -155,6 +162,7 @@ def test_mouse_press_event_set_rating(star_rating_widget, qtbot):
 
         event_release = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonRelease,
+            QtCore.QPoint(x_pos, 5),
             QtCore.QPoint(x_pos, 5),
             QtCore.Qt.LeftButton,
             QtCore.Qt.NoButton,
@@ -176,6 +184,7 @@ def test_mouse_press_event_clear_rating(star_rating_widget, qtbot):
     event_move = QtGui.QMouseEvent(
         QtCore.QEvent.MouseMove,
         QtCore.QPoint(x_pos, 5),
+        QtCore.QPoint(x_pos, 5),
         QtCore.Qt.NoButton,
         QtCore.Qt.NoButton,
         QtCore.Qt.NoModifier,
@@ -188,6 +197,7 @@ def test_mouse_press_event_clear_rating(star_rating_widget, qtbot):
         event_press = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonPress,
             QtCore.QPoint(x_pos, 5),
+            QtCore.QPoint(x_pos, 5),
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.NoModifier,
@@ -197,6 +207,7 @@ def test_mouse_press_event_clear_rating(star_rating_widget, qtbot):
 
         event_release = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonRelease,
+            QtCore.QPoint(x_pos, 5),
             QtCore.QPoint(x_pos, 5),
             QtCore.Qt.LeftButton,
             QtCore.Qt.NoButton,
