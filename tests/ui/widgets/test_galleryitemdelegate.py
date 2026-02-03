@@ -152,6 +152,7 @@ class TestGalleryItemDelegate:
         event = QtGui.QMouseEvent(
             QtCore.QEvent.Type.MouseButtonPress,
             QtCore.QPointF(click_x, click_y),
+            QtCore.QPointF(click_x, click_y),
             QtCore.Qt.MouseButton.LeftButton,
             QtCore.Qt.MouseButton.LeftButton,
             QtCore.Qt.KeyboardModifier.NoModifier,
@@ -174,6 +175,7 @@ class TestGalleryItemDelegate:
         event = QtGui.QMouseEvent(
             QtCore.QEvent.Type.MouseButtonPress,
             QtCore.QPointF(200, 10),  # Position outside star area
+            QtCore.QPointF(200, 10),
             QtCore.Qt.MouseButton.LeftButton,
             QtCore.Qt.MouseButton.LeftButton,
             QtCore.Qt.KeyboardModifier.NoModifier,
@@ -199,6 +201,7 @@ class TestGalleryItemDelegate:
         event = QtGui.QMouseEvent(
             QtCore.QEvent.Type.MouseButtonPress,
             QtCore.QPointF(third_star_x + 5, 10),  # Position within third star area
+            QtCore.QPointF(third_star_x + 5, 10),
             QtCore.Qt.MouseButton.LeftButton,
             QtCore.Qt.MouseButton.LeftButton,
             QtCore.Qt.KeyboardModifier.NoModifier,
