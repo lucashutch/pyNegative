@@ -7,7 +7,20 @@ import rawpy
 from PIL import Image, ImageFilter
 from functools import lru_cache
 
-SUPPORTED_EXTS = (".cr3", ".CR3", ".cr2", ".CR2", ".dng", ".DNG")
+RAW_EXTS = {
+    ".cr2",
+    ".cr3",
+    ".dng",
+    ".arw",
+    ".nef",
+    ".nrw",
+    ".raf",
+    ".orf",
+    ".rw2",
+    ".pef",
+}
+STD_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".tiff", ".tif", ".heic", ".heif"}
+SUPPORTED_EXTS = tuple(RAW_EXTS | STD_EXTS)
 
 try:
     import pillow_heif
@@ -129,14 +142,26 @@ def calculate_auto_exposure(img):
 @lru_cache(maxsize=4)
 def open_raw(path, half_size=False, output_bps=8):
     """
-    Opens a RAW file.
+    Opens a RAW or standard image file.
     Args:
         path: File path (str or Path)
         half_size: If True, decodes at 1/2 resolution (1/4 pixels) for speed.
         output_bps: Bit depth of the output image (8 or 16).
     """
-    path = str(path)  # rawpy requires str
-    with rawpy.imread(path) as raw:
+    path = Path(path)
+    ext = path.suffix.lower()
+
+    if ext in STD_EXTS:
+        with Image.open(path) as img:
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            if half_size:
+                img.thumbnail((img.width // 2, img.height // 2))
+            rgb = np.array(img)
+            return rgb.astype(np.float32) / 255.0
+
+    path_str = str(path)
+    with rawpy.imread(path_str) as raw:
         rgb = raw.postprocess(
             use_camera_wb=True,
             half_size=half_size,
@@ -156,9 +181,22 @@ def extract_thumbnail(path):
     Falls back to a fast, half-size RAW conversion if no thumbnail exists.
     Returns a PIL Image or None on failure.
     """
-    path = str(path)  # rawpy requires str
+    path = Path(path)
+    ext = path.suffix.lower()
+
+    if ext in STD_EXTS:
+        try:
+            img = Image.open(path)
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            return img
+        except Exception as e:
+            print(f"Error opening standard image thumbnail for {path}: {e}")
+            return None
+
+    path_str = str(path)
     try:
-        with rawpy.imread(path) as raw:
+        with rawpy.imread(path_str) as raw:
             try:
                 thumb = raw.extract_thumb()
             except rawpy.LibRawNoThumbnailError:
@@ -377,7 +415,7 @@ def rename_sidecar(old_raw_path, new_raw_path):
 
 def get_exif_capture_date(raw_path):
     """
-    Extracts the capture date from RAW file EXIF data.
+    Extracts the capture date from RAW or standard image file EXIF data.
 
     Returns the date as a string in YYYY-MM-DD format, or None if unavailable.
     Falls back to file modification date if EXIF date is not found.
@@ -385,8 +423,25 @@ def get_exif_capture_date(raw_path):
     from datetime import datetime
 
     raw_path = Path(raw_path)
+    ext = raw_path.suffix.lower()
 
     try:
+        if ext in STD_EXTS:
+            with Image.open(raw_path) as img:
+                exif = img.getexif()
+                if exif:
+                    # 306 = DateTime, 36867 = DateTimeOriginal
+                    for tag in (36867, 306):
+                        date_str = exif.get(tag)
+                        if date_str and isinstance(date_str, str):
+                            # Format: "YYYY:MM:DD HH:MM:SS"
+                            try:
+                                parts = date_str.split(" ")[0].split(":")
+                                if len(parts) == 3:
+                                    return f"{parts[0]}-{parts[1]}-{parts[2]}"
+                            except Exception:
+                                pass
+
         with rawpy.imread(str(raw_path)) as raw:
             # Try to extract EXIF DateTimeOriginal
             # rawpy stores EXIF data that we can parse
