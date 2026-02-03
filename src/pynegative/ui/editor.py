@@ -173,6 +173,14 @@ class EditorWidget(QtWidgets.QWidget):
         self.editing_controls.saveRequested.connect(self.save_file)
         self.editing_controls.presetApplied.connect(self._on_preset_applied)
 
+        # Histogram logic
+        self.editing_controls.histogram_section.expandedChanged.connect(
+            self.image_processor.set_histogram_enabled
+        )
+        self.image_processor.histogramUpdated.connect(
+            self.editing_controls.histogram_widget.set_data
+        )
+
         # Image processor -> View
         self.image_processor.previewUpdated.connect(self.view.set_pixmaps)
         self.image_processor.performanceMeasured.connect(self._on_performance_measured)
@@ -260,7 +268,6 @@ class EditorWidget(QtWidgets.QWidget):
         self.setWindowTitle("Editor")
         self.editing_controls.reset_sliders()
         self.editing_controls.set_rating(0)
-        self.editing_controls.set_info_text("No file loaded")
         self.editing_controls.set_save_enabled(False)
         self.view.reset_zoom()
         self.view.set_pixmaps(QtGui.QPixmap(), 0, 0)
@@ -276,7 +283,6 @@ class EditorWidget(QtWidgets.QWidget):
     def load_image(self, path):
         """Load an image for editing."""
         path = Path(path)
-        self.editing_controls.set_info_text(f"Loading: {path.name}")
         self.raw_path = path
 
         QtWidgets.QApplication.processEvents()
@@ -306,7 +312,7 @@ class EditorWidget(QtWidgets.QWidget):
             path = Path(path)
             try:
                 # RELOAD FULL RESOLUTION FOR SAVING
-                self.editing_controls.set_info_text("Processing Full Res...")
+                self.show_toast("Processing Full Resolution...")
                 QtWidgets.QApplication.processEvents()
 
                 # Explicitly request full size (half_size=False)
@@ -346,10 +352,9 @@ class EditorWidget(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.information(
                     self, "Saved", f"Saved full resolution to {path}"
                 )
-                self.editing_controls.set_info_text(f"Saved: {path.name}")
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Error", str(e))
-                self.editing_controls.set_info_text("Error saving")
+                self.show_toast("Error saving")
 
     def load_carousel_folder(self, folder):
         """Load a folder of images into the carousel."""
@@ -493,8 +498,6 @@ class EditorWidget(QtWidgets.QWidget):
         # Request a fit once the UI settles
         QtCore.QTimer.singleShot(50, self.view.reset_zoom)
         QtCore.QTimer.singleShot(200, self.view.reset_zoom)
-
-        self.editing_controls.set_info_text(f"Loaded: {self.raw_path.name}")
 
     def _request_update_from_view(self):
         """Request image update from current view state."""

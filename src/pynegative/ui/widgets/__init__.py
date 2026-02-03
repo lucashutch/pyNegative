@@ -9,6 +9,7 @@ from .gallerylistwidget import GalleryListWidget
 from .combobox import ComboBox
 from .carouseldelegate import CarouselDelegate
 from .toast import ToastWidget
+from .histogram import HistogramWidget
 
 __all__ = [
     "HorizontalListWidget",
@@ -22,4 +23,5 @@ __all__ = [
     "ComboBox",
     "CarouselDelegate",
     "ToastWidget",
+    "HistogramWidget",
 ]
