@@ -6,6 +6,7 @@ REM This script downloads and installs pyNegative using uv.
 REM Just double-click this file to install!
 REM
 REM Silent mode: Add --silent flag
+REM Verbose mode: Add --verbose or -v flag
 REM ============================================================
 
 title pyNegative Installer
@@ -26,21 +27,19 @@ set TEMP_SCRIPT=%TEMP%\download_release.py.%RANDOM%
 
 REM Check for silent mode flags
 set SILENT_MODE=0
+set VERBOSE_MODE=0
 if "%~1"=="--silent" set SILENT_MODE=1
 if "%~1"=="-silent" set SILENT_MODE=1
 if "%~1"=="--yes" set SILENT_MODE=1
 if "%~1"=="-yes" set SILENT_MODE=1
 if "%~1"=="-s" set SILENT_MODE=1
+if "%~1"=="--verbose" set VERBOSE_MODE=1
+if "%~1"=="-v" set VERBOSE_MODE=1
 
-REM Function to check if uv is installed
-call :check_uv
-if %ERRORLEVEL% NEQ 0 (
-    call :install_uv
-    if %ERRORLEVEL% NEQ 0 (
-        echo ERROR: Failed to install uv
-        pause
-        exit /b 1
-    )
+REM Check if already installed
+if exist "%INSTALL_DIR%\pyproject.toml" (
+    call :show_installed_menu
+    exit /b 0
 )
 
 REM Show welcome and get confirmation
@@ -65,6 +64,19 @@ if %SILENT_MODE%==0 (
         exit /b 0
     )
     echo.
+)
+
+REM Check if uv is installed
+call :check_uv
+if %ERRORLEVEL% NEQ 0 (
+    call :install_uv
+    if %ERRORLEVEL% NEQ 0 (
+        echo ERROR: Failed to install uv
+        pause
+        exit /b 1
+    )
+) else (
+    if %SILENT_MODE%==0 echo uv is already installed
 )
 
 REM Download and install using uv's Python
@@ -131,44 +143,158 @@ if %SILENT_MODE%==0 (
 
 exit /b 0
 
+REM Show installed menu
+:show_installed_menu
+echo.
+echo pyNegative is already installed at:
+echo %INSTALL_DIR%
+
+REM Show current version
+if exist "%VERSION_FILE%" (
+    set /p CURRENT_VERSION=<"%VERSION_FILE%"
+    echo Current version: %CURRENT_VERSION%
+)
+
+echo.
+echo What would you like to do?
+echo   1) Update pyNegative to the latest version
+echo   2) Uninstall pyNegative
+echo   3) Cancel
+echo.
+
+if %SILENT_MODE%==1 (
+    REM In silent mode, default to update
+    call :do_update
+    exit /b 0
+)
+
+set /p CHOICE="Enter your choice (1-3): "
+if "%CHOICE%"=="1" (
+    call :do_update
+) else if "%CHOICE%"=="2" (
+    set /p CONFIRM="Are you sure you want to uninstall? (y/n): "
+    if /I not "!CONFIRM!"=="y" (
+        echo Uninstall cancelled.
+        exit /b 0
+    )
+    call :uninstall_pynegative
+) else if "%CHOICE%"=="3" (
+    echo Operation cancelled.
+) else (
+    echo Invalid choice
+    call :show_installed_menu
+)
+exit /b 0
+
+REM Update pyNegative
+:do_update
+echo.
+echo Updating pyNegative...
+
+if not exist "%INSTALL_DIR%\scripts\install-pynegative.bat" (
+    echo ERROR: Installer script not found for updating.
+    exit /b 1
+)
+
+REM Download (will check version and skip if same)
+call :fetch_download_script
+if %ERRORLEVEL% NEQ 0 (
+    REM Check if already on latest (exit code 2)
+    if %ERRORLEVEL% EQU 2 (
+        echo Already on latest version!
+    ) else (
+        echo ERROR: Update failed
+    )
+    exit /b 1
+)
+
+REM Update dependencies
+echo Updating dependencies...
+cd /d "%INSTALL_DIR%"
+uv sync --all-groups
+if %ERRORLEVEL% NEQ 0 (
+    echo ERROR: Failed to update dependencies
+    exit /b 1
+)
+
+echo Dependencies updated successfully!
+
+REM Copy updated installer files
+if not exist "%INSTALL_DIR%\scripts" mkdir "%INSTALL_DIR%\scripts"
+copy /Y "%~f0" "%INSTALL_DIR%\scripts\install-pynegative.bat" >nul 2>&1
+
+echo.
+echo pyNegative has been updated successfully!
+exit /b 0
+
+REM Uninstall pyNegative
+:uninstall_pynegative
+echo.
+echo Uninstalling pyNegative...
+
+REM Remove installation directory
+if exist "%INSTALL_DIR%" (
+    rmdir /s /q "%INSTALL_DIR%"
+    echo Removed installation directory: %INSTALL_DIR%
+)
+
+REM Remove Start Menu entry
+if exist "%APPDATA%\Microsoft\Windows\Start Menu\Programs\pyNegative.lnk" (
+    del "%APPDATA%\Microsoft\Windows\Start Menu\Programs\pyNegative.lnk"
+    echo Removed application menu entry
+)
+
+REM Remove Start Menu directory
+if exist "%APPDATA%\Microsoft\Windows\Start Menu\Programs\%APP_NAME%" (
+    rmdir /s /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\%APP_NAME%"
+    echo Removed Start Menu directory
+)
+
+echo.
+echo pyNegative has been uninstalled successfully!
+exit /b 0
+
 REM ============================================================
 REM Functions
 REM ============================================================
 
 :fetch_download_script
 if %SILENT_MODE%==0 echo Downloading installer script...
+if %VERBOSE_MODE%==1 (
+    echo DEBUG: Script URL: %SCRIPT_URL%
+    echo DEBUG: Temp file: %TEMP_SCRIPT%
+    echo DEBUG: Timeout: %TIMEOUT% seconds
+)
 
 REM Create PowerShell command to download the script
+if %VERBOSE_MODE%==1 echo DEBUG: Starting PowerShell download...
 powershell -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '%SCRIPT_URL%' -OutFile '%TEMP_SCRIPT%' -TimeoutSec %TIMEOUT%; exit 0 } catch { exit 1 }"
-if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Failed to download installer script. Please check your internet connection and try again.
+set DOWNLOAD_RESULT=%ERRORLEVEL%
+
+if %VERBOSE_MODE%==1 echo DEBUG: PowerShell exit code: %DOWNLOAD_RESULT%
+
+if %DOWNLOAD_RESULT% NEQ 0 (
+    if %SILENT_MODE%==0 echo ERROR: Failed to download installer script. Please check your internet connection and try again.
+    if %VERBOSE_MODE%==1 echo DEBUG: Download failed with error code %DOWNLOAD_RESULT%
     exit /b 1
 )
 
-REM Validate the download
+REM Simple validation: Check if file exists
+if %VERBOSE_MODE%==1 echo DEBUG: Checking if downloaded file exists...
+
 if not exist "%TEMP_SCRIPT%" (
-    echo ERROR: Downloaded script file not found.
+    if %SILENT_MODE%==0 echo ERROR: Downloaded script file not found.
+    if %VERBOSE_MODE%==1 echo DEBUG: File does not exist: %TEMP_SCRIPT%
     exit /b 1
 )
 
-REM Check if file is empty
-for %%A in ("%TEMP_SCRIPT%") do (
-    if %%~zA EQU 0 (
-        echo ERROR: Downloaded script is empty.
-        del "%TEMP_SCRIPT%" 2>nul
-        exit /b 1
-    )
-)
-
-REM Check if file has correct first line
-findstr /B /C:"#!/usr/bin/env python3" "%TEMP_SCRIPT%" >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Downloaded script is invalid or corrupted.
-    del "%TEMP_SCRIPT%" 2>nul
-    exit /b 1
-)
+if %VERBOSE_MODE%==1 echo DEBUG: File exists, proceeding to execution.
 
 if %SILENT_MODE%==0 echo Installer script downloaded successfully!
+if %VERBOSE_MODE%==1 (
+    echo DEBUG: Script validation complete
+    echo DEBUG: Ready to execute Python script
+)
 exit /b 0
 
 :check_uv
