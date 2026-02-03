@@ -19,6 +19,7 @@ class PreviewStarRatingWidget(StarRatingWidget):
 
     def _create_star_pixmap(self, filled):
         size = 30
+        self.setFixedHeight(size)
         pixmap = QtGui.QPixmap(size, size)
         pixmap.fill(QtCore.Qt.transparent)
         painter = QtGui.QPainter(pixmap)
@@ -170,6 +171,7 @@ class EditorWidget(QtWidgets.QWidget):
         # Editing controls -> Image processor
         self.editing_controls.settingChanged.connect(self._on_setting_changed)
         self.editing_controls.ratingChanged.connect(self._on_rating_changed)
+        self.editing_controls.autoWbRequested.connect(self._on_auto_wb_requested)
         self.editing_controls.saveRequested.connect(self.save_file)
         self.editing_controls.presetApplied.connect(self._on_preset_applied)
 
@@ -324,6 +326,8 @@ class EditorWidget(QtWidgets.QWidget):
                 # Process full resolution with current settings
                 img, _ = pynegative.apply_tone_map(
                     full_img,
+                    temperature=settings.get("temperature", 0.0),
+                    tint=settings.get("tint", 0.0),
                     exposure=settings["exposure"],
                     contrast=settings["contrast"],
                     blacks=settings["blacks"],
@@ -416,6 +420,32 @@ class EditorWidget(QtWidgets.QWidget):
                 self.image_processor.get_current_settings(),
             )
 
+    def _on_auto_wb_requested(self):
+        """Handle auto white balance request."""
+        if self.image_processor.base_img_preview is None:
+            return
+
+        # Calculate Auto WB using current preview
+        wb_settings = pynegative.calculate_auto_wb(
+            self.image_processor.base_img_preview
+        )
+
+        # Apply to UI
+        self.editing_controls.set_slider_value(
+            "val_temperature", wb_settings["temperature"]
+        )
+        self.editing_controls.set_slider_value("val_tint", wb_settings["tint"])
+
+        # Update processor
+        self.image_processor.set_processing_params(**wb_settings)
+        self._request_update_from_view()
+        self.save_timer.start(1000)
+
+        # Push undo state
+        self.settings_manager.push_immediate_undo_state(
+            "Auto White Balance", self.image_processor.get_current_settings()
+        )
+
     def _on_preview_rating_changed(self, rating):
         """Handle rating change from preview widget."""
         self.editing_controls.set_rating(rating)
@@ -460,6 +490,8 @@ class EditorWidget(QtWidgets.QWidget):
 
             # Apply settings to image processor
             self.image_processor.set_processing_params(
+                temperature=settings.get("temperature", 0.0),
+                tint=settings.get("tint", 0.0),
                 exposure=settings.get("exposure", 0.0),
                 contrast=settings.get("contrast", 1.0),
                 whites=settings.get("whites", 1.0),

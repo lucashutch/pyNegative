@@ -94,6 +94,8 @@ class ExportProcessor(QtCore.QRunnable):
         # Process image with tone mapping
         img, _ = pynegative.apply_tone_map(
             full_img,
+            temperature=sidecar_settings.get("temperature", 0.0),
+            tint=sidecar_settings.get("tint", 0.0),
             exposure=sidecar_settings.get("exposure", 0.0),
             contrast=sidecar_settings.get("contrast", 1.0),
             blacks=sidecar_settings.get("blacks", 0.0),
