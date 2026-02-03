@@ -8,12 +8,12 @@ extracting it to the specified directory, and managing version tracking.
 import argparse
 import io
 import json
-import os
 import shutil
 import subprocess
 import sys
 import urllib.request
 import zipfile
+from pathlib import Path
 from typing import Optional
 
 
@@ -86,41 +86,38 @@ def download_and_extract(
             print("Download complete, extracting...")
 
         # Extract to temp directory first
-        temp_extract = dest_dir + ".extracting"
-        if os.path.exists(temp_extract):
+        temp_extract = Path(dest_dir).with_suffix(".extracting")
+        if temp_extract.exists():
             shutil.rmtree(temp_extract)
 
         with zipfile.ZipFile(zip_data, "r") as zf:
             zf.extractall(temp_extract)
 
         # Find the extracted directory (usually like pyNegative-main/ or pyNegative-v1.0.0/)
-        subdirs = [
-            d
-            for d in os.listdir(temp_extract)
-            if os.path.isdir(os.path.join(temp_extract, d))
-        ]
+        subdirs = [d for d in temp_extract.iterdir() if d.is_dir()]
         if not subdirs:
             print("Error: No directory found in zip")
             return False
 
-        source_dir = os.path.join(temp_extract, subdirs[0])
+        source_dir = subdirs[0]
+        dest_path = Path(dest_dir)
 
         # Remove old install if exists
-        if os.path.exists(dest_dir):
+        if dest_path.exists():
             if verbose:
                 print("Removing old installation...")
-            shutil.rmtree(dest_dir)
+            shutil.rmtree(dest_path)
 
         # Move to final location
-        shutil.move(source_dir, dest_dir)
+        shutil.move(str(source_dir), str(dest_path))
         shutil.rmtree(temp_extract)
 
         if verbose:
             print(f"Successfully extracted to {dest_dir}")
 
         # Generate icons if script exists
-        icon_script = os.path.join(dest_dir, "scripts", "generate_icons.py")
-        if os.path.exists(icon_script):
+        icon_script = dest_path / "scripts" / "generate_icons.py"
+        if icon_script.exists():
             if verbose:
                 print("Generating icons...")
             try:
@@ -160,9 +157,7 @@ def check_update_available(
     Returns:
         True if update is available, False if already on latest
     """
-    if current == latest and os.path.exists(
-        os.path.join(install_dir, "pyproject.toml")
-    ):
+    if current == latest and (Path(install_dir) / "pyproject.toml").exists():
         return False
     return True
 
@@ -175,10 +170,10 @@ def save_version(version: str, install_dir: str) -> None:
         install_dir: Installation directory
     """
     # Ensure install directory exists
-    os.makedirs(install_dir, exist_ok=True)
-    version_file = os.path.join(install_dir, ".version")
-    with open(version_file, "w") as f:
-        f.write(version)
+    install_path = Path(install_dir)
+    install_path.mkdir(parents=True, exist_ok=True)
+    version_file = install_path / ".version"
+    version_file.write_text(version)
 
 
 def load_version(install_dir: str) -> Optional[str]:
@@ -190,11 +185,10 @@ def load_version(install_dir: str) -> Optional[str]:
     Returns:
         Version string, or None if not found
     """
-    version_file = os.path.join(install_dir, ".version")
-    if os.path.exists(version_file):
+    version_file = Path(install_dir) / ".version"
+    if version_file.exists():
         try:
-            with open(version_file, "r") as f:
-                return f.read().strip()
+            return version_file.read_text().strip()
         except Exception:
             pass
     return None
