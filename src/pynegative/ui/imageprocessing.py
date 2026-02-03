@@ -10,18 +10,29 @@ class ImageProcessorSignals(QtCore.QObject):
     """Signals for the image processing worker."""
 
     finished = QtCore.Signal(QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int)
+    histogramUpdated = QtCore.Signal(dict)
     error = QtCore.Signal(str)
 
 
 class ImageProcessorWorker(QtCore.QRunnable):
     """Worker to process a single large ROI in a background thread."""
 
-    def __init__(self, signals, view_ref, base_img_full, settings):
+    def __init__(
+        self,
+        signals,
+        view_ref,
+        base_img_full,
+        base_img_preview,
+        settings,
+        calculate_histogram=False,
+    ):
         super().__init__()
         self.signals = signals
         self._view_ref = view_ref
         self.base_img_full = base_img_full
+        self.base_img_preview = base_img_preview
         self.settings = settings
+        self.calculate_histogram = calculate_histogram
 
     def run(self):
         try:
@@ -50,15 +61,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
         )
 
         # --- Part 1: Global Background ---
-        base_img_uint8 = (self.base_img_full * 255).astype(np.uint8)
-        scale = 1500 / max(full_h, full_w)
-        target_h, target_w = int(full_h * scale), int(full_w * scale)
-
-        # Use OpenCV for faster resizing
-        resized_arr = cv2.resize(
-            base_img_uint8, (target_w, target_h), interpolation=cv2.INTER_LINEAR
-        )
-        img_render_base = resized_arr.astype(np.float32) / 255.0
+        # Use the pre-resized preview for the background and histogram.
+        # This is MUCH faster than resizing from full-res on every slider move.
+        img_render_base = self.base_img_preview
 
         tone_map_settings = {
             k: v
@@ -77,6 +82,15 @@ class ImageProcessorWorker(QtCore.QRunnable):
         processed_bg, _ = pynegative.apply_tone_map(
             img_render_base, **tone_map_settings
         )
+
+        # --- Part 1.5: Histogram (calculated on background preview for speed) ---
+        if self.calculate_histogram:
+            try:
+                hist_data = self._calculate_histograms(processed_bg)
+                self.signals.histogramUpdated.emit(hist_data)
+            except Exception as e:
+                print(f"Histogram calculation error: {e}")
+
         pil_bg = Image.fromarray((processed_bg * 255).astype(np.uint8))
         pix_bg = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_bg))
 
@@ -114,11 +128,57 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         return pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
 
+    def _calculate_histograms(self, img_float):
+        """Calculate RGB and YUV histograms with high performance."""
+        # Use 256 bins for the display
+        bins = 256
+
+        # Performance optimization 1: Downsample heavily for histogram.
+        # 256px resolution is more than enough for an accurate histogram.
+        h, w, _ = img_float.shape
+        hist_scale = 256 / max(h, w)
+        # Use INTER_NEAREST for maximum speed during histogram downsampling
+        small_img = cv2.resize(
+            img_float,
+            (int(w * hist_scale), int(h * hist_scale)),
+            interpolation=cv2.INTER_NEAREST,
+        )
+
+        # Performance optimization 2: Use cv2.calcHist on uint16 data.
+        # This is significantly faster than np.histogram and preserves 16-bit precision.
+        img_u16 = (small_img * 65535).astype(np.uint16)
+
+        # RGB Histograms (Calculate on 16-bit to avoid sawtooth)
+        hist_r = cv2.calcHist([img_u16], [0], None, [bins], [0, 65536]).flatten()
+        hist_g = cv2.calcHist([img_u16], [1], None, [bins], [0, 65536]).flatten()
+        hist_b = cv2.calcHist([img_u16], [2], None, [bins], [0, 65536]).flatten()
+
+        # YUV Histograms (Use uint8 for speed as visual precision is less critical here)
+        img_u8 = (small_img * 255).astype(np.uint8)
+        img_yuv = cv2.cvtColor(img_u8, cv2.COLOR_RGB2YUV)
+        hist_y = cv2.calcHist([img_yuv], [0], None, [bins], [0, 256]).flatten()
+        hist_u = cv2.calcHist([img_yuv], [1], None, [bins], [0, 256]).flatten()
+        hist_v = cv2.calcHist([img_yuv], [2], None, [bins], [0, 256]).flatten()
+
+        # Apply smoothing
+        def smooth(h):
+            return cv2.GaussianBlur(h.reshape(-1, 1), (5, 5), 0).flatten()
+
+        return {
+            "R": smooth(hist_r),
+            "G": smooth(hist_g),
+            "B": smooth(hist_b),
+            "Y": smooth(hist_y),
+            "U": smooth(hist_u),
+            "V": smooth(hist_v),
+        }
+
 
 class ImageProcessingPipeline(QtCore.QObject):
     previewUpdated = QtCore.Signal(
         QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int
     )
+    histogramUpdated = QtCore.Signal(dict)
     performanceMeasured = QtCore.Signal(float)
 
     def __init__(self, thread_pool, parent=None):
@@ -130,19 +190,39 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._render_pending = False
         self._is_rendering_locked = False
         self.base_img_full = None
+        self.base_img_preview = None
         self._processing_params = {}
         self._view_ref = None
         self.perf_start_time = 0
+        self.histogram_enabled = False
 
         self.signals = ImageProcessorSignals()
         self.signals.finished.connect(self._on_worker_finished)
+        self.signals.histogramUpdated.connect(self.histogramUpdated.emit)
         self.signals.error.connect(self._on_worker_error)
 
     def set_image(self, img_array):
         self.base_img_full = img_array
+        if img_array is not None:
+            # Create a 2048px float32 preview once.
+            # This is reused for background rendering and histograms, avoiding
+            # expensive full-res resizes during slider updates.
+            h, w, _ = img_array.shape
+            scale = 2048 / max(h, w)
+            target_h, target_w = int(h * scale), int(w * scale)
+            self.base_img_preview = cv2.resize(
+                img_array, (target_w, target_h), interpolation=cv2.INTER_LINEAR
+            )
+        else:
+            self.base_img_preview = None
 
     def set_view_reference(self, view):
         self._view_ref = view
+
+    def set_histogram_enabled(self, enabled):
+        self.histogram_enabled = enabled
+        if enabled:
+            self.request_update()
 
     def set_processing_params(self, **kwargs):
         self._processing_params.update(kwargs)
@@ -173,7 +253,9 @@ class ImageProcessingPipeline(QtCore.QObject):
             self.signals,
             self._view_ref,
             self.base_img_full,
+            self.base_img_preview,
             self.get_current_settings(),
+            calculate_histogram=self.histogram_enabled,
         )
         self.thread_pool.start(worker)
 

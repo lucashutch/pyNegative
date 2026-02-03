@@ -3,6 +3,7 @@ from .widgets import (
     CollapsibleSection,
     ResetableSlider,
     StarRatingWidget,
+    HistogramWidget,
 )
 
 
@@ -12,6 +13,7 @@ class EditingControls(QtWidgets.QWidget):
     ratingChanged = QtCore.Signal(int)
     presetApplied = QtCore.Signal(str)
     saveRequested = QtCore.Signal()
+    histogramModeChanged = QtCore.Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -65,10 +67,18 @@ class EditingControls(QtWidgets.QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(scroll)
 
-        self.lbl_info = QtWidgets.QLabel("No file loaded")
-        self.lbl_info.setObjectName("InfoLabel")
-        self.lbl_info.setWordWrap(True)
-        self.controls_layout.addWidget(self.lbl_info)
+        # --- Histogram Section (At Top) ---
+        self.histogram_section = CollapsibleSection("HISTOGRAM", expanded=False)
+        self.controls_layout.addWidget(self.histogram_section)
+
+        self.histogram_widget = HistogramWidget()
+        self.histogram_section.add_widget(self.histogram_widget)
+
+        # Histogram Mode Selector
+        self.hist_mode_combo = QtWidgets.QComboBox()
+        self.hist_mode_combo.addItems(["Auto", "Luminance", "RGB", "YUV"])
+        self.hist_mode_combo.currentTextChanged.connect(self._on_hist_mode_changed)
+        self.histogram_section.add_widget(self.hist_mode_combo)
 
         # --- Rating Section ---
         self.rating_section = CollapsibleSection("RATING", expanded=True)
@@ -319,10 +329,6 @@ class EditingControls(QtWidgets.QWidget):
         """Set the star rating."""
         self.star_rating_widget.set_rating(rating)
 
-    def set_info_text(self, text):
-        """Update the info label text."""
-        self.lbl_info.setText(text)
-
     def set_save_enabled(self, enabled):
         """Enable or disable the save button."""
         self.btn_save.setEnabled(enabled)
@@ -330,6 +336,11 @@ class EditingControls(QtWidgets.QWidget):
     def _on_rating_changed(self, rating):
         """Handle rating change."""
         self.ratingChanged.emit(rating)
+
+    def _on_hist_mode_changed(self, mode):
+        """Handle histogram mode change."""
+        self.histogram_widget.set_mode(mode)
+        self.histogramModeChanged.emit(mode)
 
     def _apply_preset(self, preset_type):
         """Apply preset values for sharpening and denoising."""
