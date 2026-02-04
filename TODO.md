@@ -15,7 +15,7 @@ This document tracks planned features, project goals, and areas for technical im
 
 - [ ] **Persistent Thumbnail Cache**: Store thumbnails on disk to speed up gallery loading.
 - [ ] **GPU Acceleration**: Explore OpenCL/CuPy for faster tone-mapping calculations.
-- [ ] **Optimization Pass**: Search for quick wins in image processing loops and UI rendering.
+- [x] **Optimization Pass**: Search for quick wins in image processing loops and UI rendering.
 
 ## Bugs
 

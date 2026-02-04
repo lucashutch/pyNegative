@@ -44,23 +44,21 @@ def apply_tone_map(
     saturation=1.0,
     temperature=0.0,
     tint=0.0,
+    calculate_stats=True,
 ):
     """
     Applies White Balance -> Exposure -> Levels -> Tone EQ -> Saturation -> Base Curve
+    Optimized for performance with in-place operations and minimal allocations.
     """
-    img = img.copy()  # Ensure we don't modify the input array in-place
+    # Create a single copy at the start to protect the input array
+    img = img.copy()
     total_pixels = img.size
 
     # 0. White Balance (Relative Scaling)
-    # We use a logarithmic scaling for Temperature and Tint.
-    # Temperature: Warm (+) increases Red, cool (-) increases Blue.
-    # Tint: Green (+) increases Green, Magenta (-) increases Red/Blue.
     if temperature != 0.0 or tint != 0.0:
-        # Scale factors to keep adjustments subtle
         t_scale = 0.4
         tint_scale = 0.2
 
-        # Calculate channel multipliers
         r_mult = np.exp(temperature * t_scale - tint * (tint_scale / 2))
         g_mult = np.exp(tint * tint_scale)
         b_mult = np.exp(-temperature * t_scale - tint * (tint_scale / 2))
@@ -71,54 +69,62 @@ def apply_tone_map(
 
     # 1. Exposure (2^stops)
     if exposure != 0.0:
-        img = img * (2**exposure)
+        img *= 2**exposure
 
     # 1.5 Contrast (Symmetric around 0.5)
     if contrast != 1.0:
-        img = (img - 0.5) * contrast + 0.5
+        img -= 0.5
+        img *= contrast
+        img += 0.5
 
     # 2. Levels (Blacks & Whites)
     if blacks != 0.0 or whites != 1.0:
         denom = whites - blacks
         if abs(denom) < 1e-6:
             denom = 1e-6
-        img = (img - blacks) / denom
+        img -= blacks
+        img /= denom
 
-    # 3. Tone EQ (Shadows & Highlights)
-    if shadows != 0.0 or highlights != 0.0:
+    # 3. Tone EQ (Shadows & Highlights) and 4. Saturation
+    # Both need luminance. We calculate it once and reuse it.
+    if shadows != 0.0 or highlights != 0.0 or saturation != 1.0:
+        # Calculate luminance (Rec. 709)
         lum = 0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
-        lum = np.clip(lum, 0, 1)
-        lum = lum[:, :, np.newaxis]
+        np.clip(lum, 0, 1, out=lum)
+        lum_3d = lum[:, :, np.newaxis]
 
         if shadows != 0.0:
-            s_mask = (1.0 - lum) ** 2
-            img += shadows * s_mask * img
+            s_mask = (1.0 - lum_3d) ** 2
+            img *= 1.0 + shadows * s_mask
 
         if highlights != 0.0:
-            h_mask = lum**2
-            img += highlights * h_mask * (1.0 - img)
+            h_mask = lum_3d**2
+            # img += highlights * h_mask * (1.0 - img) -> img = img * (1 - h_term) + h_term
+            h_term = highlights * h_mask
+            img *= 1.0 - h_term
+            img += h_term
 
-    # 4. Saturation
-    if saturation != 1.0:
-        lum = 0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
-        lum = lum[:, :, np.newaxis]
-        img = lum + (img - lum) * saturation
+        if saturation != 1.0:
+            # Reusing original luminance for saturation prevents color shifting
+            # after Tone EQ adjustments.
+            img -= lum_3d
+            img *= saturation
+            img += lum_3d
 
-    # 5. Base Curve (Sigmoid for "Punch")
-    # TBD: Implementation of cosmetic contrast curves/S-curves.
-    # For now, relying on saturation + exposure boost + contrast slider.
+    # Stats and Clipping
+    if calculate_stats:
+        clipped_shadows = np.sum(img < 0.0)
+        clipped_highlights = np.sum(img > 1.0)
+        stats = {
+            "pct_shadows_clipped": clipped_shadows / total_pixels * 100,
+            "pct_highlights_clipped": clipped_highlights / total_pixels * 100,
+            "mean": img.mean(),
+        }
+    else:
+        stats = {}
 
-    # Clip stats for reporting
-    clipped_shadows = np.sum(img < 0.0)
-    clipped_highlights = np.sum(img > 1.0)
-
-    img = np.clip(img, 0.0, 1.0)
-
-    stats = {
-        "pct_shadows_clipped": clipped_shadows / total_pixels * 100,
-        "pct_highlights_clipped": clipped_highlights / total_pixels * 100,
-        "mean": img.mean(),
-    }
+    # Final Clip in-place
+    np.clip(img, 0.0, 1.0, out=img)
 
     return img, stats
 
@@ -396,113 +402,160 @@ def extract_thumbnail(path):
         return None
 
 
-def sharpen_image(pil_img, radius, percent, method="High Quality"):
-    """Advanced sharpening with simplified options."""
-    # Ensure image is RGB (no alpha) for OpenCV algorithms
-    if pil_img.mode != "RGB":
-        pil_img = pil_img.convert("RGB")
+def sharpen_image(img, radius, percent, method="High Quality"):
+    """Advanced sharpening with support for both PIL and Numpy float32."""
+    if isinstance(img, Image.Image):
+        # Convert PIL to RGB if needed
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img_array = np.array(img)
+        img_float = img_array.astype(np.float32) / 255.0
+        was_pil = True
+    else:
+        # Assume Numpy array
+        img_float = img
+        if img_float.dtype != np.float32:
+            img_float = img_float.astype(np.float32) / 255.0
+        was_pil = False
 
     if method == "High Quality":
-        # Convert PIL to OpenCV format for better algorithms
         try:
             import cv2
-
-            img_array = np.array(pil_img)
-            img_float = img_array.astype(np.float32) / 255.0
 
             # Create unsharp mask
             blur = cv2.GaussianBlur(img_float, (0, 0), radius)
             sharpened = img_float + (img_float - blur) * (percent / 100.0)
 
-            # Edge-aware threshold to prevent halo artifacts and noise sharpening
-            # Convert to uint8 for Canny
+            # Edge-aware threshold (Canny needs uint8)
             gray = cv2.cvtColor((img_float * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
             edges = cv2.Canny(gray, 50, 150)
 
-            # Dilate edges slightly to cover transition zones
+            # Dilate edges slightly
             kernel = np.ones((3, 3), np.uint8)
             edges = cv2.dilate(edges, kernel, iterations=1)
 
-            # Combine: Sharpened edges, but keep original for flat areas (to avoid noise)
-            # We use the original img_float for flat areas instead of the heavily blurred version
+            # Combine: Sharpened edges, keep original for flat areas
             result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
 
-            # Convert back to PIL
-            result_array = np.clip(result * 255, 0, 255).astype(np.uint8)
-            return Image.fromarray(result_array)
+            if was_pil:
+                result_array = np.clip(result * 255, 0, 255).astype(np.uint8)
+                return Image.fromarray(result_array)
+            else:
+                return np.clip(result, 0, 1.0)
         except Exception as e:
             print(f"High Quality Sharpen failed: {e}")
 
-    # Fallback to original PIL implementation (Standard)
-    return pil_img.filter(
-        ImageFilter.UnsharpMask(radius=float(radius), percent=int(percent))
-    )
+    # Fallback for PIL
+    if was_pil:
+        return img.filter(
+            ImageFilter.UnsharpMask(radius=float(radius), percent=int(percent))
+        )
+
+    # Fallback for Numpy (Basic Unsharp Mask)
+    try:
+        import cv2
+
+        # Convert radius to kernel size (must be odd)
+        k_size = int(2 * math.ceil(radius * 2) + 1)
+        if k_size % 2 == 0:
+            k_size += 1
+        blur = cv2.GaussianBlur(img_float, (k_size, k_size), radius)
+        result = img_float + (img_float - blur) * (percent / 100.0)
+        return np.clip(result, 0, 1.0)
+    except Exception:
+        return img_float
 
 
-def de_noise_image(pil_img, strength, method="High Quality"):
-    """Advanced de-noising with simplified options."""
-    # Ensure image is RGB (no alpha) for OpenCV algorithms
-    if pil_img.mode != "RGB":
-        pil_img = pil_img.convert("RGB")
+def de_noise_image(img, strength, method="High Quality"):
+    """Advanced de-noising with support for both PIL and Numpy float32.
+    Preserves float32 precision throughout the pipeline to avoid bit-depth artifacts.
+    """
+    if isinstance(img, Image.Image):
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img_array = np.array(img).astype(np.float32) / 255.0
+        was_pil = True
+    else:
+        img_array = img
+        was_pil = False
 
     try:
         import cv2
 
-        img_array = np.array(pil_img)
-
         if strength <= 0:
-            return pil_img
+            return img
+
+        # Scaling factor for sigmaColor based on 0-1 range
+        # OpenCV bilateralFilter on float32 expects sigma in the same scale as pixels
+        s_scale = 1.0 / 255.0
 
         if method == "High Quality":
             # Sensor-aware de-noising: Separates Luma and Chroma
-            # This targets color noise aggressively while preserving luminance detail
+            # cvtColor handles float32 RGB -> YUV
             yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
             y, u, v = cv2.split(yuv)
 
-            # 1. Denoise Chrominance (U, V) - Aggressive to remove color blotches
-            # Color noise is visually distracting but carries less detail
-            chroma_strength = float(strength) * 1.5
-            # Use small d and tight sigmaSpace to prevent color bleeding
-            u_denoised = cv2.bilateralFilter(u, 5, chroma_strength * 3, 1.5)
-            v_denoised = cv2.bilateralFilter(v, 5, chroma_strength * 3, 1.5)
+            # Chroma: Aggressive to remove color blotches
+            chroma_sigma = float(strength) * 2.0 * s_scale
+            u_denoised = cv2.bilateralFilter(u, 5, chroma_sigma, 1.5)
+            v_denoised = cv2.bilateralFilter(v, 5, chroma_sigma, 1.5)
 
-            # 2. Denoise Luminance (Y) - Very conservative to preserve fine texture
-            # We use a very small sigmaSpace (0.5-0.8) to ensure only
-            # the most local pixels are averaged, preserving high-frequency detail.
-            luma_sigma_color = float(strength) * 1.2
-            luma_sigma_space = 0.5 + (
-                float(strength) / 100.0
-            )  # Very tight spatial control
+            # Luma: Conservative to preserve fine texture
+            luma_sigma_color = float(strength) * 0.8 * s_scale
+            luma_sigma_space = 0.5 + (float(strength) / 50.0)
             y_denoised = cv2.bilateralFilter(y, 3, luma_sigma_color, luma_sigma_space)
 
-            # Merge back
             denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
             denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
 
-            return Image.fromarray(denoised)
+            if was_pil:
+                return Image.fromarray((np.clip(denoised, 0, 1) * 255).astype(np.uint8))
+            else:
+                return np.clip(denoised, 0, 1)
 
         elif method == "Edge Aware":
-            # Standard Bilateral filter on RGB with tighter spatial constraints
-            # sigmaSpace is reduced to prevent global blurring
-            denoised = cv2.bilateralFilter(img_array, 5, float(strength) * 2, 1.0)
+            # Standard Bilateral filter on RGB
+            sigma = float(strength) * 1.5 * s_scale
+            denoised = cv2.bilateralFilter(img_array, 5, sigma, 1.0)
             if denoised is not None:
-                return Image.fromarray(denoised)
+                if was_pil:
+                    return Image.fromarray(
+                        (np.clip(denoised, 0, 1) * 255).astype(np.uint8)
+                    )
+                else:
+                    return np.clip(denoised, 0, 1)
     except Exception as e:
         print(f"OpenCV Denoise ({method}) failed: {e}")
 
-    # Fallback to original median filter (Standard)
-    size = int(strength)
-    if size < 3:
-        if strength > 0:
-            size = 3
-        else:
-            return pil_img
+    # Fallback to PIL or Median
+    if was_pil:
+        size = int(strength / 5.0)  # Scale down strength for median
+        if size < 3:
+            size = 3 if strength > 0 else 0
+        if size == 0:
+            return img
+        if size % 2 == 0:
+            size += 1
+        # Convert back to PIL for the filter
+        pil_img = Image.fromarray((np.clip(img_array, 0, 1) * 255).astype(np.uint8))
+        return pil_img.filter(ImageFilter.MedianFilter(size=size))
 
-    # Ensure size is odd
-    if size % 2 == 0:
-        size += 1
+    # Fallback for Numpy (Median Filter)
+    try:
+        import cv2
 
-    return pil_img.filter(ImageFilter.MedianFilter(size=size))
+        size = int(strength / 5.0)
+        if size < 3:
+            size = 3 if strength > 0 else 0
+        if size == 0:
+            return img_array
+        if size % 2 == 0:
+            size += 1
+        # medianBlur expects uint8 or float32. We can use float32.
+        denoised = cv2.medianBlur(img_array, size)
+        return np.clip(denoised, 0, 1)
+    except Exception:
+        return img_array
 
 
 def save_image(pil_img, output_path, quality=95):
