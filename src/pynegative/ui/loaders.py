@@ -45,8 +45,8 @@ class RawLoader(QtCore.QRunnable):
 
     def run(self):
         try:
-            # 1. Load Proxy (Half-Res)
-            img = pynegative.open_raw(self.path, half_size=True)
+            # 1. Load Full-Res image for editing
+            img = pynegative.open_raw(self.path, half_size=False)
 
             # 2. Check for Sidecar Settings
             settings = pynegative.load_sidecar(self.path)

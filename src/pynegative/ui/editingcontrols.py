@@ -282,9 +282,11 @@ class EditingControls(QtWidgets.QWidget):
 
         # Mapping function for combined sharpening
         def update_sharpen_params(val):
-            # val is 0..100
-            self.val_sharpen_radius = 0.5 + (val / 100.0) * 0.75
-            self.val_sharpen_percent = (val / 100.0) * 150.0
+            # val is 0..50 (reduced from 100)
+            # radius: 0.5 to 1.75 (at val=50)
+            self.val_sharpen_radius = 0.5 + (val / 100.0) * 2.5
+            # percent: 0 to 150 (at val=50)
+            self.val_sharpen_percent = (val / 100.0) * 300.0
             self.val_sharpen_value = val
             self.settingChanged.emit("sharpen_value", val)
             self.settingChanged.emit("sharpen_radius", self.val_sharpen_radius)
@@ -293,7 +295,7 @@ class EditingControls(QtWidgets.QWidget):
         self._add_slider(
             "Sharpening",
             0,
-            100,
+            50,
             self.val_sharpen_value,
             "val_sharpen_value",
             1,
@@ -304,7 +306,7 @@ class EditingControls(QtWidgets.QWidget):
         self._add_slider(
             "De-noise",
             0,
-            20,
+            50,
             self.val_de_noise,
             "val_de_noise",
             1,
@@ -779,7 +781,7 @@ class EditingControls(QtWidgets.QWidget):
             ]
         elif section_name == "details":
             params_to_reset = [
-                ("val_sharpen_value", 40.0, "sharpen_value"),
+                ("val_sharpen_value", 20.0, "sharpen_value"),
                 ("val_de_noise", 0.0, "de_noise"),
             ]
         elif section_name == "geometry":
@@ -848,14 +850,14 @@ class EditingControls(QtWidgets.QWidget):
     def _apply_preset(self, preset_type):
         """Apply preset values for sharpening and denoising."""
         if preset_type == "low":
-            self.set_slider_value("val_sharpen_value", 30.0)
-            self.set_slider_value("val_de_noise", 5.0)
+            self.set_slider_value("val_sharpen_value", 15.0)
+            self.set_slider_value("val_de_noise", 2.0)
         elif preset_type == "medium":
-            self.set_slider_value("val_sharpen_value", 60.0)
-            self.set_slider_value("val_de_noise", 15.0)
+            self.set_slider_value("val_sharpen_value", 30.0)
+            self.set_slider_value("val_de_noise", 7.0)
         elif preset_type == "high":
-            self.set_slider_value("val_sharpen_value", 100.0)
-            self.set_slider_value("val_de_noise", 25.0)
+            self.set_slider_value("val_sharpen_value", 50.0)
+            self.set_slider_value("val_de_noise", 12.0)
 
         self.presetApplied.emit(preset_type)
 
@@ -920,9 +922,12 @@ class EditingControls(QtWidgets.QWidget):
 
         sharpen_val = settings.get("sharpen_value", 0.0)
         if sharpen_val is not None:
+            # Clamp to new max of 50
+            sharpen_val = min(50.0, sharpen_val)
             self.set_slider_value("val_sharpen_value", sharpen_val, silent=True)
-            # Update derived sharpening parameters
-            self.val_sharpen_radius = 0.5 + (sharpen_val / 100.0) * 0.75
-            self.val_sharpen_percent = (sharpen_val / 100.0) * 150.0
+            # Update derived sharpening parameters using the scale factor of 100 for compatibility
+            self.val_sharpen_radius = 0.5 + (sharpen_val / 100.0) * 2.5
+            self.val_sharpen_percent = (sharpen_val / 100.0) * 300.0
 
-        self.set_slider_value("val_de_noise", settings.get("de_noise", 0), silent=True)
+        denoise_val = settings.get("de_noise", 0)
+        self.set_slider_value("val_de_noise", min(50.0, denoise_val), silent=True)

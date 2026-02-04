@@ -24,6 +24,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
         signals,
         view_ref,
         base_img_full,
+        base_img_half,
+        base_img_quarter,
         base_img_preview,
         settings,
         request_id,
@@ -33,6 +35,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.signals = signals
         self._view_ref = view_ref
         self.base_img_full = base_img_full
+        self.base_img_half = base_img_half
+        self.base_img_quarter = base_img_quarter
         self.base_img_preview = base_img_preview
         self.settings = settings
         self.request_id = request_id
@@ -85,12 +89,27 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 "saturation",
             ]
         }
+        # Optimization: Pass calculate_stats=False for live preview
         processed_bg, _ = pynegative.apply_tone_map(
-            img_render_base, **tone_map_settings
+            img_render_base, **tone_map_settings, calculate_stats=False
         )
 
+        # Apply faster De-noise to background first
+        if self.settings.get("de_noise", 0) > 0:
+            processed_bg = pynegative.de_noise_image(
+                processed_bg, self.settings["de_noise"], "Edge Aware"
+            )
+
+        # Apply Sharpening to background after de-noise
+        if self.settings.get("sharpen_value", 0) > 0:
+            processed_bg = pynegative.sharpen_image(
+                processed_bg,
+                self.settings.get("sharpen_radius", 0.5),
+                self.settings.get("sharpen_percent", 0.0),
+                "High Quality",
+            )
+
         # Prepare image for geometry (convert to uint8 for OpenCV)
-        # Note: processed_bg is float 0-1 (from apply_tone_map)
         img_uint8 = (processed_bg * 255).astype(np.uint8)
 
         rotate_val = self.settings.get("rotation", 0.0)
@@ -183,10 +202,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
         # --- Part 1.5: Histogram ---
         if self.calculate_histogram:
             try:
-                # Convert back to numpy for histogram calculation
-                # This is slightly inefficient (PIL->Numpy) but ensures histogram matches the visible geometry
-                geom_numpy = np.array(pil_bg).astype(np.float32) / 255.0
-                hist_data = self._calculate_histograms(geom_numpy)
+                # Use the already processed uint8 image for histogram (much faster)
+                hist_data = self._calculate_histograms(img_uint8)
                 self.signals.histogramUpdated.emit(hist_data, self.request_id)
             except Exception as e:
                 print(f"Histogram calculation error: {e}")
@@ -196,116 +213,113 @@ class ImageProcessorWorker(QtCore.QRunnable):
         # --- Part 2: Detail ROI ---
         pix_roi, roi_x, roi_y, roi_w, roi_h = QtGui.QPixmap(), 0, 0, 0, 0
 
-        # We only support High-Over ROI if NOT rotating.
-        # Rotation makes coordinate mapping from View -> Original too complex/slow to do smoothly on CPU.
         if is_zoomed_in and abs(rotate_val) < 0.1:
             roi = self._view_ref.mapToScene(
                 self._view_ref.viewport().rect()
             ).boundingRect()
 
-            # View coordinates are now in "Cropped Space" (if cropped)
-            # We need to map View Coords -> Original Image Coords
-
-            # View coords (v_x, v_y)
             v_x, v_y, v_w, v_h = roi.x(), roi.y(), roi.width(), roi.height()
 
-            # Map to Original: Add Crop Offset
-            offset_x = 0
-            offset_y = 0
-
+            offset_x, offset_y = 0, 0
             if crop_val:
-                # crop_val is normalized (l, t, r, b)
-                # We need pixel offsets in FULL resolution
                 orig_full_w = self.base_img_full.shape[1]
                 orig_full_h = self.base_img_full.shape[0]
-
                 offset_x = int(crop_val[0] * orig_full_w)
                 offset_y = int(crop_val[1] * orig_full_h)
 
-            # Source coordinates
-            src_x = int(v_x + offset_x)
-            src_y = int(v_y + offset_y)
-            src_w = int(v_w)
-            src_h = int(v_h)
+            src_x, src_y = int(v_x + offset_x), int(v_y + offset_y)
+            src_w, src_h = int(v_w), int(v_h)
 
-            # Mirror source coordinates if flipped
-            orig_w = self.base_img_full.shape[1]
-            orig_h = self.base_img_full.shape[0]
-
+            orig_w, orig_h = self.base_img_full.shape[1], self.base_img_full.shape[0]
             if flip_h:
                 src_x = orig_w - (src_x + src_w)
             if flip_v:
                 src_y = orig_h - (src_y + src_h)
 
-            # Clamp to original image bounds
-            src_x = max(0, src_x)
-            src_y = max(0, src_y)
-            src_x2 = min(orig_w, src_x + src_w)
-            src_y2 = min(orig_h, src_y + src_h)
+            src_x, src_y = max(0, src_x), max(0, src_y)
+            src_x2, src_y2 = min(orig_w, src_x + src_w), min(orig_h, src_y + src_h)
 
             if (req_w := src_x2 - src_x) > 10 and (req_h := src_y2 - src_y) > 10:
-                crop_chunk = self.base_img_full[src_y:src_y2, src_x:src_x2]
+                # Decide which source to use based on zoom level
+                # Tiered approach for performance:
+                # 1. Zoom < 75%: Use 1/4 size RAW
+                # 2. 75% <= Zoom < 200%: Use 1/2 size RAW
+                # 3. Zoom >= 200%: Use Full size RAW
+                if zoom_scale < 0.75 and self.base_img_quarter is not None:
+                    # Scale coordinates to quarter-res
+                    q_src_x, q_src_y = src_x // 4, src_y // 4
+                    q_src_x2, q_src_y2 = src_x2 // 4, src_y2 // 4
+                    crop_chunk = self.base_img_quarter[
+                        q_src_y:q_src_y2, q_src_x:q_src_x2
+                    ]
+                elif zoom_scale < 2.0 and self.base_img_half is not None:
+                    # Scale coordinates to half-res
+                    h_src_x, h_src_y = src_x // 2, src_y // 2
+                    h_src_x2, h_src_y2 = src_x2 // 2, src_y2 // 2
+                    crop_chunk = self.base_img_half[h_src_y:h_src_y2, h_src_x:h_src_x2]
+                else:
+                    crop_chunk = self.base_img_full[src_y:src_y2, src_x:src_x2]
 
-                # Flip the chunk to match preview
                 if flip_h or flip_v:
                     flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
                     crop_chunk = cv2.flip(crop_chunk, flip_code)
 
+                # Process ROI in float32 Numpy
                 processed_roi, _ = pynegative.apply_tone_map(
-                    crop_chunk, **tone_map_settings
+                    crop_chunk, **tone_map_settings, calculate_stats=False
                 )
-                pil_roi = Image.fromarray((processed_roi * 255).astype(np.uint8))
 
+                # 2. De-noise first
+                if self.settings.get("de_noise", 0) > 0:
+                    processed_roi = pynegative.de_noise_image(
+                        processed_roi, self.settings["de_noise"], "High Quality"
+                    )
+
+                # 3. Sharpen second (to avoid sharpening noise)
                 if self.settings.get("sharpen_value", 0) > 0:
-                    pil_roi = pynegative.sharpen_image(
-                        pil_roi,
+                    processed_roi = pynegative.sharpen_image(
+                        processed_roi,
                         self.settings["sharpen_radius"],
                         self.settings["sharpen_percent"],
                         "High Quality",
                     )
-                if self.settings.get("de_noise", 0) > 0:
-                    pil_roi = pynegative.de_noise_image(
-                        pil_roi, self.settings["de_noise"], "High Quality"
-                    )
 
+                # Final ROI conversion to QPixmap
+                pil_roi = Image.fromarray((processed_roi * 255).astype(np.uint8))
                 pix_roi = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_roi))
 
-                # ROI position in View Coordinates
-                roi_x = src_x - offset_x
-                roi_y = src_y - offset_y
-                roi_w = req_w
-                roi_h = req_h
+                roi_x, roi_y = src_x - offset_x, src_y - offset_y
+                roi_w, roi_h = req_w, req_h
 
         return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
 
-    def _calculate_histograms(self, img_float):
-        """Calculate RGB and YUV histograms with high performance."""
-        # Use 256 bins for the display
+    def _calculate_histograms(self, img_array):
+        """Calculate RGB and YUV histograms efficiently."""
         bins = 256
+        h, w = img_array.shape[:2]
 
-        # Performance optimization 1: Downsample heavily for histogram.
-        # 256px resolution is more than enough for an accurate histogram.
-        h, w, _ = img_float.shape
-        hist_scale = 256 / max(h, w)
-        # Use INTER_NEAREST for maximum speed during histogram downsampling
-        small_img = cv2.resize(
-            img_float,
-            (int(w * hist_scale), int(h * hist_scale)),
-            interpolation=cv2.INTER_NEAREST,
-        )
+        # If image is still large (background preview is ~2048px), downsample for histogram speed
+        if max(h, w) > 512:
+            scale = 256 / max(h, w)
+            small_img = cv2.resize(
+                img_array,
+                (int(w * scale), int(h * scale)),
+                interpolation=cv2.INTER_NEAREST,
+            )
+        else:
+            small_img = img_array
 
-        # Performance optimization 2: Use cv2.calcHist on uint16 data.
-        # This is significantly faster than np.histogram and preserves 16-bit precision.
-        img_u16 = (small_img * 65535).astype(np.uint16)
+        # Handle RGBA from rotation
+        if small_img.shape[2] == 4:
+            small_img = cv2.cvtColor(small_img, cv2.COLOR_RGBA2RGB)
 
-        # RGB Histograms (Calculate on 16-bit to avoid sawtooth)
-        hist_r = cv2.calcHist([img_u16], [0], None, [bins], [0, 65536]).flatten()
-        hist_g = cv2.calcHist([img_u16], [1], None, [bins], [0, 65536]).flatten()
-        hist_b = cv2.calcHist([img_u16], [2], None, [bins], [0, 65536]).flatten()
+        # RGB Histograms (Use calcHist on uint8)
+        hist_r = cv2.calcHist([small_img], [0], None, [bins], [0, 256]).flatten()
+        hist_g = cv2.calcHist([small_img], [1], None, [bins], [0, 256]).flatten()
+        hist_b = cv2.calcHist([small_img], [2], None, [bins], [0, 256]).flatten()
 
-        # YUV Histograms (Use uint8 for speed as visual precision is less critical here)
-        img_u8 = (small_img * 255).astype(np.uint8)
-        img_yuv = cv2.cvtColor(img_u8, cv2.COLOR_RGB2YUV)
+        # YUV Histograms
+        img_yuv = cv2.cvtColor(small_img, cv2.COLOR_RGB2YUV)
         hist_y = cv2.calcHist([img_yuv], [0], None, [bins], [0, 256]).flatten()
         hist_u = cv2.calcHist([img_yuv], [1], None, [bins], [0, 256]).flatten()
         hist_v = cv2.calcHist([img_yuv], [2], None, [bins], [0, 256]).flatten()
@@ -340,6 +354,8 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._render_pending = False
         self._is_rendering_locked = False
         self.base_img_full = None
+        self.base_img_half = None
+        self.base_img_quarter = None
         self.base_img_preview = None
         self._processing_params = {}
         self._view_ref = None
@@ -361,16 +377,27 @@ class ImageProcessingPipeline(QtCore.QObject):
         # edits from the previous one, unless we explicitly load them.
         self._processing_params = {}
         if img_array is not None:
-            # Create a 2048px float32 preview once.
-            # This is reused for background rendering and histograms, avoiding
-            # expensive full-res resizes during slider updates.
             h, w, _ = img_array.shape
+
+            # 1. Create a 50% scale RAW for intermediate zooms (75% <= Zoom < 200%)
+            self.base_img_half = cv2.resize(
+                img_array, (w // 2, h // 2), interpolation=cv2.INTER_LINEAR
+            )
+
+            # 2. Create a 25% scale RAW for lower zooms (Fit < Zoom < 75%)
+            self.base_img_quarter = cv2.resize(
+                img_array, (w // 4, h // 4), interpolation=cv2.INTER_LINEAR
+            )
+
+            # 3. Create a 2048px float32 preview for global background.
             scale = 2048 / max(h, w)
             target_h, target_w = int(h * scale), int(w * scale)
             self.base_img_preview = cv2.resize(
                 img_array, (target_w, target_h), interpolation=cv2.INTER_LINEAR
             )
         else:
+            self.base_img_half = None
+            self.base_img_quarter = None
             self.base_img_preview = None
 
     def set_view_reference(self, view):
@@ -411,6 +438,8 @@ class ImageProcessingPipeline(QtCore.QObject):
             self.signals,
             self._view_ref,
             self.base_img_full,
+            self.base_img_half,
+            self.base_img_quarter,
             self.base_img_preview,
             self.get_current_settings(),
             self._current_request_id,

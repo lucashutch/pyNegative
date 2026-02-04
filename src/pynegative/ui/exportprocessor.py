@@ -120,6 +120,13 @@ class ExportProcessor(QtCore.QRunnable):
             flip_v=sidecar_settings.get("flip_v", False),
         )
 
+        # Apply Denoise if present in sidecar
+        denoise_val = sidecar_settings.get("de_noise", 0)
+        if denoise_val > 0:
+            pil_img = pynegative.de_noise_image(
+                pil_img, denoise_val, method="High Quality"
+            )
+
         # Apply Sharpening if present in sidecar
         sharpen_val = sidecar_settings.get("sharpen_value", 0)
         if sharpen_val > 0:
@@ -128,13 +135,6 @@ class ExportProcessor(QtCore.QRunnable):
                 sidecar_settings.get("sharpen_radius", 0.5),
                 sidecar_settings.get("sharpen_percent", 0.0),
                 method="High Quality",
-            )
-
-        # Apply Denoise if present in sidecar
-        denoise_val = sidecar_settings.get("de_noise", 0)
-        if denoise_val > 0:
-            pil_img = pynegative.de_noise_image(
-                pil_img, denoise_val, method="High Quality"
             )
 
         # Apply size constraints if specified
