@@ -78,6 +78,9 @@ class CollapsibleSection(QtWidgets.QWidget):
     def add_widget(self, widget):
         self.content_layout.addWidget(widget)
 
+    def add_layout(self, layout):
+        self.content_layout.addLayout(layout)
+
     def minimumSizeHint(self):
         hint = self.header.sizeHint()
         if self.header.isChecked():

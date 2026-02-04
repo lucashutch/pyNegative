@@ -124,7 +124,10 @@ class ExportProcessor(QtCore.QRunnable):
         denoise_val = sidecar_settings.get("de_noise", 0)
         if denoise_val > 0:
             pil_img = pynegative.de_noise_image(
-                pil_img, denoise_val, method="High Quality"
+                pil_img,
+                denoise_val,
+                method=sidecar_settings.get("denoise_method", "High Quality"),
+                zoom=1.0,
             )
 
         # Apply Sharpening if present in sidecar
