@@ -94,14 +94,14 @@ class ImageProcessorWorker(QtCore.QRunnable):
             img_render_base, **tone_map_settings, calculate_stats=False
         )
 
-        # Apply faster De-noise to background first
-        if self.settings.get("de_noise", 0) > 0:
+        # Apply De-noise to background (Skip if zoomed in to save performance, as ROI will cover it)
+        if not is_zoomed_in and self.settings.get("de_noise", 0) > 0:
             processed_bg = pynegative.de_noise_image(
-                processed_bg, self.settings["de_noise"], "Edge Aware"
+                processed_bg, self.settings["de_noise"], "High Quality"
             )
 
-        # Apply Sharpening to background after de-noise
-        if self.settings.get("sharpen_value", 0) > 0:
+        # Apply Sharpening to background (Skip if zoomed in)
+        if not is_zoomed_in and self.settings.get("sharpen_value", 0) > 0:
             processed_bg = pynegative.sharpen_image(
                 processed_bg,
                 self.settings.get("sharpen_radius", 0.5),
@@ -242,17 +242,17 @@ class ImageProcessorWorker(QtCore.QRunnable):
             if (req_w := src_x2 - src_x) > 10 and (req_h := src_y2 - src_y) > 10:
                 # Decide which source to use based on zoom level
                 # Tiered approach for performance:
-                # 1. Zoom < 75%: Use 1/4 size RAW
-                # 2. 75% <= Zoom < 200%: Use 1/2 size RAW
-                # 3. Zoom >= 200%: Use Full size RAW
-                if zoom_scale < 0.75 and self.base_img_quarter is not None:
+                # 1. Zoom < 50%: Use 1/4 size RAW
+                # 2. 50% <= Zoom < 150%: Use 1/2 size RAW
+                # 3. Zoom >= 150%: Use Full size RAW
+                if zoom_scale < 0.5 and self.base_img_quarter is not None:
                     # Scale coordinates to quarter-res
                     q_src_x, q_src_y = src_x // 4, src_y // 4
                     q_src_x2, q_src_y2 = src_x2 // 4, src_y2 // 4
                     crop_chunk = self.base_img_quarter[
                         q_src_y:q_src_y2, q_src_x:q_src_x2
                     ]
-                elif zoom_scale < 2.0 and self.base_img_half is not None:
+                elif zoom_scale < 1.5 and self.base_img_half is not None:
                     # Scale coordinates to half-res
                     h_src_x, h_src_y = src_x // 2, src_y // 2
                     h_src_x2, h_src_y2 = src_x2 // 2, src_y2 // 2
