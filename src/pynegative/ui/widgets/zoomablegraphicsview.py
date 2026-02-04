@@ -7,6 +7,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
     zoomChanged = Signal(float)
     doubleClicked = Signal()
     cropRectChanged = Signal(QRectF)
+    rotationChanged = Signal(float)  # Forward rotation changes from crop item
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -40,9 +41,10 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self._scene.addItem(self._crop_item)
         self._crop_item.setZValue(10)  # On top of everything
         self._crop_item.hide()
-        # forward signal
+        # forward signals
         self._crop_item.cropChanged.connect(self.cropRectChanged.emit)
         self._crop_item.cropChanged.connect(self._on_crop_rect_changed)
+        self._crop_item.rotationChanged.connect(self.rotationChanged.emit)
 
         self._current_zoom = 1.0
         self._fit_in_view_scale = 1.0
@@ -67,7 +69,8 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
         x_scale = view_rect.width() / scene_rect.width()
         y_scale = view_rect.height() / scene_rect.height()
-        self._fit_in_view_scale = min(x_scale, y_scale)
+        # Allow zooming out to 50% of the fit scale to ensure handles are visible
+        self._fit_in_view_scale = min(x_scale, y_scale) * 0.5
 
     def resizeEvent(self, event):
         """Handle viewport resizing."""
@@ -126,6 +129,10 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
             self._is_fitting = True
             return
         self.fitInView(self._scene.sceneRect(), Qt.KeepAspectRatio)
+        # If crop mode is active, zoom out a bit more to see handles
+        if self._crop_item.isVisible():
+            self.scale(0.8, 0.8)
+
         self._current_zoom = self.transform().m11()
         self._is_fitting = True
         self.zoomChanged.emit(self._current_zoom)
@@ -194,8 +201,8 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         rect = self._crop_item.get_rect()
         if not rect.isEmpty():
             self.fitInView(rect, Qt.KeepAspectRatio)
-            # Zoom out slightly for breathing room
-            self.scale(0.9, 0.9)
+            # Zoom out slightly for breathing room and to see rotation handles
+            self.scale(0.8, 0.8)
             self._current_zoom = self.transform().m11()
             self._is_fitting = False
             self.zoomChanged.emit(self._current_zoom)
@@ -207,3 +214,11 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
         # Center the view on the new crop rectangle
         self.centerOn(rect.center())
+
+    def set_rotation(self, angle: float) -> None:
+        """Set rotation angle on crop item."""
+        self._crop_item.set_rotation(angle)
+
+    def get_rotation(self) -> float:
+        """Get rotation angle from crop item."""
+        return self._crop_item.get_rotation()
