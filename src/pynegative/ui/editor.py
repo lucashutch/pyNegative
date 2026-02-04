@@ -66,6 +66,15 @@ class EditorWidget(QtWidgets.QWidget):
         self.settings_manager = SettingsManager(self)
         self.carousel_manager = CarouselManager(self.thread_pool, self)
 
+        # Throttling for rotation handle updates
+        self._rotation_handle_throttle_timer = QtCore.QTimer()
+        self._rotation_handle_throttle_timer.setSingleShot(True)
+        self._rotation_handle_throttle_timer.setInterval(33)  # ~30fps
+        self._rotation_handle_throttle_timer.timeout.connect(
+            self._apply_pending_rotation
+        )
+        self._pending_rotation_from_handle = None
+
     def _init_ui(self):
         """Initialize the user interface."""
         main_layout = QtWidgets.QHBoxLayout(self)
@@ -173,6 +182,9 @@ class EditorWidget(QtWidgets.QWidget):
         self.editing_controls.ratingChanged.connect(self._on_rating_changed)
         self.editing_controls.autoWbRequested.connect(self._on_auto_wb_requested)
         self.editing_controls.presetApplied.connect(self._on_preset_applied)
+
+        # Rotation handles -> Editor
+        self.view.rotationChanged.connect(self._on_rotation_handle_changed)
 
         # Histogram logic
         self.editing_controls.histogram_section.expandedChanged.connect(
@@ -364,6 +376,11 @@ class EditorWidget(QtWidgets.QWidget):
         ):
             current_settings = self.image_processor.get_current_settings()
             rotate_val = current_settings.get("rotation", 0.0)
+
+            # Update visual rotation handle position (if crop mode is active)
+            if self.editing_controls.crop_btn.isChecked():
+                self.view.set_rotation(rotate_val)
+
             h, w = self.image_processor.base_img_full.shape[:2]
 
             # Get current aspect ratio lock
@@ -482,9 +499,12 @@ class EditorWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.critical(self, "Error", "Failed to load image")
             return
 
-        # Apply loaded settings
+        # 1. Set the image first (this clears existing params in the processor)
+        self.image_processor.set_image(img_arr)
+
+        # 2. Apply loaded settings if they exist
         if settings:
-            # Set rating
+            # Set rating UI
             rating = settings.get("rating", 0)
             self.editing_controls.set_rating(rating)
             self.preview_rating_widget.set_rating(rating)
@@ -492,50 +512,27 @@ class EditorWidget(QtWidgets.QWidget):
                 self.image_processor.get_current_settings(), rating
             )
 
-            # Apply settings to editing controls
+            # Apply settings to editing controls UI (silent to avoid clearing crop)
             self.editing_controls.apply_settings(settings)
 
-            # Apply settings to image processor
-            self.image_processor.set_processing_params(
-                temperature=settings.get("temperature", 0.0),
-                tint=settings.get("tint", 0.0),
-                exposure=settings.get("exposure", 0.0),
-                contrast=settings.get("contrast", 1.0),
-                whites=settings.get("whites", 1.0),
-                blacks=settings.get("blacks", 0.0),
-                highlights=settings.get("highlights", 0.0),
-                shadows=settings.get("shadows", 0.0),
-                saturation=settings.get("saturation", 1.0),
-                rotation=settings.get("rotation", 0.0),
-                crop=settings.get("crop", None),
-            )
+            # Update image processor params with loaded settings
+            # We combine UI-mapped settings and direct sidecar settings
+            all_params = self.editing_controls.get_all_settings()
+            loaded_crop = settings.get("crop")
+            rotate_val = settings.get("rotation", 0.0)
 
-            # Handle sharpening value
-            sharpen_val = settings.get("sharpen_value")
-            if sharpen_val is not None:
-                self.editing_controls.set_slider_value("val_sharpen", sharpen_val)
-            else:
-                # Compatibility: try to infer from radius/percent
-                radius = settings.get("sharpen_radius", 2.0)
-                # Reverse mapping: s = (radius - 0.5) / 0.75 * 100
-                inferred_val = max(0, min(100, (radius - 0.5) / 0.75 * 100))
-                self.editing_controls.set_slider_value("val_sharpen", inferred_val)
+            # If rotation is present but no manual crop exists, apply safe crop
+            if loaded_crop is None and abs(rotate_val) > 0.1:
+                h, w = img_arr.shape[:2]
+                loaded_crop = pynegative.calculate_max_safe_crop(w, h, rotate_val)
 
-            self.editing_controls.set_slider_value(
-                "val_denoise", settings.get("de_noise", 0)
-            )
+            all_params["crop"] = loaded_crop
+            self.image_processor.set_processing_params(**all_params)
 
-            # Update image processor with all settings
-            self.editing_controls._apply_preset("")  # Trigger the sharpening mapping
-            self.image_processor.set_processing_params(
-                **self.editing_controls.get_all_settings()
-            )
-
-        # Set image and trigger update
-        self.image_processor.set_image(img_arr)
+        # 3. Trigger a single unified update
         self._request_update_from_view()
 
-        # Request a fit once the UI settles
+        # 4. Request a fit once the UI settles
         QtCore.QTimer.singleShot(50, self.view.reset_zoom)
         QtCore.QTimer.singleShot(200, self.view.reset_zoom)
 
@@ -555,6 +552,28 @@ class EditorWidget(QtWidgets.QWidget):
             return
 
         settings = self.image_processor.get_current_settings()
+
+        # If we are in crop mode, the processor has crop=None to show full image.
+        # We MUST save the intended crop from the visual tool so it persists.
+        if self.editing_controls.crop_btn.isChecked():
+            rect = self.view.get_crop_rect()
+            scene_rect = self.view.sceneRect()
+            w, h = scene_rect.width(), scene_rect.height()
+
+            if w > 0 and h > 0:
+                c_left = rect.left() / w
+                c_top = rect.top() / h
+                c_right = rect.right() / w
+                c_bottom = rect.bottom() / h
+
+                # Clamp
+                c_left = max(0.0, min(1.0, c_left))
+                c_top = max(0.0, min(1.0, c_top))
+                c_right = max(0.0, min(1.0, c_right))
+                c_bottom = max(0.0, min(1.0, c_bottom))
+
+                settings["crop"] = (c_left, c_top, c_right, c_bottom)
+
         self.settings_manager.auto_save_sidecar(
             self.raw_path, settings, self.editing_controls.star_rating_widget.rating()
         )
@@ -764,6 +783,9 @@ class EditorWidget(QtWidgets.QWidget):
             current_crop = current_settings.get("crop")
             rotate_val = current_settings.get("rotation", 0.0)
 
+            # Update rotation handle visual state
+            self.view.set_rotation(rotate_val)
+
             # Calculate the dimensions of the FULL rotated image (uncropped)
             # We need these to correctly map the normalized crop coordinates to the scene.
             if self.image_processor.base_img_full is not None:
@@ -877,3 +899,35 @@ class EditorWidget(QtWidgets.QWidget):
             self._request_update_from_view()
             self.show_toast("Crop Applied")
             self._auto_save_sidecar()
+
+    def _on_rotation_handle_changed(self, angle: float):
+        """Handle rotation change from crop tool handles (throttled)."""
+        # Store pending rotation
+        self._pending_rotation_from_handle = angle
+
+        # Update slider display immediately (visual feedback)
+        self.editing_controls.set_slider_value("rotation", angle, silent=True)
+
+        # Start throttle timer for processor update
+        if not self._rotation_handle_throttle_timer.isActive():
+            self._rotation_handle_throttle_timer.start()
+
+    def _apply_pending_rotation(self):
+        """Apply the pending rotation value to processor."""
+        if self._pending_rotation_from_handle is None:
+            return
+
+        angle = self._pending_rotation_from_handle
+
+        # Update processor (this triggers image re-render)
+        self.image_processor.set_processing_params(rotation=angle)
+        self._request_update_from_view()
+        self.save_timer.start(1000)
+
+        # Schedule undo state
+        current_settings = self.image_processor.get_current_settings()
+        self.settings_manager.schedule_undo_state(
+            f"Rotate to {angle:.1f}°", current_settings
+        )
+
+        self._pending_rotation_from_handle = None

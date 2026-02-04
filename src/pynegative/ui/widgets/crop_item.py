@@ -4,10 +4,11 @@ from PySide6.QtCore import Qt
 
 class CropRectItem(QtWidgets.QGraphicsObject):
     """
-    Interactive Crop Rectangle with resize handles and Rule of Thirds grid.
+    Interactive Crop Rectangle with resize handles, rotation handles, and Rule of Thirds grid.
     """
 
     cropChanged = QtCore.Signal(QtCore.QRectF)
+    rotationChanged = QtCore.Signal(float)  # Emit rotation angle in degrees
 
     def __init__(self, rect=QtCore.QRectF(0, 0, 100, 100), parent=None):
         super().__init__(parent)
@@ -24,6 +25,15 @@ class CropRectItem(QtWidgets.QGraphicsObject):
         self._aspect_ratio = 0.0  # 0.0 means free crop
         self._safe_bounds = None  # QRectF of valid image area
 
+        # Rotation handle state
+        self._rotation_angle = 0.0  # Current rotation in degrees
+        self._active_rotation_handle = None  # Which rotation handle is being dragged
+        self._rotation_start_angle = 0.0  # Starting angle at mouse press
+        self._rotation_start_rotation = 0.0  # Starting rotation value at mouse press
+        self._rotation_handle_distance = 50  # Distance from edge in screen pixels
+        self._last_rotation_emit_time = 0  # Track last signal emission for throttling
+        self._rotation_throttle_ms = 33  # ~30fps (1000ms / 30 = 33.3ms)
+
         # Colors
         self._pen = QtGui.QPen(QtCore.Qt.white, 1, QtCore.Qt.SolidLine)
         self._pen.setCosmetic(True)  # Keep line width constant regardless of zoom
@@ -35,7 +45,9 @@ class CropRectItem(QtWidgets.QGraphicsObject):
 
     def boundingRect(self):
         # Add padding for handles
-        pad = self._handle_size / 2
+        # Use a very generous padding to ensure rotation handles are hit-testable
+        # even when zoomed out on high-resolution images.
+        pad = 5000
         return self._rect.adjusted(-pad, -pad, pad, pad)
 
     def set_rect(self, rect):
@@ -183,6 +195,19 @@ class CropRectItem(QtWidgets.QGraphicsObject):
         for k, pt in handles.items():
             painter.drawPoint(pt)
 
+        # 4. Rotation Handles (Top Center and Middle Right)
+        rotation_handles = self._get_rotation_handles()
+        handle_color = QtGui.QColor(74, 144, 226, 200)  # Blue #4A90E2
+        rotation_handle_pen = QtGui.QPen(handle_color, self._handle_size)
+        rotation_handle_pen.setCosmetic(True)
+        rotation_handle_pen.setCapStyle(QtCore.Qt.RoundCap)
+        painter.setPen(rotation_handle_pen)
+
+        for k, pt in rotation_handles.items():
+            painter.drawPoint(pt)
+            # Draw rotation icon (double curved arrows)
+            self._draw_rotation_icon(painter, pt)
+
     def _hit_test(self, pos):
         # Check handles first
         handles = self._get_handles()
@@ -204,7 +229,7 @@ class CropRectItem(QtWidgets.QGraphicsObject):
                 radius = 20 / scale  # 20px screen radius
 
         for k, pt in handles.items():
-            if (pos - pt).manhattanLength() < radius:
+            if QtCore.QLineF(pos, pt).length() < radius:
                 return k
         return None
 
@@ -223,6 +248,25 @@ class CropRectItem(QtWidgets.QGraphicsObject):
 
     def hoverMoveEvent(self, event):
         pos = event.pos()
+
+        # Check rotation zone first (handle + far outside)
+        rotation_handle = self._hit_test_rotation(pos)
+
+        views = self.scene().views() if self.scene() else []
+        scale = 1.0
+        if views:
+            scale = views[0].transform().m11()
+
+        buffer = 30 / scale
+        is_outside = not self._rect.adjusted(-buffer, -buffer, buffer, buffer).contains(
+            pos
+        )
+
+        if rotation_handle or is_outside:
+            self.setCursor(Qt.PointingHandCursor)
+            super().hoverMoveEvent(event)
+            return
+
         handle = self._hit_test(pos)
 
         cursor = Qt.ArrowCursor
@@ -242,18 +286,96 @@ class CropRectItem(QtWidgets.QGraphicsObject):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self._active_handle = self._hit_test(event.pos())
-            if self._active_handle is None and self._rect.contains(event.pos()):
-                self._active_handle = "move"
+            pos = event.pos()
 
-            if self._active_handle:
-                self._mouse_press_pos = event.pos()
+            # 1. Check specific rotation handle (top middle)
+            handle = self._hit_test_rotation(pos)
+            if handle:
+                self._active_rotation_handle = handle
+                self._mouse_press_pos = pos
+                self._rotation_start_angle = self._calculate_angle_from_center(pos)
+                self._rotation_start_rotation = self._rotation_angle
+                event.accept()
+                return
+
+            # 2. Check resize handles
+            handle = self._hit_test(pos)
+            if handle:
+                self._active_handle = handle
+                self._mouse_press_pos = pos
                 self._mouse_press_screen_pos = event.screenPos()
                 self._mouse_press_rect = QtCore.QRectF(self._rect)
                 event.accept()
+                return
+
+            # 3. Check if inside crop rect (move)
+            if self._rect.contains(pos):
+                self._active_handle = "move"
+                self._mouse_press_pos = pos
+                self._mouse_press_screen_pos = event.screenPos()
+                self._mouse_press_rect = QtCore.QRectF(self._rect)
+                event.accept()
+                return
+
+            # 4. Outside interaction: Buffer check
+            views = self.scene().views() if self.scene() else []
+            scale = 1.0
+            if views:
+                scale = views[0].transform().m11()
+
+            # 30px screen-space buffer to avoid accidental rotations near the crop area
+            buffer = 30 / scale
+
+            if not self._rect.adjusted(-buffer, -buffer, buffer, buffer).contains(pos):
+                # Far enough outside to rotate
+                self._active_rotation_handle = "general"
+                self._mouse_press_pos = pos
+                self._rotation_start_angle = self._calculate_angle_from_center(pos)
+                self._rotation_start_rotation = self._rotation_angle
+                event.accept()
+                return
+
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self._active_rotation_handle:
+            # Calculate rotation angle
+            current_angle = self._calculate_angle_from_center(event.pos())
+            delta_angle = current_angle - self._rotation_start_angle
+
+            # Handle angle wrapping (crossing the 180/-180 boundary)
+            while delta_angle > 180:
+                delta_angle -= 360
+            while delta_angle < -180:
+                delta_angle += 360
+
+            new_rotation = self._rotation_start_rotation - delta_angle
+
+            # Shift-key snapping
+            modifiers = QtGui.QGuiApplication.queryKeyboardModifiers()
+            if modifiers & Qt.ShiftModifier:
+                new_rotation = self._snap_angle(new_rotation)
+
+            # Clamp to ±45°
+            new_rotation = max(-45.0, min(45.0, new_rotation))
+            self._rotation_angle = new_rotation
+
+            # Throttle signal emission (30fps)
+            import time
+
+            current_time = time.time() * 1000  # milliseconds
+            if (
+                current_time - self._last_rotation_emit_time
+                >= self._rotation_throttle_ms
+            ):
+                self.rotationChanged.emit(self._rotation_angle)
+                self._last_rotation_emit_time = current_time
+
+            # Always update (this is cheap)
+            self.update()
+            event.accept()
+            return
+
         if self._active_handle and self._mouse_press_rect:
             # Calculate delta in screen pixels
             delta_px = event.screenPos() - self._mouse_press_screen_pos
@@ -270,25 +392,16 @@ class CropRectItem(QtWidgets.QGraphicsObject):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self._active_rotation_handle:
+            # Emit final rotation value on release (ensures exact final value is set)
+            self.rotationChanged.emit(self._rotation_angle)
+            self._active_rotation_handle = None
+            self.update()
+
         self._active_handle = None
         self._mouse_press_pos = None
         self._mouse_press_rect = None
         super().mouseReleaseEvent(event)
-
-    def _hit_test(self, pos):
-        # Check handles first
-        handles = self._get_handles()
-        # Need to account for zoom level for hit testing?
-        # For MVP, use fixed radius in scene units.
-        # Ideally we transform pos to device coords, but we don't have view access easily.
-        # Let's assume a generous hit radius relative to scene scale or just hardcode for typical images (3000px wide)
-        # 50px radius?
-        radius = 50
-
-        for k, pt in handles.items():
-            if (pos - pt).manhattanLength() < radius:
-                return k
-        return None
 
     def _update_geometry(self, handle, diff):
         r = QtCore.QRectF(self._mouse_press_rect)
@@ -458,3 +571,155 @@ class CropRectItem(QtWidgets.QGraphicsObject):
         self.prepareGeometryChange()
         self.update()
         self.cropChanged.emit(self._rect)
+
+    def set_rotation(self, angle: float) -> None:
+        """Set rotation angle externally (from slider)."""
+        self._rotation_angle = max(-45.0, min(45.0, angle))
+        self.update()
+
+    def get_rotation(self) -> float:
+        """Get current rotation angle."""
+        return self._rotation_angle
+
+    def _get_rotation_handles(self):
+        """Return positions of rotation handles (top center)."""
+        r = self._rect
+
+        # Calculate screen-space offset (50px outside edge)
+        views = self.scene().views() if self.scene() else []
+        scale = 1.0
+        if views:
+            scale = views[0].transform().m11()
+
+        offset_distance = (
+            self._rotation_handle_distance / scale
+        )  # Convert to scene units
+
+        return {
+            "rot_top": QtCore.QPointF(r.center().x(), r.top() - offset_distance),
+        }
+
+    def _hit_test_rotation(self, pos):
+        """Check if position hits a rotation handle."""
+        handles = self._get_rotation_handles()
+
+        # Hit radius in screen pixels
+        views = self.scene().views() if self.scene() else []
+        scale = 1.0
+        if views:
+            scale = views[0].transform().m11()
+
+        # Use a generous 30px screen radius for easier hitting
+        radius = 30 / scale
+
+        for k, pt in handles.items():
+            if QtCore.QLineF(pos, pt).length() < radius:
+                return k
+        return None
+
+    def _calculate_angle_from_center(self, pos: QtCore.QPointF) -> float:
+        """Calculate angle in degrees from rect center to position."""
+        import math
+
+        center = self._rect.center()
+        dx = pos.x() - center.x()
+        dy = pos.y() - center.y()
+        angle_rad = math.atan2(dy, dx)
+        angle_deg = math.degrees(angle_rad)
+        return angle_deg
+
+    def _snap_angle(self, angle: float) -> float:
+        """Snap angle to cardinal directions (0°, ±90°, ±180°) if within threshold."""
+        snap_threshold = 5.0  # degrees
+        snap_angles = [0.0, 90.0, -90.0, 180.0, -180.0]
+
+        for snap in snap_angles:
+            if abs(angle - snap) < snap_threshold:
+                return snap
+
+        return angle
+
+    def _draw_rotation_icon(self, painter, center_pos):
+        """Draw double curved arrow rotation icon at handle position."""
+        import math
+
+        painter.save()
+
+        # Get scale for cosmetic drawing
+        views = self.scene().views() if self.scene() else []
+        scale = 1.0
+        if views:
+            scale = views[0].transform().m11()
+
+        icon_radius = 8 / scale  # 8px in screen space
+
+        # Draw circular arrows (rotation symbol)
+        pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 220), 1.5 / scale)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+
+        # Draw two arc arrows forming a rotation symbol
+        rect = QtCore.QRectF(
+            center_pos.x() - icon_radius,
+            center_pos.y() - icon_radius,
+            icon_radius * 2,
+            icon_radius * 2,
+        )
+
+        # First arc (top-right to bottom-right, clockwise)
+        start_angle = -45 * 16  # Qt uses 1/16th degree units
+        span_angle = 200 * 16
+        painter.drawArc(rect, start_angle, span_angle)
+
+        # Arrow head for first arc
+        arrow_angle = math.radians(-45 + 200)
+        arrow_x = center_pos.x() + icon_radius * math.cos(arrow_angle)
+        arrow_y = center_pos.y() - icon_radius * math.sin(arrow_angle)
+        arrow_size = 3 / scale
+
+        # Draw small arrow head
+        arrow_head = QtGui.QPolygonF(
+            [
+                QtCore.QPointF(arrow_x, arrow_y),
+                QtCore.QPointF(
+                    arrow_x + arrow_size * math.cos(arrow_angle + math.radians(150)),
+                    arrow_y - arrow_size * math.sin(arrow_angle + math.radians(150)),
+                ),
+                QtCore.QPointF(
+                    arrow_x + arrow_size * math.cos(arrow_angle - math.radians(150)),
+                    arrow_y - arrow_size * math.sin(arrow_angle - math.radians(150)),
+                ),
+            ]
+        )
+        painter.setBrush(QtGui.QColor(255, 255, 255, 220))
+        painter.drawPolygon(arrow_head)
+
+        # Second arc (bottom-left to top-left, clockwise) - mirror of first
+        start_angle2 = 135 * 16
+        span_angle2 = 200 * 16
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawArc(rect, start_angle2, span_angle2)
+
+        # Arrow head for second arc
+        arrow_angle2 = math.radians(135 + 200)
+        arrow_x2 = center_pos.x() + icon_radius * math.cos(arrow_angle2)
+        arrow_y2 = center_pos.y() - icon_radius * math.sin(arrow_angle2)
+
+        arrow_head2 = QtGui.QPolygonF(
+            [
+                QtCore.QPointF(arrow_x2, arrow_y2),
+                QtCore.QPointF(
+                    arrow_x2 + arrow_size * math.cos(arrow_angle2 + math.radians(150)),
+                    arrow_y2 - arrow_size * math.sin(arrow_angle2 + math.radians(150)),
+                ),
+                QtCore.QPointF(
+                    arrow_x2 + arrow_size * math.cos(arrow_angle2 - math.radians(150)),
+                    arrow_y2 - arrow_size * math.sin(arrow_angle2 - math.radians(150)),
+                ),
+            ]
+        )
+        painter.setBrush(QtGui.QColor(255, 255, 255, 220))
+        painter.drawPolygon(arrow_head2)
+
+        painter.restore()
