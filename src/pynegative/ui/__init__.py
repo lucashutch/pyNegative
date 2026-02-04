@@ -26,7 +26,7 @@ def main():
     # Note: We pass unknown args to QApplication so it can handle standard Qt flags
     app = QtWidgets.QApplication([sys.argv[0]] + unknown)
     window = MainWindow(initial_path=args.path)
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec())
 
 
