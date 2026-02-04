@@ -17,7 +17,9 @@ dependencies = [
     "pillow-heif",
     "rawpy",
     "PySide6",
-    "opencv-python"]
+    "opencv-python",
+    "opencv-contrib-python>=4.13.0.90",
+]
 
 [dependency-groups]
 lint = [
