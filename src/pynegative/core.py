@@ -212,7 +212,7 @@ def apply_geometry(pil_img, rotate=0.0, crop=None, flip_h=False, flip_v=False):
 
     Args:
         pil_img: PIL Image
-        rotate: float (degrees, counter-clockwise)
+        rotate: float (degrees, CCW. Negative values rotate clockwise)
         crop: tuple (left, top, right, bottom) as normalized coordinates (0.0-1.0).
               The crop coordinates are relative to the FLIPPED and ROTATED image.
         flip_h: bool, mirror horizontally
@@ -227,6 +227,8 @@ def apply_geometry(pil_img, rotate=0.0, crop=None, flip_h=False, flip_v=False):
     # 1. Apply Rotation
     if rotate != 0.0:
         # expand=True changes the image size to fit the rotated image
+        # PIL rotates CCW by default. The user wants negative to be CW, so
+        # positive is CCW. This matches PIL's behavior.
         pil_img = pil_img.rotate(rotate, resample=Image.BICUBIC, expand=True)
 
     # 2. Apply Crop

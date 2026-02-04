@@ -9,9 +9,11 @@ from .. import core as pynegative
 class ImageProcessorSignals(QtCore.QObject):
     """Signals for the image processing worker."""
 
-    finished = QtCore.Signal(QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int)
-    histogramUpdated = QtCore.Signal(dict)
-    error = QtCore.Signal(str)
+    finished = QtCore.Signal(
+        QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int, int
+    )
+    histogramUpdated = QtCore.Signal(dict, int)
+    error = QtCore.Signal(str, int)
 
 
 class ImageProcessorWorker(QtCore.QRunnable):
@@ -24,6 +26,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         base_img_full,
         base_img_preview,
         settings,
+        request_id,
         calculate_histogram=False,
     ):
         super().__init__()
@@ -32,14 +35,15 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.base_img_full = base_img_full
         self.base_img_preview = base_img_preview
         self.settings = settings
+        self.request_id = request_id
         self.calculate_histogram = calculate_histogram
 
     def run(self):
         try:
             result = self._update_preview()
-            self.signals.finished.emit(*result)
+            self.signals.finished.emit(*result, self.request_id)
         except Exception as e:
-            self.signals.error.emit(str(e))
+            self.signals.error.emit(str(e), self.request_id)
 
     def _update_preview(self):
         if self.base_img_full is None or self._view_ref is None:
@@ -110,6 +114,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
             img_uint8 = cv2.cvtColor(img_uint8, cv2.COLOR_RGB2RGBA)
 
             # Rotation Matrix
+            # OpenCV rotates CCW for positive angles.
+            # The user wants negative to be CW, so positive is CCW.
+            # This matches OpenCV's behavior.
             M = cv2.getRotationMatrix2D(center, rotate_val, 1.0)
 
             # Calculate new bounding box to avoid clipping (equivalent to expand=True)
@@ -180,7 +187,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 # This is slightly inefficient (PIL->Numpy) but ensures histogram matches the visible geometry
                 geom_numpy = np.array(pil_bg).astype(np.float32) / 255.0
                 hist_data = self._calculate_histograms(geom_numpy)
-                self.signals.histogramUpdated.emit(hist_data)
+                self.signals.histogramUpdated.emit(hist_data, self.request_id)
             except Exception as e:
                 print(f"Histogram calculation error: {e}")
 
@@ -339,13 +346,20 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.perf_start_time = 0
         self.histogram_enabled = False
 
+        # Request ID tracking to prevent out-of-order frames
+        self._current_request_id = 0
+        self._last_processed_id = -1
+
         self.signals = ImageProcessorSignals()
         self.signals.finished.connect(self._on_worker_finished)
-        self.signals.histogramUpdated.connect(self.histogramUpdated.emit)
+        self.signals.histogramUpdated.connect(self._on_histogram_updated)
         self.signals.error.connect(self._on_worker_error)
 
     def set_image(self, img_array):
         self.base_img_full = img_array
+        # Reset processing parameters for the new image to avoid carrying over
+        # edits from the previous one, unless we explicitly load them.
+        self._processing_params = {}
         if img_array is not None:
             # Create a 2048px float32 preview once.
             # This is reused for background rendering and histograms, avoiding
@@ -392,12 +406,14 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.render_timer.start(33)
         self.perf_start_time = time.perf_counter()
 
+        self._current_request_id += 1
         worker = ImageProcessorWorker(
             self.signals,
             self._view_ref,
             self.base_img_full,
             self.base_img_preview,
             self.get_current_settings(),
+            self._current_request_id,
             calculate_histogram=self.histogram_enabled,
         )
         self.thread_pool.start(worker)
@@ -411,15 +427,36 @@ class ImageProcessingPipeline(QtCore.QObject):
         elapsed_ms = (time.perf_counter() - self.perf_start_time) * 1000
         self.performanceMeasured.emit(elapsed_ms)
 
-    @QtCore.Slot(QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int)
+    @QtCore.Slot(QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int, int)
     def _on_worker_finished(
-        self, pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
+        self,
+        pix_bg,
+        full_w,
+        full_h,
+        pix_roi,
+        roi_x,
+        roi_y,
+        roi_w,
+        roi_h,
+        request_id,
     ):
+        if request_id < self._last_processed_id:
+            return
+        self._last_processed_id = request_id
+
         self.previewUpdated.emit(
             pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
         )
         self._measure_and_emit_perf()
 
-    @QtCore.Slot(str)
-    def _on_worker_error(self, error_message):
-        print(f"Image processing error: {error_message}")
+    @QtCore.Slot(dict, int)
+    def _on_histogram_updated(self, hist_data, request_id):
+        if request_id < self._last_processed_id:
+            return
+        self.histogramUpdated.emit(hist_data)
+
+    @QtCore.Slot(str, int)
+    def _on_worker_error(self, error_message, request_id):
+        if request_id < self._last_processed_id:
+            return
+        print(f"Image processing error (ID {request_id}): {error_message}")

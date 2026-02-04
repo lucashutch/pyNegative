@@ -36,6 +36,16 @@ class EditingControls(QtWidgets.QWidget):
         self.val_de_noise = 0
         self.val_flip_h = False
         self.val_flip_v = False
+        self.rotation = 0.0
+
+        # Throttling for rotation slider updates
+        self._rotation_slider_throttle_timer = QtCore.QTimer()
+        self._rotation_slider_throttle_timer.setSingleShot(True)
+        self._rotation_slider_throttle_timer.setInterval(33)  # ~30fps
+        self._pending_rotation_value = None
+        self._rotation_slider_throttle_timer.timeout.connect(
+            self._emit_throttled_rotation
+        )
 
         self._init_ui()
 
@@ -588,7 +598,14 @@ class EditingControls(QtWidgets.QWidget):
             else:
                 # Extract setting name from var_name
                 setting_name = var_name.replace("val_", "")
-                self.settingChanged.emit(setting_name, actual)
+
+                # Throttle rotation updates to 30fps
+                if setting_name == "rotation":
+                    self._pending_rotation_value = actual
+                    if not self._rotation_slider_throttle_timer.isActive():
+                        self._rotation_slider_throttle_timer.start()
+                else:
+                    self.settingChanged.emit(setting_name, actual)
 
         def on_text_changed():
             try:
@@ -694,11 +711,16 @@ class EditingControls(QtWidgets.QWidget):
         else:
             self.controls_layout.addWidget(frame)
 
-    def set_slider_value(self, var_name, value):
-        """Set slider value programmatically."""
+    def set_slider_value(self, var_name, value, silent=False):
+        """Set slider value programmatically, optionally without triggering signals."""
         slider = getattr(self, f"{var_name}_slider", None)
         label = getattr(self, f"{var_name}_label", None)
         flipped = getattr(self, f"{var_name}_flipped", False)
+
+        if silent and slider:
+            slider.blockSignals(True)
+        if silent and label:
+            label.blockSignals(True)
 
         if slider:
             multiplier = 1000
@@ -713,11 +735,17 @@ class EditingControls(QtWidgets.QWidget):
 
             # Since this is a programmatic update (likely from load),
             # we also update the reset value.
-            slider.default_slider_value = slider.value()
+            if not silent:
+                slider.default_slider_value = slider.value()
 
         if label:
             label.setText(f"{value:.2f}")
         setattr(self, var_name, value)
+
+        if silent and slider:
+            slider.blockSignals(False)
+        if silent and label:
+            label.blockSignals(False)
 
     def set_crop_checked(self, checked):
         if self.crop_btn:
@@ -783,6 +811,12 @@ class EditingControls(QtWidgets.QWidget):
     def _on_rating_changed(self, rating):
         """Handle rating change."""
         self.ratingChanged.emit(rating)
+
+    def _emit_throttled_rotation(self):
+        """Emit the pending rotation value (throttled to 30fps)."""
+        if self._pending_rotation_value is not None:
+            self.settingChanged.emit("rotation", self._pending_rotation_value)
+            self._pending_rotation_value = None
 
     def _on_hist_mode_changed(self, mode):
         """Handle histogram mode change."""
@@ -850,25 +884,45 @@ class EditingControls(QtWidgets.QWidget):
 
     def apply_settings(self, settings):
         """Apply settings from a dictionary."""
-        self.set_slider_value("val_temperature", settings.get("temperature", 0.0))
-        self.set_slider_value("val_tint", settings.get("tint", 0.0))
-        self.set_slider_value("val_exposure", settings.get("exposure", 0.0))
-        self.set_slider_value("val_contrast", settings.get("contrast", 1.0))
-        self.set_slider_value("val_whites", settings.get("whites", 1.0))
-        self.set_slider_value("val_blacks", settings.get("blacks", 0.0))
-        self.set_slider_value("val_highlights", settings.get("highlights", 0.0))
-        self.set_slider_value("val_shadows", settings.get("shadows", 0.0))
-        self.set_slider_value("val_saturation", settings.get("saturation", 1.0))
+        self.set_slider_value(
+            "val_temperature", settings.get("temperature", 0.0), silent=True
+        )
+        self.set_slider_value("val_tint", settings.get("tint", 0.0), silent=True)
+        self.set_slider_value(
+            "val_exposure", settings.get("exposure", 0.0), silent=True
+        )
+        self.set_slider_value(
+            "val_contrast", settings.get("contrast", 1.0), silent=True
+        )
+        self.set_slider_value("val_whites", settings.get("whites", 1.0), silent=True)
+        self.set_slider_value("val_blacks", settings.get("blacks", 0.0), silent=True)
+        self.set_slider_value(
+            "val_highlights", settings.get("highlights", 0.0), silent=True
+        )
+        self.set_slider_value("val_shadows", settings.get("shadows", 0.0), silent=True)
+        self.set_slider_value(
+            "val_saturation", settings.get("saturation", 1.0), silent=True
+        )
 
         # Geometry
-        self.set_slider_value("rotation", settings.get("rotation", 0.0))
+        self.set_slider_value("rotation", settings.get("rotation", 0.0), silent=True)
+
+        self.btn_flip_h.blockSignals(True)
         self.btn_flip_h.setChecked(settings.get("flip_h", False))
+        self.btn_flip_h.blockSignals(False)
+
+        self.btn_flip_v.blockSignals(True)
         self.btn_flip_v.setChecked(settings.get("flip_v", False))
+        self.btn_flip_v.blockSignals(False)
+
         self.val_flip_h = settings.get("flip_h", False)
         self.val_flip_v = settings.get("flip_v", False)
 
         sharpen_val = settings.get("sharpen_value", 0.0)
         if sharpen_val is not None:
-            self.set_slider_value("val_sharpen_value", sharpen_val)
+            self.set_slider_value("val_sharpen_value", sharpen_val, silent=True)
+            # Update derived sharpening parameters
+            self.val_sharpen_radius = 0.5 + (sharpen_val / 100.0) * 0.75
+            self.val_sharpen_percent = (sharpen_val / 100.0) * 150.0
 
-        self.set_slider_value("val_de_noise", settings.get("de_noise", 0))
+        self.set_slider_value("val_de_noise", settings.get("de_noise", 0), silent=True)
