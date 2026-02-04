@@ -436,7 +436,6 @@ class ImageProcessingPipeline(QtCore.QObject):
             return
         self._render_pending = False
         self._is_rendering_locked = True
-        self.render_timer.start(33)
         self.perf_start_time = time.perf_counter()
 
         self._current_request_id += 1
@@ -454,9 +453,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.thread_pool.start(worker)
 
     def _on_render_timer_timeout(self):
-        self._is_rendering_locked = False
-        if self._render_pending:
-            self._process_pending_update()
+        pass
 
     def _measure_and_emit_perf(self):
         elapsed_ms = (time.perf_counter() - self.perf_start_time) * 1000
@@ -475,7 +472,13 @@ class ImageProcessingPipeline(QtCore.QObject):
         roi_h,
         request_id,
     ):
+        # Unlock rendering since the worker has finished
+        self._is_rendering_locked = False
+
         if request_id < self._last_processed_id:
+            # If we were locked and a new request came in, process it now
+            if self._render_pending:
+                self._process_pending_update()
             return
         self._last_processed_id = request_id
 
@@ -483,6 +486,10 @@ class ImageProcessingPipeline(QtCore.QObject):
             pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
         )
         self._measure_and_emit_perf()
+
+        # If a new request came in while this one was processing, start it now
+        if self._render_pending:
+            self._process_pending_update()
 
     @QtCore.Slot(dict, int)
     def _on_histogram_updated(self, hist_data, request_id):
@@ -492,6 +499,11 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     @QtCore.Slot(str, int)
     def _on_worker_error(self, error_message, request_id):
+        # Always unlock on error so we can try again
+        self._is_rendering_locked = False
+        if self._render_pending:
+            self._process_pending_update()
+
         if request_id < self._last_processed_id:
             return
         print(f"Image processing error (ID {request_id}): {error_message}")

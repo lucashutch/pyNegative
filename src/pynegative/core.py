@@ -488,6 +488,7 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
     size_str = f" | Size: {w}x{h}"
 
     start_time = time.perf_counter()
+    denoised = None
     try:
         import cv2
 
@@ -510,14 +511,26 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
             h = nl_strength * 0.5
             hColor = nl_strength * 1.5
 
-            denoised_uint8 = cv2.fastNlMeansDenoisingColored(
-                img_uint8, None, h, hColor, 7, 21
-            )
+            # Attempt OpenCL acceleration via UMat
+            backend = "CPU"
+            try:
+                umat_img = cv2.UMat(img_uint8)
+                denoised_umat = cv2.fastNlMeansDenoisingColored(
+                    umat_img, None, h, hColor, 7, 21
+                )
+                denoised_uint8 = denoised_umat.get()
+                backend = "UMat (OpenCL)"
+            except Exception:
+                # Fallback to standard CPU if UMat fails
+                denoised_uint8 = cv2.fastNlMeansDenoisingColored(
+                    img_uint8, None, h, hColor, 7, 21
+                )
+
             denoised = denoised_uint8.astype(np.float32) / 255.0
 
             elapsed = (time.perf_counter() - start_time) * 1000
             logger.debug(
-                f"Denoise: NLMeans | Strength: {strength:.2f} (scaled: {nl_strength:.2f}){size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+                f"Denoise: NLMeans ({backend}) | Strength: {strength:.2f} (scaled: {nl_strength:.2f}){size_str}{zoom_str} | Time: {elapsed:.2f}ms"
             )
 
         else:  # Default to High Quality (YUV Bilateral)
@@ -550,10 +563,11 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
                 f"Denoise: High Quality (YUV Bilateral) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
             )
 
-        if was_pil:
-            return Image.fromarray((np.clip(denoised, 0, 1) * 255).astype(np.uint8))
-        else:
-            return np.clip(denoised, 0, 1)
+        if denoised is not None:
+            if was_pil:
+                return Image.fromarray((np.clip(denoised, 0, 1) * 255).astype(np.uint8))
+            else:
+                return np.clip(denoised, 0, 1)
 
     except Exception as e:
         logger.error(f"OpenCV Denoise failed: {e}")
