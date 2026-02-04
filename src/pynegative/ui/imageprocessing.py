@@ -97,7 +97,10 @@ class ImageProcessorWorker(QtCore.QRunnable):
         # Apply De-noise to background (Skip if zoomed in to save performance, as ROI will cover it)
         if not is_zoomed_in and self.settings.get("de_noise", 0) > 0:
             processed_bg = pynegative.de_noise_image(
-                processed_bg, self.settings["de_noise"], "High Quality"
+                processed_bg,
+                self.settings["de_noise"],
+                self.settings.get("denoise_method", "High Quality"),
+                zoom=zoom_scale,
             )
 
         # Apply Sharpening to background (Skip if zoomed in)
@@ -272,7 +275,10 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 # 2. De-noise first
                 if self.settings.get("de_noise", 0) > 0:
                     processed_roi = pynegative.de_noise_image(
-                        processed_roi, self.settings["de_noise"], "High Quality"
+                        processed_roi,
+                        self.settings["de_noise"],
+                        self.settings.get("denoise_method", "High Quality"),
+                        zoom=zoom_scale,
                     )
 
                 # 3. Sharpen second (to avoid sharpening noise)

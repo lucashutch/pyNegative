@@ -470,7 +470,7 @@ def sharpen_image(img, radius, percent, method="High Quality"):
         return img_float
 
 
-def de_noise_image(img, strength, method="High Quality"):
+def de_noise_image(img, strength, method="High Quality", zoom=None):
     """Advanced de-noising with support for both PIL and Numpy float32.
     Preserves float32 precision throughout the pipeline to avoid bit-depth artifacts.
     """
@@ -483,6 +483,11 @@ def de_noise_image(img, strength, method="High Quality"):
         img_array = img
         was_pil = False
 
+    h, w = img_array.shape[:2]
+    zoom_str = f" | Zoom: {zoom * 100:.0f}%" if zoom is not None else ""
+    size_str = f" | Size: {w}x{h}"
+
+    start_time = time.perf_counter()
     try:
         import cv2
 
@@ -490,29 +495,60 @@ def de_noise_image(img, strength, method="High Quality"):
             return img
 
         # Scaling factor for sigmaColor based on 0-1 range
-        # OpenCV bilateralFilter on float32 expects sigma in the same scale as pixels
         s_scale = 1.0 / 255.0
 
-        # Always use High Quality (YUV Bilateral) for best results
-        logger.debug(f"Denoise: High Quality (YUV Bilateral), strength={strength}")
+        if method == "NLMeans":
+            # fastNlMeansDenoisingColored expects uint8
+            img_uint8 = (np.clip(img_array, 0, 1) * 255).astype(np.uint8)
 
-        # Sensor-aware de-noising: Separates Luma and Chroma
-        # cvtColor handles float32 RGB -> YUV
-        yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
-        y, u, v = cv2.split(yuv)
+            # Rescale strength for NLMeans (slider 0-50 -> effective 0-5)
+            # as it is much more aggressive than Bilateral.
+            nl_strength = float(strength) / 10.0
 
-        # Chroma: Aggressive to remove color blotches
-        chroma_sigma = float(strength) * 2.0 * s_scale
-        u_denoised = cv2.bilateralFilter(u, 5, chroma_sigma, 1.5)
-        v_denoised = cv2.bilateralFilter(v, 5, chroma_sigma, 1.5)
+            # h: parameter deciding filter strength for luminance.
+            # hColor: the same for color components.
+            h = nl_strength * 0.5
+            hColor = nl_strength * 1.5
 
-        # Luma: Conservative to preserve fine texture
-        luma_sigma_color = float(strength) * 0.8 * s_scale
-        luma_sigma_space = 0.5 + (float(strength) / 50.0)
-        y_denoised = cv2.bilateralFilter(y, 3, luma_sigma_color, luma_sigma_space)
+            denoised_uint8 = cv2.fastNlMeansDenoisingColored(
+                img_uint8, None, h, hColor, 7, 21
+            )
+            denoised = denoised_uint8.astype(np.float32) / 255.0
 
-        denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
-        denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
+            elapsed = (time.perf_counter() - start_time) * 1000
+            logger.debug(
+                f"Denoise: NLMeans | Strength: {strength:.2f} (scaled: {nl_strength:.2f}){size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+            )
+
+        else:  # Default to High Quality (YUV Bilateral)
+            # Sensor-aware de-noising: Separates Luma and Chroma
+            # cvtColor handles float32 RGB -> YUV
+            yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
+            y, u, v = cv2.split(yuv)
+
+            # Chroma: Very aggressive to remove color blotches (human eye less sensitive to chroma detail)
+            # Increased diameter and spatial reach to average over larger areas
+            chroma_sigma_color = float(strength) * 4.5 * s_scale
+            chroma_sigma_space = 2.0 + (float(strength) / 10.0)
+            u_denoised = cv2.bilateralFilter(
+                u, 11, chroma_sigma_color, chroma_sigma_space
+            )
+            v_denoised = cv2.bilateralFilter(
+                v, 11, chroma_sigma_color, chroma_sigma_space
+            )
+
+            # Luma: Conservative to preserve fine texture/grain
+            luma_sigma_color = float(strength) * 0.4 * s_scale
+            luma_sigma_space = 0.5 + (float(strength) / 100.0)
+            y_denoised = cv2.bilateralFilter(y, 3, luma_sigma_color, luma_sigma_space)
+
+            denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
+            denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
+
+            elapsed = (time.perf_counter() - start_time) * 1000
+            logger.debug(
+                f"Denoise: High Quality (YUV Bilateral) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+            )
 
         if was_pil:
             return Image.fromarray((np.clip(denoised, 0, 1) * 255).astype(np.uint8))
@@ -524,7 +560,6 @@ def de_noise_image(img, strength, method="High Quality"):
 
     # Fallback to PIL or Median
     if was_pil:
-        logger.debug(f"Denoise: Fallback (PIL MedianFilter), strength={strength}")
         size = int(strength / 5.0)  # Scale down strength for median
         if size < 3:
             size = 3 if strength > 0 else 0
@@ -532,15 +567,20 @@ def de_noise_image(img, strength, method="High Quality"):
             return img
         if size % 2 == 0:
             size += 1
+
+        fallback_start = time.perf_counter()
         # Convert back to PIL for the filter
         pil_img = Image.fromarray((np.clip(img_array, 0, 1) * 255).astype(np.uint8))
-        return pil_img.filter(ImageFilter.MedianFilter(size=size))
+        result = pil_img.filter(ImageFilter.MedianFilter(size=size))
+        elapsed = (time.perf_counter() - fallback_start) * 1000
+        logger.debug(
+            f"Denoise: Fallback (PIL MedianFilter) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+        )
+        return result
 
     # Fallback for Numpy (Median Filter)
     try:
         import cv2
-
-        logger.debug(f"Denoise: Fallback (OpenCV MedianBlur), strength={strength}")
 
         size = int(strength / 5.0)
         if size < 3:
@@ -549,8 +589,14 @@ def de_noise_image(img, strength, method="High Quality"):
             return img_array
         if size % 2 == 0:
             size += 1
+
+        fallback_start = time.perf_counter()
         # medianBlur expects uint8 or float32. We can use float32.
         denoised = cv2.medianBlur(img_array, size)
+        elapsed = (time.perf_counter() - fallback_start) * 1000
+        logger.debug(
+            f"Denoise: Fallback (OpenCV MedianBlur) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+        )
         return np.clip(denoised, 0, 1)
     except Exception:
         return img_array
