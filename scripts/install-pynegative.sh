@@ -267,9 +267,9 @@ create_macos_app() {
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
-    <string>0.1.2</string>
+    <string>0.1.3</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.2</string>
+    <string>0.1.3</string>
     <key>LSMinimumSystemVersion</key>
     <string>10.12</string>
     <key>LSApplicationCategoryType</key>
