@@ -141,7 +141,9 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self.zoomChanged.emit(self._current_zoom)
 
     def wheelEvent(self, event):
-        if self._scene.sceneRect().isEmpty():
+        # Don't allow zooming if there's no content
+        bg_pixmap = self._bg_item.pixmap()
+        if bg_pixmap is None or bg_pixmap.isNull():
             return
 
         angle = event.angleDelta().y()
