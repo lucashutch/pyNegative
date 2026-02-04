@@ -3,6 +3,7 @@ import numpy as np
 from pathlib import Path
 import json
 import time
+import math
 import rawpy
 from PIL import Image, ImageFilter
 from functools import lru_cache
@@ -203,6 +204,111 @@ def calculate_auto_wb(img):
         "temperature": float(np.clip(temp, -1.0, 1.0)),
         "tint": float(np.clip(tint, -1.0, 1.0)),
     }
+
+
+def apply_geometry(pil_img, rotate=0.0, crop=None, flip_h=False, flip_v=False):
+    """
+    Applies geometric transformations: Flip -> Rotation -> Crop.
+
+    Args:
+        pil_img: PIL Image
+        rotate: float (degrees, counter-clockwise)
+        crop: tuple (left, top, right, bottom) as normalized coordinates (0.0-1.0).
+              The crop coordinates are relative to the FLIPPED and ROTATED image.
+        flip_h: bool, mirror horizontally
+        flip_v: bool, mirror vertically
+    """
+    # 0. Apply Flip
+    if flip_h:
+        pil_img = pil_img.transpose(Image.FLIP_LEFT_RIGHT)
+    if flip_v:
+        pil_img = pil_img.transpose(Image.FLIP_TOP_BOTTOM)
+
+    # 1. Apply Rotation
+    if rotate != 0.0:
+        # expand=True changes the image size to fit the rotated image
+        pil_img = pil_img.rotate(rotate, resample=Image.BICUBIC, expand=True)
+
+    # 2. Apply Crop
+    if crop is not None:
+        w, h = pil_img.size
+        c_left, c_top, c_right, c_bottom = crop
+
+        # Convert to pixels
+        left = int(c_left * w)
+        top = int(c_top * h)
+        right = int(c_right * w)
+        bottom = int(c_bottom * h)
+
+        # Clamp
+        left = max(0, left)
+        top = max(0, top)
+        right = min(w, right)
+        bottom = min(h, bottom)
+
+        if right > left and bottom > top:
+            pil_img = pil_img.crop((left, top, right, bottom))
+
+    return pil_img
+
+
+def calculate_max_safe_crop(w, h, angle_deg, aspect_ratio=None):
+    """
+    Calculates the maximum normalized crop (l, t, r, b) that fits inside
+    a rotated rectangle of size (w, h) rotated by angle_deg.
+
+    If aspect_ratio is provided, the result will respect it.
+    Otherwise, it uses the original image aspect ratio (w/h).
+
+    Returns (l, t, r, b) as normalized coordinates relative to
+    the EXPANDED rotated canvas.
+    """
+    phi = abs(math.radians(angle_deg))
+
+    if phi < 1e-4:
+        return (0.0, 0.0, 1.0, 1.0)
+
+    if aspect_ratio is None:
+        aspect_ratio = w / h
+
+    # Formula for largest axis-aligned rectangle of aspect ratio 'AR'
+    # inside a rotated rectangle of size (w, h) and angle 'phi'.
+
+    cos_phi = math.cos(phi)
+    sin_phi = math.sin(phi)
+
+    # We need to satisfy:
+    # 1. w_prime * cos + h_prime * sin <= w
+    # 2. w_prime * sin + h_prime * cos <= h
+    # and w_prime = h_prime * aspect_ratio
+
+    h_prime_1 = w / (aspect_ratio * cos_phi + sin_phi)
+    h_prime_2 = h / (aspect_ratio * sin_phi + cos_phi)
+
+    h_prime = min(h_prime_1, h_prime_2)
+    w_prime = h_prime * aspect_ratio
+
+    # Expanded canvas size
+    W = w * cos_phi + h * sin_phi
+    H = w * sin_phi + h * cos_phi
+
+    # Normalized dimensions relative to expanded canvas
+    nw = w_prime / W
+    nh = h_prime / H
+
+    # Center it
+    c_left = (1.0 - nw) / 2
+    c_top = (1.0 - nh) / 2
+    c_right = c_left + nw
+    c_bottom = c_top + nh
+
+    # Clamp to safe range just in case of float errors
+    return (
+        float(max(0.0, min(1.0, c_left))),
+        float(max(0.0, min(1.0, c_top))),
+        float(max(0.0, min(1.0, c_right))),
+        float(max(0.0, min(1.0, c_bottom))),
+    )
 
 
 @lru_cache(maxsize=4)

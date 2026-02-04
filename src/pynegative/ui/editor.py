@@ -168,6 +168,8 @@ class EditorWidget(QtWidgets.QWidget):
         """Setup signal/slot connections between components."""
         # Editing controls -> Image processor
         self.editing_controls.settingChanged.connect(self._on_setting_changed)
+        self.editing_controls.cropToggled.connect(self._on_crop_toggled)
+        self.editing_controls.aspectRatioChanged.connect(self.view.set_aspect_ratio)
         self.editing_controls.ratingChanged.connect(self._on_rating_changed)
         self.editing_controls.autoWbRequested.connect(self._on_auto_wb_requested)
         self.editing_controls.presetApplied.connect(self._on_preset_applied)
@@ -283,6 +285,10 @@ class EditorWidget(QtWidgets.QWidget):
         path = Path(path)
         self.raw_path = path
 
+        # Reset Crop Tool
+        self.editing_controls.set_crop_checked(False)
+        self.view.set_crop_mode(False)
+
         QtWidgets.QApplication.processEvents()
 
         loader = RawLoader(path)
@@ -327,6 +333,78 @@ class EditorWidget(QtWidgets.QWidget):
     def _on_setting_changed(self, setting_name, value):
         """Handle setting change from editing controls."""
         self.image_processor.set_processing_params(**{setting_name: value})
+
+        # Handle Flip mirroring of crop
+        if setting_name in ["flip_h", "flip_v"]:
+            current_settings = self.image_processor.get_current_settings()
+            current_crop = current_settings.get("crop")
+            if current_crop:
+                c_left, c_top, c_right, c_bottom = current_crop
+                if setting_name == "flip_h":
+                    new_crop = (1.0 - c_right, c_top, 1.0 - c_left, c_bottom)
+                else:  # flip_v
+                    new_crop = (c_left, 1.0 - c_bottom, c_right, 1.0 - c_top)
+
+                self.image_processor.set_processing_params(crop=new_crop)
+
+                # Update visual overlay if active
+                if self.editing_controls.crop_btn.isChecked():
+                    scene_rect = self.view.sceneRect()
+                    sw, sh = scene_rect.width(), scene_rect.height()
+                    nl, nt, nr, nb = new_crop
+                    rect = QtCore.QRectF(
+                        nl * sw, nt * sh, (nr - nl) * sw, (nb - nt) * sh
+                    )
+                    self.view.set_crop_rect(rect)
+
+        # Auto-crop on rotation to avoid black parts
+        if (
+            setting_name == "rotation"
+            and self.image_processor.base_img_full is not None
+        ):
+            current_settings = self.image_processor.get_current_settings()
+            rotate_val = current_settings.get("rotation", 0.0)
+            h, w = self.image_processor.base_img_full.shape[:2]
+
+            # Get current aspect ratio lock
+            text = self.editing_controls.aspect_ratio_combo.currentText()
+            ratio = None
+            if text == "1:1":
+                ratio = 1.0
+            elif text == "4:3":
+                ratio = 4.0 / 3.0
+            elif text == "3:2":
+                ratio = 3.0 / 2.0
+            elif text == "16:9":
+                ratio = 16.0 / 9.0
+
+            # Calculate max safe crop
+            safe_crop = pynegative.calculate_max_safe_crop(
+                w, h, rotate_val, aspect_ratio=ratio
+            )
+
+            # Update safe bounds in view
+            import math
+
+            phi = abs(math.radians(rotate_val))
+            W = w * math.cos(phi) + h * math.sin(phi)
+            H = w * math.sin(phi) + h * math.cos(phi)
+
+            c_left, c_top, c_right, c_bottom = safe_crop
+            safe_rect = QtCore.QRectF(
+                c_left * W, c_top * H, (c_right - c_left) * W, (c_bottom - c_top) * H
+            )
+            self.view.set_crop_safe_bounds(safe_rect)
+
+            # If in crop mode, update visual overlay ONLY
+            if self.editing_controls.crop_btn.isChecked():
+                self.view.set_crop_rect(safe_rect)
+                # Ensure the processor DOES NOT have a crop applied so user can see context
+                self.image_processor.set_processing_params(crop=None)
+            else:
+                # Apply safe crop to processor if NOT in crop mode
+                self.image_processor.set_processing_params(crop=safe_crop)
+
         self._request_update_from_view()
         self.save_timer.start(1000)  # Save after 1 second of inactivity
 
@@ -428,6 +506,8 @@ class EditorWidget(QtWidgets.QWidget):
                 highlights=settings.get("highlights", 0.0),
                 shadows=settings.get("shadows", 0.0),
                 saturation=settings.get("saturation", 1.0),
+                rotation=settings.get("rotation", 0.0),
+                crop=settings.get("crop", None),
             )
 
             # Handle sharpening value
@@ -673,3 +753,127 @@ class EditorWidget(QtWidgets.QWidget):
         if not self.isVisible():
             return
         self.carousel_manager.select_next()
+
+    def _on_crop_toggled(self, enabled):
+        self.view.set_crop_mode(enabled)
+
+        current_settings = self.image_processor.get_current_settings()
+
+        if enabled:
+            # Enter Crop Mode: Show full image (uncropped) with overlay
+            current_crop = current_settings.get("crop")
+            rotate_val = current_settings.get("rotation", 0.0)
+
+            # Calculate the dimensions of the FULL rotated image (uncropped)
+            # We need these to correctly map the normalized crop coordinates to the scene.
+            if self.image_processor.base_img_full is not None:
+                h, w = self.image_processor.base_img_full.shape[:2]
+
+                import math
+
+                phi = abs(math.radians(rotate_val))
+                W = w * math.cos(phi) + h * math.sin(phi)
+                H = w * math.sin(phi) + h * math.cos(phi)
+
+                # Map normalized crop to the FULL rotated scene dimensions
+                if current_crop:
+                    c_left, c_top, c_right, c_bottom = current_crop
+                    rect = QtCore.QRectF(
+                        c_left * W,
+                        c_top * H,
+                        (c_right - c_left) * W,
+                        (c_bottom - c_top) * H,
+                    )
+                    self.view.set_crop_rect(rect)
+                else:
+                    # Default to full image if no crop exists
+                    # Note: When first entering, sceneRect might be the original image size,
+                    # but it will soon be updated to W, H by the processor.
+                    # We use W, H here for consistency.
+                    self.view.set_crop_rect(QtCore.QRectF(0, 0, W, H))
+
+                # Set safe bounds for Crop Tool based on rotation
+                # Get current aspect ratio lock
+                text = self.editing_controls.aspect_ratio_combo.currentText()
+                ratio = None
+                if text == "1:1":
+                    ratio = 1.0
+                elif text == "4:3":
+                    ratio = 4.0 / 3.0
+                elif text == "3:2":
+                    ratio = 3.0 / 2.0
+                elif text == "16:9":
+                    ratio = 16.0 / 9.0
+
+                safe_crop = pynegative.calculate_max_safe_crop(
+                    w, h, rotate_val, aspect_ratio=ratio
+                )
+
+                c_safe_l, c_safe_t, c_safe_r, c_safe_b = safe_crop
+                safe_rect = QtCore.QRectF(
+                    c_safe_l * W,
+                    c_safe_t * H,
+                    (c_safe_r - c_safe_l) * W,
+                    (c_safe_b - c_safe_t) * H,
+                )
+                self.view.set_crop_safe_bounds(safe_rect)
+            else:
+                # Fallback if image not loaded
+                if current_crop:
+                    scene_rect = self.view.sceneRect()
+                    sw, sh = scene_rect.width(), scene_rect.height()
+                    if sw > 0 and sh > 0:
+                        c_left, c_top, c_right, c_bottom = current_crop
+                        rect = QtCore.QRectF(
+                            c_left * sw,
+                            c_top * sh,
+                            (c_right - c_left) * sw,
+                            (c_bottom - c_top) * sh,
+                        )
+                        self.view.set_crop_rect(rect)
+
+            # Disable crop in pipeline temporarily to show full context
+            self.image_processor.set_processing_params(crop=None)
+            self._request_update_from_view()
+            self.show_toast("Crop Mode Active: Drag to crop")
+
+            # Center and fit the crop tool
+            QtCore.QTimer.singleShot(100, self.view.fit_crop_in_view)
+
+        else:
+            # Exit Crop Mode: Apply crop
+            rect = self.view.get_crop_rect()
+            scene_rect = self.view.sceneRect()
+            w, h = scene_rect.width(), scene_rect.height()
+
+            c_val = None
+            if w > 0 and h > 0:
+                c_left = rect.left() / w
+                c_top = rect.top() / h
+                c_right = rect.right() / w
+                c_bottom = rect.bottom() / h
+
+                # Clamp
+                c_left = max(0.0, min(1.0, c_left))
+                c_top = max(0.0, min(1.0, c_top))
+                c_right = max(0.0, min(1.0, c_right))
+                c_bottom = max(0.0, min(1.0, c_bottom))
+
+                # If covers whole image (within 0.5% tolerance), set to None
+                # But if user explicitly cropped, we want it to apply.
+                # Logic: If it's NOT covering everything, c_val = (l, t, r, b)
+                # If it IS covering everything, c_val = None
+                if (
+                    c_left > 0.005
+                    or c_top > 0.005
+                    or c_right < 0.995
+                    or c_bottom < 0.995
+                ):
+                    c_val = (c_left, c_top, c_right, c_bottom)
+                else:
+                    pass  # Crop covers full image, keep c_val as None
+
+            self.image_processor.set_processing_params(crop=c_val)
+            self._request_update_from_view()
+            self.show_toast("Crop Applied")
+            self._auto_save_sidecar()

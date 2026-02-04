@@ -162,10 +162,13 @@ class TestZoomableGraphicsView:
         assert brush.color() == QtGui.QColor("#1a1a1a")
 
     def test_empty_scene_rect(self, zoom_view):
-        """Test behavior with empty scene rect."""
-        assert zoom_view._scene.sceneRect().isEmpty()
+        """Test behavior with no content (empty pixmaps)."""
+        # Verify there's no pixmap content
+        assert (
+            zoom_view._bg_item.pixmap() is None or zoom_view._bg_item.pixmap().isNull()
+        )
 
-        # Test wheel event with empty scene
+        # Test wheel event with no content
         event = QtGui.QWheelEvent(
             QtCore.QPointF(200, 150),  # Position
             QtCore.QPointF(0, 0),  # Global position
@@ -179,7 +182,7 @@ class TestZoomableGraphicsView:
         )
 
         zoom_view.wheelEvent(event)
-        # Should not crash or raise exceptions
+        # Should not crash or raise exceptions, zoom should stay at 1.0
         assert zoom_view._current_zoom == 1.0
 
     def test_transform_anchor_settings(self, zoom_view):
