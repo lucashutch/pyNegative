@@ -334,6 +334,29 @@ class EditorWidget(QtWidgets.QWidget):
         """Handle setting change from editing controls."""
         self.image_processor.set_processing_params(**{setting_name: value})
 
+        # Handle Flip mirroring of crop
+        if setting_name in ["flip_h", "flip_v"]:
+            current_settings = self.image_processor.get_current_settings()
+            current_crop = current_settings.get("crop")
+            if current_crop:
+                c_left, c_top, c_right, c_bottom = current_crop
+                if setting_name == "flip_h":
+                    new_crop = (1.0 - c_right, c_top, 1.0 - c_left, c_bottom)
+                else:  # flip_v
+                    new_crop = (c_left, 1.0 - c_bottom, c_right, 1.0 - c_top)
+
+                self.image_processor.set_processing_params(crop=new_crop)
+
+                # Update visual overlay if active
+                if self.editing_controls.crop_btn.isChecked():
+                    scene_rect = self.view.sceneRect()
+                    sw, sh = scene_rect.width(), scene_rect.height()
+                    nl, nt, nr, nb = new_crop
+                    rect = QtCore.QRectF(
+                        nl * sw, nt * sh, (nr - nl) * sw, (nb - nt) * sh
+                    )
+                    self.view.set_crop_rect(rect)
+
         # Auto-crop on rotation to avoid black parts
         if (
             setting_name == "rotation"
@@ -367,8 +390,10 @@ class EditorWidget(QtWidgets.QWidget):
             W = w * math.cos(phi) + h * math.sin(phi)
             H = w * math.sin(phi) + h * math.cos(phi)
 
-            l, t, r, b = safe_crop
-            safe_rect = QtCore.QRectF(l * W, t * H, (r - l) * W, (b - t) * H)
+            c_left, c_top, c_right, c_bottom = safe_crop
+            safe_rect = QtCore.QRectF(
+                c_left * W, c_top * H, (c_right - c_left) * W, (c_bottom - c_top) * H
+            )
             self.view.set_crop_safe_bounds(safe_rect)
 
             # If in crop mode, update visual overlay ONLY
@@ -739,22 +764,35 @@ class EditorWidget(QtWidgets.QWidget):
             current_crop = current_settings.get("crop")
             rotate_val = current_settings.get("rotation", 0.0)
 
-            # Map normalized crop to scene rect
-            if current_crop:
-                scene_rect = self.view.sceneRect()
-                sw, sh = scene_rect.width(), scene_rect.height()
-                if sw > 0 and sh > 0:
-                    l, t, r, b = current_crop
-                    rect = QtCore.QRectF(l * sw, t * sh, (r - l) * sw, (b - t) * sh)
-                    self.view.set_crop_rect(rect)
-            else:
-                # Default to full image if no crop exists
-                self.view.set_crop_rect(self.view.sceneRect())
-
-            # Set safe bounds for Crop Tool based on rotation
+            # Calculate the dimensions of the FULL rotated image (uncropped)
+            # We need these to correctly map the normalized crop coordinates to the scene.
             if self.image_processor.base_img_full is not None:
                 h, w = self.image_processor.base_img_full.shape[:2]
 
+                import math
+
+                phi = abs(math.radians(rotate_val))
+                W = w * math.cos(phi) + h * math.sin(phi)
+                H = w * math.sin(phi) + h * math.cos(phi)
+
+                # Map normalized crop to the FULL rotated scene dimensions
+                if current_crop:
+                    c_left, c_top, c_right, c_bottom = current_crop
+                    rect = QtCore.QRectF(
+                        c_left * W,
+                        c_top * H,
+                        (c_right - c_left) * W,
+                        (c_bottom - c_top) * H,
+                    )
+                    self.view.set_crop_rect(rect)
+                else:
+                    # Default to full image if no crop exists
+                    # Note: When first entering, sceneRect might be the original image size,
+                    # but it will soon be updated to W, H by the processor.
+                    # We use W, H here for consistency.
+                    self.view.set_crop_rect(QtCore.QRectF(0, 0, W, H))
+
+                # Set safe bounds for Crop Tool based on rotation
                 # Get current aspect ratio lock
                 text = self.editing_controls.aspect_ratio_combo.currentText()
                 ratio = None
@@ -771,18 +809,30 @@ class EditorWidget(QtWidgets.QWidget):
                     w, h, rotate_val, aspect_ratio=ratio
                 )
 
-                import math
-
-                phi = abs(math.radians(rotate_val))
-                W = w * math.cos(phi) + h * math.sin(phi)
-                H = w * math.sin(phi) + h * math.cos(phi)
-
-                l, t, r, b = safe_crop
-                safe_rect = QtCore.QRectF(l * W, t * H, (r - l) * W, (b - t) * H)
+                c_safe_l, c_safe_t, c_safe_r, c_safe_b = safe_crop
+                safe_rect = QtCore.QRectF(
+                    c_safe_l * W,
+                    c_safe_t * H,
+                    (c_safe_r - c_safe_l) * W,
+                    (c_safe_b - c_safe_t) * H,
+                )
                 self.view.set_crop_safe_bounds(safe_rect)
+            else:
+                # Fallback if image not loaded
+                if current_crop:
+                    scene_rect = self.view.sceneRect()
+                    sw, sh = scene_rect.width(), scene_rect.height()
+                    if sw > 0 and sh > 0:
+                        c_left, c_top, c_right, c_bottom = current_crop
+                        rect = QtCore.QRectF(
+                            c_left * sw,
+                            c_top * sh,
+                            (c_right - c_left) * sw,
+                            (c_bottom - c_top) * sh,
+                        )
+                        self.view.set_crop_rect(rect)
 
             # Disable crop in pipeline temporarily to show full context
-
             self.image_processor.set_processing_params(crop=None)
             self._request_update_from_view()
             self.show_toast("Crop Mode Active: Drag to crop")
@@ -798,26 +848,30 @@ class EditorWidget(QtWidgets.QWidget):
 
             c_val = None
             if w > 0 and h > 0:
-                l = rect.left() / w
-                t = rect.top() / h
-                r = rect.right() / w
-                b = rect.bottom() / h
+                c_left = rect.left() / w
+                c_top = rect.top() / h
+                c_right = rect.right() / w
+                c_bottom = rect.bottom() / h
 
                 # Clamp
-                l = max(0.0, min(1.0, l))
-                t = max(0.0, min(1.0, t))
-                r = max(0.0, min(1.0, r))
-                b = max(0.0, min(1.0, b))
+                c_left = max(0.0, min(1.0, c_left))
+                c_top = max(0.0, min(1.0, c_top))
+                c_right = max(0.0, min(1.0, c_right))
+                c_bottom = max(0.0, min(1.0, c_bottom))
 
                 # If covers whole image (within 0.5% tolerance), set to None
                 # But if user explicitly cropped, we want it to apply.
                 # Logic: If it's NOT covering everything, c_val = (l, t, r, b)
                 # If it IS covering everything, c_val = None
-                if l > 0.005 or t > 0.005 or r < 0.995 or b < 0.995:
-                    c_val = (l, t, r, b)
-                    print(f"Applying Crop: {c_val}")
+                if (
+                    c_left > 0.005
+                    or c_top > 0.005
+                    or c_right < 0.995
+                    or c_bottom < 0.995
+                ):
+                    c_val = (c_left, c_top, c_right, c_bottom)
                 else:
-                    print("Crop covers full image -> Resetting")
+                    pass  # Crop covers full image, keep c_val as None
 
             self.image_processor.set_processing_params(crop=c_val)
             self._request_update_from_view()

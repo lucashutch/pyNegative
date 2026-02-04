@@ -1,4 +1,4 @@
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 from .widgets import (
     CollapsibleSection,
     ResetableSlider,
@@ -34,6 +34,8 @@ class EditingControls(QtWidgets.QWidget):
         self.val_sharpen_radius = 0.5
         self.val_sharpen_percent = 0.0
         self.val_de_noise = 0
+        self.val_flip_h = False
+        self.val_flip_v = False
 
         self._init_ui()
 
@@ -332,6 +334,9 @@ class EditingControls(QtWidgets.QWidget):
 
         # Aspect Ratio Selector
         self.aspect_ratio_combo = QtWidgets.QComboBox()
+        self.aspect_ratio_combo.setEditable(True)
+        self.aspect_ratio_combo.lineEdit().setReadOnly(True)
+        self.aspect_ratio_combo.lineEdit().setAlignment(QtCore.Qt.AlignCenter)
         self.aspect_ratio_combo.addItems(["Unlocked", "1:1", "4:3", "3:2", "16:9"])
         for i in range(self.aspect_ratio_combo.count()):
             self.aspect_ratio_combo.setItemData(
@@ -339,28 +344,140 @@ class EditingControls(QtWidgets.QWidget):
             )
 
         self.aspect_ratio_combo.setToolTip("Lock aspect ratio")
-        self.aspect_ratio_combo.setFixedWidth(75)
+        self.aspect_ratio_combo.setFixedWidth(85)
         self.aspect_ratio_combo.setStyleSheet("""
             QComboBox {
                 min-height: 18px;
                 max-height: 20px;
                 font-size: 11px;
-                padding: 0px 4px;
+                padding: 0px;
+            }
+            QComboBox QLineEdit {
+                background: transparent;
+                border: none;
+                color: #ccc;
+                font-size: 11px;
+                text-align: center;
             }
         """)
         self.aspect_ratio_combo.currentIndexChanged.connect(
             self._on_aspect_ratio_changed
         )
 
+        # Flip Buttons (created early to be added to crop_layout)
+        self.btn_flip_h = QtWidgets.QPushButton()
+        self.btn_flip_v = QtWidgets.QPushButton()
+
+        for btn, name, is_h in [
+            (self.btn_flip_h, "Horizontal", True),
+            (self.btn_flip_v, "Vertical", False),
+        ]:
+            btn.setCheckable(True)
+            btn.setFixedSize(26, 18)
+            btn.setToolTip(f"Flip {name}")
+            # Create Icon
+            pixmap = QtGui.QPixmap(32, 32)
+            pixmap.fill(QtCore.Qt.transparent)
+            painter = QtGui.QPainter(pixmap)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            pen = QtGui.QPen(QtGui.QColor("#ccc"), 2)
+            painter.setPen(pen)
+
+            # Draw Mirroring triangles icon
+            if is_h:
+                # Horizontal Flip (Mirror across vertical axis)
+                painter.drawLine(16, 6, 16, 26)  # Axis
+                # Left triangle
+                tri_left = QtGui.QPolygonF(
+                    [
+                        QtCore.QPointF(14, 10),
+                        QtCore.QPointF(4, 16),
+                        QtCore.QPointF(14, 22),
+                    ]
+                )
+                # Right triangle
+                tri_right = QtGui.QPolygonF(
+                    [
+                        QtCore.QPointF(18, 10),
+                        QtCore.QPointF(28, 16),
+                        QtCore.QPointF(18, 22),
+                    ]
+                )
+
+                painter.setBrush(QtGui.QColor("#ccc"))
+                painter.drawPolygon(tri_left)
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.drawPolygon(tri_right)
+            else:
+                # Vertical Flip (Mirror across horizontal axis)
+                painter.drawLine(6, 16, 26, 16)  # Axis
+                # Top triangle
+                tri_top = QtGui.QPolygonF(
+                    [
+                        QtCore.QPointF(10, 14),
+                        QtCore.QPointF(16, 4),
+                        QtCore.QPointF(22, 14),
+                    ]
+                )
+                # Bottom triangle
+                tri_bottom = QtGui.QPolygonF(
+                    [
+                        QtCore.QPointF(10, 18),
+                        QtCore.QPointF(16, 28),
+                        QtCore.QPointF(22, 18),
+                    ]
+                )
+
+                painter.setBrush(QtGui.QColor("#ccc"))
+                painter.drawPolygon(tri_top)
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.drawPolygon(tri_bottom)
+
+            painter.end()
+            btn.setIcon(QtGui.QIcon(pixmap))
+            btn.setIconSize(QtCore.QSize(14, 14))
+
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #333;
+                    border: 1px solid #444;
+                    padding: 0px;
+                    min-height: 18px;
+                    max-height: 18px;
+                }
+                QPushButton:checked {
+                    background-color: #6366f1;
+                    border-color: #8b5cf6;
+                }
+                QPushButton:hover {
+                    background-color: #444;
+                }
+            """)
+
+        def on_flip_h_toggled(checked):
+            self.val_flip_h = checked
+            self.settingChanged.emit("flip_h", checked)
+
+        def on_flip_v_toggled(checked):
+            self.val_flip_v = checked
+            self.settingChanged.emit("flip_v", checked)
+
+        self.btn_flip_h.toggled.connect(on_flip_h_toggled)
+        self.btn_flip_v.toggled.connect(on_flip_v_toggled)
+
         def on_crop_toggled(checked):
             if checked:
                 self.crop_btn.setText("Done")
                 self.aspect_ratio_combo.show()
+                self.btn_flip_h.show()
+                self.btn_flip_v.show()
                 if hasattr(self, "rotation_frame"):
                     self.rotation_frame.show()
             else:
                 self.crop_btn.setText("Crop Tool")
                 self.aspect_ratio_combo.hide()
+                self.btn_flip_h.hide()
+                self.btn_flip_v.hide()
                 if hasattr(self, "rotation_frame"):
                     self.rotation_frame.hide()
             self.cropToggled.emit(checked)
@@ -369,10 +486,14 @@ class EditingControls(QtWidgets.QWidget):
 
         crop_layout.addWidget(self.crop_btn)
         crop_layout.addStretch()
+        crop_layout.addWidget(self.btn_flip_h)
+        crop_layout.addWidget(self.btn_flip_v)
         crop_layout.addWidget(self.aspect_ratio_combo)
 
-        # Hide aspect ratio combo initially
+        # Hide elements initially
         self.aspect_ratio_combo.hide()
+        self.btn_flip_h.hide()
+        self.btn_flip_v.hide()
 
         self.geometry_section.add_widget(crop_widget)
 
@@ -637,6 +758,13 @@ class EditingControls(QtWidgets.QWidget):
             params_to_reset = [
                 ("rotation", 0.0, "rotation"),
             ]
+            self.btn_flip_h.setChecked(False)
+            self.btn_flip_v.setChecked(False)
+            self.val_flip_h = False
+            self.val_flip_v = False
+            self.settingChanged.emit("flip_h", False)
+            self.settingChanged.emit("flip_v", False)
+
             # Special case for crop: reset to full image
             self.settingChanged.emit("crop", None)
 
@@ -716,6 +844,8 @@ class EditingControls(QtWidgets.QWidget):
             "denoise_method": "High Quality",
             "de_noise": self.val_de_noise,
             "rotation": getattr(self, "rotation", 0.0),
+            "flip_h": self.val_flip_h,
+            "flip_v": self.val_flip_v,
         }
 
     def apply_settings(self, settings):
@@ -732,6 +862,10 @@ class EditingControls(QtWidgets.QWidget):
 
         # Geometry
         self.set_slider_value("rotation", settings.get("rotation", 0.0))
+        self.btn_flip_h.setChecked(settings.get("flip_h", False))
+        self.btn_flip_v.setChecked(settings.get("flip_v", False))
+        self.val_flip_h = settings.get("flip_h", False)
+        self.val_flip_v = settings.get("flip_v", False)
 
         sharpen_val = settings.get("sharpen_value", 0.0)
         if sharpen_val is not None:

@@ -206,17 +206,49 @@ def calculate_auto_wb(img):
     }
 
 
-def apply_geometry(pil_img, rotate=0.0, crop=None):
+def apply_geometry(pil_img, rotate=0.0, crop=None, flip_h=False, flip_v=False):
     """
-    Applies geometric transformations: Rotation -> Crop.
+    Applies geometric transformations: Flip -> Rotation -> Crop.
+
+    Args:
+        pil_img: PIL Image
+        rotate: float (degrees, counter-clockwise)
+        crop: tuple (left, top, right, bottom) as normalized coordinates (0.0-1.0).
+              The crop coordinates are relative to the FLIPPED and ROTATED image.
+        flip_h: bool, mirror horizontally
+        flip_v: bool, mirror vertically
     """
+    # 0. Apply Flip
+    if flip_h:
+        pil_img = pil_img.transpose(Image.FLIP_LEFT_RIGHT)
+    if flip_v:
+        pil_img = pil_img.transpose(Image.FLIP_TOP_BOTTOM)
+
+    # 1. Apply Rotation
     if rotate != 0.0:
         # expand=True changes the image size to fit the rotated image
         pil_img = pil_img.rotate(rotate, resample=Image.BICUBIC, expand=True)
 
+    # 2. Apply Crop
     if crop is not None:
-        # ...
-        pass
+        w, h = pil_img.size
+        c_left, c_top, c_right, c_bottom = crop
+
+        # Convert to pixels
+        left = int(c_left * w)
+        top = int(c_top * h)
+        right = int(c_right * w)
+        bottom = int(c_bottom * h)
+
+        # Clamp
+        left = max(0, left)
+        top = max(0, top)
+        right = min(w, right)
+        bottom = min(h, bottom)
+
+        if right > left and bottom > top:
+            pil_img = pil_img.crop((left, top, right, bottom))
+
     return pil_img
 
 
@@ -265,17 +297,17 @@ def calculate_max_safe_crop(w, h, angle_deg, aspect_ratio=None):
     nh = h_prime / H
 
     # Center it
-    l = (1.0 - nw) / 2
-    t = (1.0 - nh) / 2
-    r = l + nw
-    b = t + nh
+    c_left = (1.0 - nw) / 2
+    c_top = (1.0 - nh) / 2
+    c_right = c_left + nw
+    c_bottom = c_top + nh
 
     # Clamp to safe range just in case of float errors
     return (
-        float(max(0.0, min(1.0, l))),
-        float(max(0.0, min(1.0, t))),
-        float(max(0.0, min(1.0, r))),
-        float(max(0.0, min(1.0, b))),
+        float(max(0.0, min(1.0, c_left))),
+        float(max(0.0, min(1.0, c_top))),
+        float(max(0.0, min(1.0, c_right))),
+        float(max(0.0, min(1.0, c_bottom))),
     )
 
 

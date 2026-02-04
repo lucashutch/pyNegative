@@ -111,6 +111,15 @@ class ExportProcessor(QtCore.QRunnable):
         else:
             pil_img = Image.fromarray((img * 255).astype("uint8"))
 
+        # Apply Geometry (Flip, Rotate, Crop)
+        pil_img = pynegative.apply_geometry(
+            pil_img,
+            rotate=sidecar_settings.get("rotation", 0.0),
+            crop=sidecar_settings.get("crop"),
+            flip_h=sidecar_settings.get("flip_h", False),
+            flip_v=sidecar_settings.get("flip_v", False),
+        )
+
         # Apply Sharpening if present in sidecar
         sharpen_val = sidecar_settings.get("sharpen_value", 0)
         if sharpen_val > 0:

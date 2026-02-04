@@ -35,7 +35,6 @@ This document tracks the implementation of the Geometric Tools feature set for p
 ## Remaining Tasks / Future Improvements
 
 - [ ] **rotate handles on crop tool** : add handles so a user an use their mouse to drag the handles to rotate the image
-- [ ] **Flip/Mirror:** Add buttons to flip the image horizontally/vertically.
 - [ ] **Auto-Straighten:** Implement computer vision logic to detect horizon lines and suggest an auto-rotation angle.
 - [ ] **Arbitrary Rotation:** Allow for 90-degree rotations (Portrait/Landscape toggle) outside of the fine-tune slider.
 - [ ] **Validation:** Add unit tests for corner cases in coordinate mapping (e.g., extreme zooms + rotation).

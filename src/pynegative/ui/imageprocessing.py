@@ -90,9 +90,16 @@ class ImageProcessorWorker(QtCore.QRunnable):
         img_uint8 = (processed_bg * 255).astype(np.uint8)
 
         rotate_val = self.settings.get("rotation", 0.0)
+        flip_h = self.settings.get("flip_h", False)
+        flip_v = self.settings.get("flip_v", False)
         crop_val = self.settings.get(
             "crop", None
         )  # (left, top, right, bottom) normalized
+
+        # 0. Apply Flip
+        if flip_h or flip_v:
+            flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
+            img_uint8 = cv2.flip(img_uint8, flip_code)
 
         # 1. Apply Rotation using OpenCV (Much faster than PIL)
         if abs(rotate_val) > 0.01:
@@ -214,14 +221,29 @@ class ImageProcessorWorker(QtCore.QRunnable):
             src_w = int(v_w)
             src_h = int(v_h)
 
+            # Mirror source coordinates if flipped
+            orig_w = self.base_img_full.shape[1]
+            orig_h = self.base_img_full.shape[0]
+
+            if flip_h:
+                src_x = orig_w - (src_x + src_w)
+            if flip_v:
+                src_y = orig_h - (src_y + src_h)
+
             # Clamp to original image bounds
             src_x = max(0, src_x)
             src_y = max(0, src_y)
-            src_x2 = min(self.base_img_full.shape[1], src_x + src_w)
-            src_y2 = min(self.base_img_full.shape[0], src_y + src_h)
+            src_x2 = min(orig_w, src_x + src_w)
+            src_y2 = min(orig_h, src_y + src_h)
 
             if (req_w := src_x2 - src_x) > 10 and (req_h := src_y2 - src_y) > 10:
                 crop_chunk = self.base_img_full[src_y:src_y2, src_x:src_x2]
+
+                # Flip the chunk to match preview
+                if flip_h or flip_v:
+                    flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
+                    crop_chunk = cv2.flip(crop_chunk, flip_code)
+
                 processed_roi, _ = pynegative.apply_tone_map(
                     crop_chunk, **tone_map_settings
                 )
