@@ -23,6 +23,8 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
         self._scene = QtWidgets.QGraphicsScene(self)
         self.setScene(self._scene)
+        # Explicitly set empty scene rect to prevent auto-calculation
+        self._scene.setSceneRect(0, 0, 0, 0)
 
         # Background item (Low-res 1000-1500px, GPU scaled)
         self._bg_item = QtWidgets.QGraphicsPixmapItem()
@@ -118,9 +120,10 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
     def reset_zoom(self):
         bg_pixmap = self._bg_item.pixmap()
-        if bg_pixmap is None or (
-            bg_pixmap.isNull() and self._scene.sceneRect().isEmpty()
-        ):
+        # Only fit view if there's actual content (non-null pixmap)
+        if bg_pixmap is None or bg_pixmap.isNull():
+            self._current_zoom = 1.0
+            self._is_fitting = True
             return
         self.fitInView(self._scene.sceneRect(), Qt.KeepAspectRatio)
         self._current_zoom = self.transform().m11()
