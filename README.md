@@ -11,7 +11,7 @@ Get the most out of your photos with a powerful, non-destructive editing suite.
 - **Instant Previews**: See your changes in real-time as you move the sliders.
 - **Live Histogram**: Real-time high-precision histogram with Luminance, RGB, and YUV modes.
 - **Fine-tuned Control**: Precision adjustments for exposure, contrast, shadows, highlights, and more.
-- **Smart Sharpening & Denoise**: Professional-grade algorithms to bring out the details without the noise.
+- **Smart Dehaze, Sharpening & Denoise**: Professional-grade algorithms to bring out the details and clarity without the noise.
 - **Safe Editing**: Your original files stay untouched. Edits are saved in tiny sidecar files alongside your images.
 
 ### 📁 Organize Your Shoots

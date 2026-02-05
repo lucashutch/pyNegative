@@ -120,6 +120,11 @@ class ExportProcessor(QtCore.QRunnable):
             flip_v=sidecar_settings.get("flip_v", False),
         )
 
+        # Apply Dehaze if present in sidecar
+        dehaze_val = sidecar_settings.get("de_haze", 0)
+        if dehaze_val > 0:
+            pil_img, _ = pynegative.de_haze_image(pil_img, dehaze_val, zoom=1.0)
+
         # Apply Denoise if present in sidecar
         denoise_val = sidecar_settings.get("de_noise", 0)
         if denoise_val > 0:
