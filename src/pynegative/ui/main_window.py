@@ -1,5 +1,4 @@
 from pathlib import Path
-import threading
 from PySide6 import QtWidgets, QtGui, QtCore
 
 from .. import core as pynegative
@@ -69,11 +68,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.open_editor(str(p))
         else:
             self.gallery._load_last_folder()
-
-        # Warm up hardware acceleration in the background
-        threading.Thread(
-            target=pynegative.warmup_hardware_acceleration, daemon=True
-        ).start()
 
     def _load_stylesheet(self):
         """Load the QSS stylesheet from file."""

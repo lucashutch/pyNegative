@@ -1,8 +1,10 @@
 import sys
 import logging
 import argparse
-from PySide6 import QtWidgets
+from pathlib import Path
+from PySide6 import QtWidgets, QtGui, QtCore
 from .main_window import MainWindow
+from .. import __version__, core as pynegative
 
 
 def main():
@@ -23,10 +25,111 @@ def main():
         datefmt="%H:%M:%S",
     )
 
+    # Suppress verbose third-party logs
+    logging.getLogger("PIL").setLevel(logging.INFO)
+
     # Note: We pass unknown args to QApplication so it can handle standard Qt flags
     app = QtWidgets.QApplication([sys.argv[0]] + unknown)
+
+    # Show Splash Screen
+    # Path is relative to src/pynegative/ui/__init__.py -> go up 4 levels to reach root
+    icon_path = Path(__file__).parent.parent.parent.parent / "pynegative_icon.png"
+    raw_icon = QtGui.QPixmap(str(icon_path))
+
+    # Create a nice canvas for the splash screen
+    splash_width, splash_height = 600, 400
+    canvas = QtGui.QPixmap(splash_width, splash_height)
+    canvas.fill(QtGui.QColor("#1a1a1a"))  # Match the main app background
+
+    painter = QtGui.QPainter(canvas)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing)
+    painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
+
+    if not raw_icon.isNull():
+        # Scale icon to a modest size (e.g. 280px)
+        icon_size = 280
+        scaled_icon = raw_icon.scaled(
+            icon_size,
+            icon_size,
+            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.SmoothTransformation,
+        )
+        icon_x = (splash_width - scaled_icon.width()) // 2
+        icon_y = (splash_height - scaled_icon.height()) // 2 - 40
+        painter.drawPixmap(icon_x, icon_y, scaled_icon)
+    else:
+        # Fallback text if icon missing
+        painter.setPen(QtGui.QColor("#ffffff"))
+        font = painter.font()
+        font.setPointSize(24)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(canvas.rect(), QtCore.Qt.AlignCenter, "pyNegative")
+
+    painter.end()
+
+    splash = QtWidgets.QSplashScreen(canvas)
+    # Set flags to ensure visibility and prevent "Not Responding" warnings
+    splash.setWindowFlags(
+        QtCore.Qt.WindowStaysOnTopHint
+        | QtCore.Qt.FramelessWindowHint
+        | QtCore.Qt.SplashScreen
+    )
+
+    # Center splash screen on the primary screen
+    screen_geometry = QtGui.QGuiApplication.primaryScreen().geometry()
+    splash.move(screen_geometry.center() - canvas.rect().center())
+
+    splash.show()
+    splash.raise_()
+    splash.activateWindow()
+
+    # Apply some styling to splash message
+    def update_splash_status(msg):
+        # Add a trailing newline to create some padding from the bottom edge
+        splash.showMessage(
+            f"pyNegative v{__version__}\n{msg}\n",
+            QtCore.Qt.AlignBottom | QtCore.Qt.AlignCenter,
+            QtGui.QColor("#cdd6f4"),
+        )
+        # Process events to keep UI updated
+        app.processEvents()
+
+    update_splash_status("Initializing Hardware Acceleration...")
+
+    # Force initial events processing to make sure splash is visible
+    for _ in range(50):
+        app.processEvents()
+        QtCore.QThread.msleep(10)
+
+    # Use QThread and QEventLoop for robust non-blocking wait
+    class WarmupThread(QtCore.QThread):
+        def run(self):
+            pynegative.warmup_hardware_acceleration()
+
+    warmup_thread = WarmupThread()
+    loop = QtCore.QEventLoop()
+    warmup_thread.finished.connect(loop.quit)
+
+    # Start warmup
+    warmup_thread.start()
+
+    # Timer to keep processing events and repainting to satisfy the OS "responsiveness" check
+    heartbeat = QtCore.QTimer()
+    heartbeat.timeout.connect(lambda: (app.processEvents(), splash.repaint()))
+    heartbeat.start(50)
+
+    # Execute local event loop - this is the most "Qt" way to wait without hanging
+    loop.exec()
+    heartbeat.stop()
+    warmup_thread.wait()
+
+    update_splash_status("Loading UI...")
+    app.processEvents()
+
     window = MainWindow(initial_path=args.path)
     window.showMaximized()
+    splash.finish(window)
     sys.exit(app.exec())
 
 

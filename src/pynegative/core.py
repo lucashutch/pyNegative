@@ -54,6 +54,9 @@ def warmup_hardware_acceleration():
         return
 
     try:
+        logger.debug(
+            "Initializing OpenCV OpenCL kernels (this may take several seconds)..."
+        )
         start = time.perf_counter()
         # Triggering a UMat operation forces OpenCL initialization
         dummy = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -82,6 +85,7 @@ def apply_tone_map(
     Applies White Balance -> Exposure -> Levels -> Tone EQ -> Saturation -> Base Curve
     Optimized for performance with in-place operations and minimal allocations.
     """
+    start_time = time.perf_counter()
     # Create a single copy at the start to protect the input array
     img = img.copy()
     total_pixels = img.size
@@ -157,6 +161,9 @@ def apply_tone_map(
 
     # Final Clip in-place
     np.clip(img, 0.0, 1.0, out=img)
+
+    elapsed = (time.perf_counter() - start_time) * 1000
+    logger.debug(f"Tone Map: (Group) | Time: {elapsed:.2f}ms")
 
     return img, stats
 
@@ -436,6 +443,7 @@ def extract_thumbnail(path):
 
 def sharpen_image(img, radius, percent, method="High Quality"):
     """Advanced sharpening with support for both PIL and Numpy float32."""
+    start_time = time.perf_counter()
     if isinstance(img, Image.Image):
         # Convert PIL to RGB if needed
         if img.mode != "RGB":
@@ -472,9 +480,15 @@ def sharpen_image(img, radius, percent, method="High Quality"):
 
             if was_pil:
                 result_array = np.clip(result * 255, 0, 255).astype(np.uint8)
-                return Image.fromarray(result_array)
+                res = Image.fromarray(result_array)
             else:
-                return np.clip(result, 0, 1.0)
+                res = np.clip(result, 0, 1.0)
+
+            elapsed = (time.perf_counter() - start_time) * 1000
+            logger.debug(
+                f"Sharpen: High Quality | Radius: {radius:.2f} | Percent: {percent:.1f}% | Time: {elapsed:.2f}ms"
+            )
+            return res
         except Exception as e:
             logger.error(f"High Quality Sharpen failed: {e}")
 
