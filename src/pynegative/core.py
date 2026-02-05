@@ -618,13 +618,135 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
         return img_array
 
 
-def de_haze_image(img, strength, zoom=None):
+def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
     """
     Applies a fast dehazing algorithm based on Dark Channel Prior.
     Strength: 0.0 to 1.0 (though UI might pass 0-50).
+    Returns (result, atmospheric_light)
     """
     if strength <= 0:
-        return img
+        return img, None
+
+    if isinstance(img, Image.Image):
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img_array = np.array(img).astype(np.float32) / 255.0
+        was_pil = True
+    else:
+        img_array = img
+        was_pil = False
+
+    h_img, w_img = img_array.shape[:2]
+    zoom_str = f" | Zoom: {zoom * 100:.0f}%" if zoom is not None else ""
+    size_str = f" | Size: {w_img}x{h_img}"
+    start_time = time.perf_counter()
+
+    try:
+        import cv2
+
+        # 1. Dark Channel estimation
+        # We use a small window for speed
+        kernel_size = 15
+
+        # Atmospheric light estimation
+        if fixed_atmospheric_light is not None:
+            atmospheric_light = fixed_atmospheric_light
+            backend = "Fixed"
+        else:
+            # Estimate from dark channel
+            backend = "CPU"
+            try:
+                # We can do the dark channel estimation on uint8 for speed
+                img_uint8 = (img_array * 255).astype(np.uint8)
+                u_img = cv2.UMat(img_uint8)
+                u_bgr = cv2.split(u_img)
+                u_dark = cv2.min(cv2.min(u_bgr[0], u_bgr[1]), u_bgr[2])
+
+                kernel = cv2.getStructuringElement(
+                    cv2.MORPH_RECT, (kernel_size, kernel_size)
+                )
+                u_dark = cv2.erode(u_dark, kernel)
+                dark_channel = u_dark.get().astype(np.float32) / 255.0
+                backend = "UMat (OpenCL)"
+            except Exception:
+                dark_channel = np.min(img_array, axis=2)
+                kernel = cv2.getStructuringElement(
+                    cv2.MORPH_RECT, (kernel_size, kernel_size)
+                )
+                dark_channel = cv2.erode(dark_channel, kernel)
+
+            # 2. Atmospheric light estimation
+            # Top 0.1% brightest pixels in the dark channel
+            num_pixels = dark_channel.size
+            num_brightest = max(1, num_pixels // 1000)
+            indices = np.argpartition(dark_channel.flatten(), -num_brightest)[
+                -num_brightest:
+            ]
+
+            # Of these pixels, pick the brightest in the original image
+            brightest_pixels = img_array.reshape(-1, 3)[indices]
+            atmospheric_light = np.max(brightest_pixels, axis=0)
+
+        # 3. Transmission map estimation
+        # t(x) = 1 - omega * min_c(I_c(x) / A_c)
+        omega = 0.95 * (strength / 50.0 if strength > 1.0 else strength)
+
+        # Avoid division by zero in A
+        a_safe = np.maximum(atmospheric_light, 0.001)
+
+        normalized_img = img_array / a_safe
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
+        try:
+            # Use UMat for the second dark channel estimation and smoothing
+            u_norm = cv2.UMat((np.clip(normalized_img, 0, 1) * 255).astype(np.uint8))
+            u_norm_channels = cv2.split(u_norm)
+            u_dark_norm = cv2.min(
+                cv2.min(u_norm_channels[0], u_norm_channels[1]), u_norm_channels[2]
+            )
+            u_dark_norm = cv2.erode(u_dark_norm, kernel)
+            dark_normalized = u_dark_norm.get().astype(np.float32) / 255.0
+        except Exception:
+            dark_normalized = np.min(normalized_img, axis=2)
+            dark_normalized = cv2.erode(dark_normalized, kernel)
+
+        transmission = 1.0 - omega * dark_normalized
+
+        # Refine transmission map
+        try:
+            u_trans = cv2.UMat(transmission)
+            u_trans = cv2.GaussianBlur(
+                u_trans, (kernel_size * 2 + 1, kernel_size * 2 + 1), 0
+            )
+            transmission = u_trans.get()
+        except Exception:
+            transmission = cv2.GaussianBlur(
+                transmission, (kernel_size * 2 + 1, kernel_size * 2 + 1), 0
+            )
+
+        transmission = np.maximum(transmission, 0.1)  # Lower bound for transmission
+
+        # 4. Recover radiance
+        # J(x) = (I(x) - A) / max(t(x), t0) + A
+        transmission_3d = transmission[:, :, np.newaxis]
+        result = (img_array - atmospheric_light) / transmission_3d + atmospheric_light
+
+        # Final clip
+        result = np.clip(result, 0, 1)
+
+        elapsed = (time.perf_counter() - start_time) * 1000
+        logger.debug(
+            f"Dehaze: ({backend}) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+        )
+
+        if was_pil:
+            return Image.fromarray((result * 255).astype(np.uint8)), atmospheric_light
+        else:
+            return result, atmospheric_light
+
+    except Exception as e:
+        logger.error(f"Dehaze failed: {e}")
+        return img, None
 
     if isinstance(img, Image.Image):
         if img.mode != "RGB":
