@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-import numpy as np
-from pathlib import Path
 import json
 import time
 import math
+import logging
+from pathlib import Path
+from datetime import datetime
+from functools import lru_cache
+
+import numpy as np
 import rawpy
 from PIL import Image, ImageFilter
-from functools import lru_cache
+
+# Configure logger for this module
+logger = logging.getLogger(__name__)
 
 RAW_EXTS = {
     ".cr2",
@@ -371,7 +377,7 @@ def extract_thumbnail(path):
                 img = img.convert("RGB")
             return img
         except Exception as e:
-            print(f"Error opening standard image thumbnail for {path}: {e}")
+            logger.error(f"Error opening standard image thumbnail for {path}: {e}")
             return None
 
     path_str = str(path)
@@ -398,7 +404,7 @@ def extract_thumbnail(path):
             return Image.fromarray(rgb)
 
     except Exception as e:
-        print(f"Error extracting thumbnail for {path}: {e}")
+        logger.error(f"Error extracting thumbnail for {path}: {e}")
         return None
 
 
@@ -443,7 +449,7 @@ def sharpen_image(img, radius, percent, method="High Quality"):
             else:
                 return np.clip(result, 0, 1.0)
         except Exception as e:
-            print(f"High Quality Sharpen failed: {e}")
+            logger.error(f"High Quality Sharpen failed: {e}")
 
     # Fallback for PIL
     if was_pil:
@@ -466,7 +472,7 @@ def sharpen_image(img, radius, percent, method="High Quality"):
         return img_float
 
 
-def de_noise_image(img, strength, method="High Quality"):
+def de_noise_image(img, strength, method="High Quality", zoom=None):
     """Advanced de-noising with support for both PIL and Numpy float32.
     Preserves float32 precision throughout the pipeline to avoid bit-depth artifacts.
     """
@@ -479,6 +485,12 @@ def de_noise_image(img, strength, method="High Quality"):
         img_array = img
         was_pil = False
 
+    h, w = img_array.shape[:2]
+    zoom_str = f" | Zoom: {zoom * 100:.0f}%" if zoom is not None else ""
+    size_str = f" | Size: {w}x{h}"
+
+    start_time = time.perf_counter()
+    denoised = None
     try:
         import cv2
 
@@ -486,46 +498,81 @@ def de_noise_image(img, strength, method="High Quality"):
             return img
 
         # Scaling factor for sigmaColor based on 0-1 range
-        # OpenCV bilateralFilter on float32 expects sigma in the same scale as pixels
         s_scale = 1.0 / 255.0
 
-        if method == "High Quality":
+        if method == "NLMeans":
+            # fastNlMeansDenoisingColored expects uint8
+            img_uint8 = (np.clip(img_array, 0, 1) * 255).astype(np.uint8)
+
+            # Rescale strength for NLMeans (slider 0-50 -> effective 0-5)
+            # as it is much more aggressive than Bilateral.
+            nl_strength = float(strength) / 10.0
+
+            # h: parameter deciding filter strength for luminance.
+            # hColor: the same for color components.
+            h = nl_strength * 0.5
+            hColor = nl_strength * 1.5
+
+            # Attempt OpenCL acceleration via UMat
+            backend = "CPU"
+            try:
+                umat_img = cv2.UMat(img_uint8)
+                denoised_umat = cv2.fastNlMeansDenoisingColored(
+                    umat_img, None, h, hColor, 7, 21
+                )
+                denoised_uint8 = denoised_umat.get()
+                backend = "UMat (OpenCL)"
+            except Exception:
+                # Fallback to standard CPU if UMat fails
+                denoised_uint8 = cv2.fastNlMeansDenoisingColored(
+                    img_uint8, None, h, hColor, 7, 21
+                )
+
+            denoised = denoised_uint8.astype(np.float32) / 255.0
+
+            elapsed = (time.perf_counter() - start_time) * 1000
+            logger.debug(
+                f"Denoise: NLMeans ({backend}) | Strength: {strength:.2f} (scaled: {nl_strength:.2f}){size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+            )
+
+        else:  # Default to High Quality (YUV Bilateral)
             # Sensor-aware de-noising: Separates Luma and Chroma
             # cvtColor handles float32 RGB -> YUV
             yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
             y, u, v = cv2.split(yuv)
 
-            # Chroma: Aggressive to remove color blotches
-            chroma_sigma = float(strength) * 2.0 * s_scale
-            u_denoised = cv2.bilateralFilter(u, 5, chroma_sigma, 1.5)
-            v_denoised = cv2.bilateralFilter(v, 5, chroma_sigma, 1.5)
+            # Chroma: Very aggressive to remove color blotches (human eye less sensitive to chroma detail)
+            # Increased diameter and spatial reach to average over larger areas
+            chroma_sigma_color = float(strength) * 4.5 * s_scale
+            chroma_sigma_space = 2.0 + (float(strength) / 10.0)
+            u_denoised = cv2.bilateralFilter(
+                u, 11, chroma_sigma_color, chroma_sigma_space
+            )
+            v_denoised = cv2.bilateralFilter(
+                v, 11, chroma_sigma_color, chroma_sigma_space
+            )
 
-            # Luma: Conservative to preserve fine texture
-            luma_sigma_color = float(strength) * 0.8 * s_scale
-            luma_sigma_space = 0.5 + (float(strength) / 50.0)
+            # Luma: Conservative to preserve fine texture/grain
+            luma_sigma_color = float(strength) * 0.4 * s_scale
+            luma_sigma_space = 0.5 + (float(strength) / 100.0)
             y_denoised = cv2.bilateralFilter(y, 3, luma_sigma_color, luma_sigma_space)
 
             denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
             denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
 
+            elapsed = (time.perf_counter() - start_time) * 1000
+            logger.debug(
+                f"Denoise: High Quality (YUV Bilateral) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+            )
+
+        if denoised is not None:
             if was_pil:
                 return Image.fromarray((np.clip(denoised, 0, 1) * 255).astype(np.uint8))
             else:
                 return np.clip(denoised, 0, 1)
 
-        elif method == "Edge Aware":
-            # Standard Bilateral filter on RGB
-            sigma = float(strength) * 1.5 * s_scale
-            denoised = cv2.bilateralFilter(img_array, 5, sigma, 1.0)
-            if denoised is not None:
-                if was_pil:
-                    return Image.fromarray(
-                        (np.clip(denoised, 0, 1) * 255).astype(np.uint8)
-                    )
-                else:
-                    return np.clip(denoised, 0, 1)
     except Exception as e:
-        print(f"OpenCV Denoise ({method}) failed: {e}")
+        logger.error(f"OpenCV Denoise failed: {e}")
 
     # Fallback to PIL or Median
     if was_pil:
@@ -536,9 +583,16 @@ def de_noise_image(img, strength, method="High Quality"):
             return img
         if size % 2 == 0:
             size += 1
+
+        fallback_start = time.perf_counter()
         # Convert back to PIL for the filter
         pil_img = Image.fromarray((np.clip(img_array, 0, 1) * 255).astype(np.uint8))
-        return pil_img.filter(ImageFilter.MedianFilter(size=size))
+        result = pil_img.filter(ImageFilter.MedianFilter(size=size))
+        elapsed = (time.perf_counter() - fallback_start) * 1000
+        logger.debug(
+            f"Denoise: Fallback (PIL MedianFilter) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+        )
+        return result
 
     # Fallback for Numpy (Median Filter)
     try:
@@ -551,8 +605,14 @@ def de_noise_image(img, strength, method="High Quality"):
             return img_array
         if size % 2 == 0:
             size += 1
+
+        fallback_start = time.perf_counter()
         # medianBlur expects uint8 or float32. We can use float32.
         denoised = cv2.medianBlur(img_array, size)
+        elapsed = (time.perf_counter() - fallback_start) * 1000
+        logger.debug(
+            f"Denoise: Fallback (OpenCV MedianBlur) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+        )
         return np.clip(denoised, 0, 1)
     except Exception:
         return img_array
@@ -624,7 +684,7 @@ def load_sidecar(raw_path):
                     settings["rating"] = 0
             return settings
     except Exception as e:
-        print(f"Error loading sidecar {sidecar_path}: {e}")
+        logger.error(f"Error loading sidecar {sidecar_path}: {e}")
         return None
 
 
@@ -647,7 +707,6 @@ def get_exif_capture_date(raw_path):
     Returns the date as a string in YYYY-MM-DD format, or None if unavailable.
     Falls back to file modification date if EXIF date is not found.
     """
-    from datetime import datetime
 
     raw_path = Path(raw_path)
     ext = raw_path.suffix.lower()
@@ -698,12 +757,11 @@ def get_exif_capture_date(raw_path):
                                 return f"{year}-{month}-{day}"
 
             except Exception as e:
-                print(f"Error extracting EXIF from {raw_path}: {e}")
+                logger.debug(f"Error extracting EXIF from {raw_path}: {e}")
 
         # Fallback: use file modification time
         mtime = raw_path.stat().st_mtime
         return datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
-
     except Exception as e:
-        print(f"Error reading file {raw_path}: {e}")
+        logger.error(f"Error reading file {raw_path}: {e}")
         return None

@@ -7,15 +7,14 @@ This document tracks planned features, project goals, and areas for technical im
 - [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
 - [ ] **Kelvin White Balance**: Map relative temperature to absolute Kelvin values based on RAW metadata.
 - [ ] **User Presets**: Allow saving and applying named adjustment presets.
-- [ ] **Copy/Paste Settings**: Quickly sync adjustments across multiple images.
 - [ ] **Metadata Panel**: Display EXIF data (ISO, Shutter, Aperture) in the editor.
 - [ ] **General Code Cleanup**: Analyse the codebase for redundant, duplicate or unused code.
+- [ ] **image dehaze**: implement image dehazing with a slider like denoise.
 
 ## Performance Optimisation
 
 - [ ] **Persistent Thumbnail Cache**: Store thumbnails on disk to speed up gallery loading.
 - [ ] **GPU Acceleration**: Explore OpenCL/CuPy for faster tone-mapping calculations.
-- [x] **Optimization Pass**: Search for quick wins in image processing loops and UI rendering.
 
 ## Bugs
 

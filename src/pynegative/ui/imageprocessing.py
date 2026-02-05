@@ -94,14 +94,17 @@ class ImageProcessorWorker(QtCore.QRunnable):
             img_render_base, **tone_map_settings, calculate_stats=False
         )
 
-        # Apply faster De-noise to background first
-        if self.settings.get("de_noise", 0) > 0:
+        # Apply De-noise to background (Skip if zoomed in to save performance, as ROI will cover it)
+        if not is_zoomed_in and self.settings.get("de_noise", 0) > 0:
             processed_bg = pynegative.de_noise_image(
-                processed_bg, self.settings["de_noise"], "Edge Aware"
+                processed_bg,
+                self.settings["de_noise"],
+                self.settings.get("denoise_method", "High Quality"),
+                zoom=zoom_scale,
             )
 
-        # Apply Sharpening to background after de-noise
-        if self.settings.get("sharpen_value", 0) > 0:
+        # Apply Sharpening to background (Skip if zoomed in)
+        if not is_zoomed_in and self.settings.get("sharpen_value", 0) > 0:
             processed_bg = pynegative.sharpen_image(
                 processed_bg,
                 self.settings.get("sharpen_radius", 0.5),
@@ -242,17 +245,17 @@ class ImageProcessorWorker(QtCore.QRunnable):
             if (req_w := src_x2 - src_x) > 10 and (req_h := src_y2 - src_y) > 10:
                 # Decide which source to use based on zoom level
                 # Tiered approach for performance:
-                # 1. Zoom < 75%: Use 1/4 size RAW
-                # 2. 75% <= Zoom < 200%: Use 1/2 size RAW
-                # 3. Zoom >= 200%: Use Full size RAW
-                if zoom_scale < 0.75 and self.base_img_quarter is not None:
+                # 1. Zoom < 50%: Use 1/4 size RAW
+                # 2. 50% <= Zoom < 150%: Use 1/2 size RAW
+                # 3. Zoom >= 150%: Use Full size RAW
+                if zoom_scale < 0.5 and self.base_img_quarter is not None:
                     # Scale coordinates to quarter-res
                     q_src_x, q_src_y = src_x // 4, src_y // 4
                     q_src_x2, q_src_y2 = src_x2 // 4, src_y2 // 4
                     crop_chunk = self.base_img_quarter[
                         q_src_y:q_src_y2, q_src_x:q_src_x2
                     ]
-                elif zoom_scale < 2.0 and self.base_img_half is not None:
+                elif zoom_scale < 1.5 and self.base_img_half is not None:
                     # Scale coordinates to half-res
                     h_src_x, h_src_y = src_x // 2, src_y // 2
                     h_src_x2, h_src_y2 = src_x2 // 2, src_y2 // 2
@@ -272,7 +275,10 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 # 2. De-noise first
                 if self.settings.get("de_noise", 0) > 0:
                     processed_roi = pynegative.de_noise_image(
-                        processed_roi, self.settings["de_noise"], "High Quality"
+                        processed_roi,
+                        self.settings["de_noise"],
+                        self.settings.get("denoise_method", "High Quality"),
+                        zoom=zoom_scale,
                     )
 
                 # 3. Sharpen second (to avoid sharpening noise)
@@ -430,7 +436,6 @@ class ImageProcessingPipeline(QtCore.QObject):
             return
         self._render_pending = False
         self._is_rendering_locked = True
-        self.render_timer.start(33)
         self.perf_start_time = time.perf_counter()
 
         self._current_request_id += 1
@@ -448,9 +453,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.thread_pool.start(worker)
 
     def _on_render_timer_timeout(self):
-        self._is_rendering_locked = False
-        if self._render_pending:
-            self._process_pending_update()
+        pass
 
     def _measure_and_emit_perf(self):
         elapsed_ms = (time.perf_counter() - self.perf_start_time) * 1000
@@ -469,7 +472,13 @@ class ImageProcessingPipeline(QtCore.QObject):
         roi_h,
         request_id,
     ):
+        # Unlock rendering since the worker has finished
+        self._is_rendering_locked = False
+
         if request_id < self._last_processed_id:
+            # If we were locked and a new request came in, process it now
+            if self._render_pending:
+                self._process_pending_update()
             return
         self._last_processed_id = request_id
 
@@ -477,6 +486,10 @@ class ImageProcessingPipeline(QtCore.QObject):
             pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
         )
         self._measure_and_emit_perf()
+
+        # If a new request came in while this one was processing, start it now
+        if self._render_pending:
+            self._process_pending_update()
 
     @QtCore.Slot(dict, int)
     def _on_histogram_updated(self, hist_data, request_id):
@@ -486,6 +499,11 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     @QtCore.Slot(str, int)
     def _on_worker_error(self, error_message, request_id):
+        # Always unlock on error so we can try again
+        self._is_rendering_locked = False
+        if self._render_pending:
+            self._process_pending_update()
+
         if request_id < self._last_processed_id:
             return
         print(f"Image processing error (ID {request_id}): {error_message}")

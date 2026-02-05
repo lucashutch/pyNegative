@@ -9,7 +9,7 @@ from .widgets import StarRatingWidget
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self):
+    def __init__(self, initial_path=None):
         super().__init__()
         self.setWindowTitle("pyNegative")
         self.resize(1000, 700)
@@ -56,8 +56,18 @@ class MainWindow(QtWidgets.QMainWindow):
         # Start in Gallery
         self.switch_to_gallery()
 
-        # Load initial folder
-        self.gallery._load_last_folder()
+        # Load initial folder or file
+        if initial_path:
+            p = Path(initial_path)
+            if p.is_dir():
+                self.gallery.load_folder(str(p))
+            elif p.is_file():
+                # Load the parent folder in the gallery
+                self.gallery.load_folder(str(p.parent))
+                # Open the editor for this file
+                self.open_editor(str(p))
+        else:
+            self.gallery._load_last_folder()
 
     def _load_stylesheet(self):
         """Load the QSS stylesheet from file."""

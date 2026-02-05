@@ -34,6 +34,7 @@ class EditingControls(QtWidgets.QWidget):
         self.val_sharpen_radius = 0.5
         self.val_sharpen_percent = 0.0
         self.val_de_noise = 0
+        self.val_denoise_method = "High Quality"
         self.val_flip_h = False
         self.val_flip_v = False
         self.rotation = 0.0
@@ -312,6 +313,28 @@ class EditingControls(QtWidgets.QWidget):
             1,
             self.details_section,
         )
+
+        # Denoise Method Selector
+        denoise_method_layout = QtWidgets.QHBoxLayout()
+        denoise_method_label = QtWidgets.QLabel("Method:")
+        denoise_method_label.setStyleSheet("font-size: 11px; color: #aaa;")
+        self.denoise_method_combo = QtWidgets.QComboBox()
+        self.denoise_method_combo.addItems(["High Quality", "NLMeans"])
+        self.denoise_method_combo.setCurrentText(self.val_denoise_method)
+        self.denoise_method_combo.setStyleSheet("""
+            QComboBox {
+                min-height: 18px;
+                max-height: 20px;
+                font-size: 11px;
+                padding: 0px 5px;
+            }
+        """)
+        self.denoise_method_combo.currentTextChanged.connect(
+            self._on_denoise_method_changed
+        )
+        denoise_method_layout.addWidget(denoise_method_label)
+        denoise_method_layout.addWidget(self.denoise_method_combo)
+        self.details_section.add_layout(denoise_method_layout)
 
         # 6. Geometry
         self.geometry_section = CollapsibleSection("Geometry")
@@ -825,6 +848,11 @@ class EditingControls(QtWidgets.QWidget):
         self.histogram_widget.set_mode(mode)
         self.histogramModeChanged.emit(mode)
 
+    def _on_denoise_method_changed(self, method):
+        """Handle denoise method change."""
+        self.val_denoise_method = method
+        self.settingChanged.emit("denoise_method", method)
+
     def _on_aspect_ratio_changed(self, index):
         """Handle aspect ratio selection change."""
         text = self.aspect_ratio_combo.currentText()
@@ -877,7 +905,7 @@ class EditingControls(QtWidgets.QWidget):
             "sharpen_radius": self.val_sharpen_radius,
             "sharpen_percent": self.val_sharpen_percent,
             "sharpen_value": self.val_sharpen_value,
-            "denoise_method": "High Quality",
+            "denoise_method": self.val_denoise_method,
             "de_noise": self.val_de_noise,
             "rotation": getattr(self, "rotation", 0.0),
             "flip_h": self.val_flip_h,
@@ -931,3 +959,9 @@ class EditingControls(QtWidgets.QWidget):
 
         denoise_val = settings.get("de_noise", 0)
         self.set_slider_value("val_de_noise", min(50.0, denoise_val), silent=True)
+
+        denoise_method = settings.get("denoise_method", "High Quality")
+        self.denoise_method_combo.blockSignals(True)
+        self.denoise_method_combo.setCurrentText(denoise_method)
+        self.denoise_method_combo.blockSignals(False)
+        self.val_denoise_method = denoise_method

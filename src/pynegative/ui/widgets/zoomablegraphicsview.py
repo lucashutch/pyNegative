@@ -34,6 +34,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
         # Foreground item (High-res ROI patch)
         self._fg_item = QtWidgets.QGraphicsPixmapItem()
+        self._scene.addItem(self._fg_item)
         self._fg_item.setZValue(1)
 
         # Crop Item (Overlay)
