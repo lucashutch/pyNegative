@@ -34,6 +34,7 @@ class EditingControls(QtWidgets.QWidget):
         self.val_sharpen_radius = 0.5
         self.val_sharpen_percent = 0.0
         self.val_de_noise = 0
+        self.val_de_haze = 0.0
         self.val_denoise_method = "High Quality"
         self.val_flip_h = False
         self.val_flip_v = False
@@ -310,6 +311,16 @@ class EditingControls(QtWidgets.QWidget):
             50,
             self.val_de_noise,
             "val_de_noise",
+            1,
+            self.details_section,
+        )
+
+        self._add_slider(
+            "De-haze",
+            0,
+            50,
+            self.val_de_haze,
+            "val_de_haze",
             1,
             self.details_section,
         )
@@ -806,6 +817,7 @@ class EditingControls(QtWidgets.QWidget):
             params_to_reset = [
                 ("val_sharpen_value", 20.0, "sharpen_value"),
                 ("val_de_noise", 0.0, "de_noise"),
+                ("val_de_haze", 0.0, "de_haze"),
             ]
         elif section_name == "geometry":
             params_to_reset = [
@@ -907,6 +919,7 @@ class EditingControls(QtWidgets.QWidget):
             "sharpen_value": self.val_sharpen_value,
             "denoise_method": self.val_denoise_method,
             "de_noise": self.val_de_noise,
+            "de_haze": self.val_de_haze,
             "rotation": getattr(self, "rotation", 0.0),
             "flip_h": self.val_flip_h,
             "flip_v": self.val_flip_v,
@@ -959,6 +972,9 @@ class EditingControls(QtWidgets.QWidget):
 
         denoise_val = settings.get("de_noise", 0)
         self.set_slider_value("val_de_noise", min(50.0, denoise_val), silent=True)
+
+        de_haze_val = settings.get("de_haze", 0)
+        self.set_slider_value("val_de_haze", min(50.0, de_haze_val), silent=True)
 
         denoise_method = settings.get("denoise_method", "High Quality")
         self.denoise_method_combo.blockSignals(True)

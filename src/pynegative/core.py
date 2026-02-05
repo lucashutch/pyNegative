@@ -618,6 +618,84 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
         return img_array
 
 
+def de_haze_image(img, strength):
+    """
+    Applies a fast dehazing algorithm based on Dark Channel Prior.
+    Strength: 0.0 to 1.0 (though UI might pass 0-50).
+    """
+    if strength <= 0:
+        return img
+
+    if isinstance(img, Image.Image):
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img_array = np.array(img).astype(np.float32) / 255.0
+        was_pil = True
+    else:
+        img_array = img
+        was_pil = False
+
+    try:
+        import cv2
+
+        # 1. Dark Channel estimation
+        # We use a small window for speed
+        kernel_size = 15
+        dark_channel = np.min(img_array, axis=2)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
+        dark_channel = cv2.erode(dark_channel, kernel)
+
+        # 2. Atmospheric light estimation
+        # Top 0.1% brightest pixels in the dark channel
+        num_pixels = dark_channel.size
+        num_brightest = max(1, num_pixels // 1000)
+        indices = np.argpartition(dark_channel.flatten(), -num_brightest)[
+            -num_brightest:
+        ]
+
+        # Of these pixels, pick the brightest in the original image
+        brightest_pixels = img_array.reshape(-1, 3)[indices]
+        atmospheric_light = np.max(brightest_pixels, axis=0)
+
+        # 3. Transmission map estimation
+        # t(x) = 1 - omega * min_c(I_c(x) / A_c)
+        omega = 0.95 * (strength / 50.0 if strength > 1.0 else strength)
+
+        # Avoid division by zero in A
+        a_safe = np.maximum(atmospheric_light, 0.001)
+
+        normalized_img = img_array / a_safe
+        dark_normalized = np.min(normalized_img, axis=2)
+        dark_normalized = cv2.erode(dark_normalized, kernel)
+
+        transmission = 1.0 - omega * dark_normalized
+
+        # Refine transmission map with a fast guided filter or just a blur
+        # Guided filter is better but blur is faster. Let's use a simple blur for now
+        # to keep it snappy for the slider.
+        transmission = cv2.GaussianBlur(
+            transmission, (kernel_size * 2 + 1, kernel_size * 2 + 1), 0
+        )
+        transmission = np.maximum(transmission, 0.1)  # Lower bound for transmission
+
+        # 4. Recover radiance
+        # J(x) = (I(x) - A) / max(t(x), t0) + A
+        transmission_3d = transmission[:, :, np.newaxis]
+        result = (img_array - atmospheric_light) / transmission_3d + atmospheric_light
+
+        # Final clip
+        result = np.clip(result, 0, 1)
+
+        if was_pil:
+            return Image.fromarray((result * 255).astype(np.uint8))
+        else:
+            return result
+
+    except Exception as e:
+        logger.error(f"Dehaze failed: {e}")
+        return img
+
+
 def save_image(pil_img, output_path, quality=95):
     output_path = Path(output_path)
     fmt = output_path.suffix.lower()
