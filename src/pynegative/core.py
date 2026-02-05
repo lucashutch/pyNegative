@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-import numpy as np
-import logging
-from pathlib import Path
-
-# Configure logger for this module
-logger = logging.getLogger(__name__)
 import json
 import time
 import math
+import logging
+from pathlib import Path
+from datetime import datetime
+from functools import lru_cache
+
+import numpy as np
 import rawpy
 from PIL import Image, ImageFilter
-from functools import lru_cache
+
+# Configure logger for this module
+logger = logging.getLogger(__name__)
 
 RAW_EXTS = {
     ".cr2",
@@ -705,7 +707,6 @@ def get_exif_capture_date(raw_path):
     Returns the date as a string in YYYY-MM-DD format, or None if unavailable.
     Falls back to file modification date if EXIF date is not found.
     """
-    from datetime import datetime
 
     raw_path = Path(raw_path)
     ext = raw_path.suffix.lower()
