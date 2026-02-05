@@ -618,7 +618,7 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
         return img_array
 
 
-def de_haze_image(img, strength):
+def de_haze_image(img, strength, zoom=None):
     """
     Applies a fast dehazing algorithm based on Dark Channel Prior.
     Strength: 0.0 to 1.0 (though UI might pass 0-50).
@@ -635,15 +635,39 @@ def de_haze_image(img, strength):
         img_array = img
         was_pil = False
 
+    h_img, w_img = img_array.shape[:2]
+    zoom_str = f" | Zoom: {zoom * 100:.0f}%" if zoom is not None else ""
+    size_str = f" | Size: {w_img}x{h_img}"
+    start_time = time.perf_counter()
+
     try:
         import cv2
 
         # 1. Dark Channel estimation
         # We use a small window for speed
         kernel_size = 15
-        dark_channel = np.min(img_array, axis=2)
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
-        dark_channel = cv2.erode(dark_channel, kernel)
+
+        # Attempt UMat for performance on the morphological operations
+        backend = "CPU"
+        try:
+            # We can do the dark channel estimation on uint8 for speed
+            img_uint8 = (img_array * 255).astype(np.uint8)
+            u_img = cv2.UMat(img_uint8)
+            u_bgr = cv2.split(u_img)
+            u_dark = cv2.min(cv2.min(u_bgr[0], u_bgr[1]), u_bgr[2])
+
+            kernel = cv2.getStructuringElement(
+                cv2.MORPH_RECT, (kernel_size, kernel_size)
+            )
+            u_dark = cv2.erode(u_dark, kernel)
+            dark_channel = u_dark.get().astype(np.float32) / 255.0
+            backend = "UMat (OpenCL)"
+        except Exception:
+            dark_channel = np.min(img_array, axis=2)
+            kernel = cv2.getStructuringElement(
+                cv2.MORPH_RECT, (kernel_size, kernel_size)
+            )
+            dark_channel = cv2.erode(dark_channel, kernel)
 
         # 2. Atmospheric light estimation
         # Top 0.1% brightest pixels in the dark channel
@@ -665,17 +689,36 @@ def de_haze_image(img, strength):
         a_safe = np.maximum(atmospheric_light, 0.001)
 
         normalized_img = img_array / a_safe
-        dark_normalized = np.min(normalized_img, axis=2)
-        dark_normalized = cv2.erode(dark_normalized, kernel)
+
+        try:
+            # Use UMat for the second dark channel estimation and smoothing
+            u_norm = cv2.UMat((normalized_img * 255).astype(np.uint8))
+            u_norm_channels = cv2.split(u_norm)
+            u_dark_norm = cv2.min(
+                cv2.min(u_norm_channels[0], u_norm_channels[1]), u_norm_channels[2]
+            )
+            u_dark_norm = cv2.erode(u_dark_norm, kernel)
+            dark_normalized = u_dark_norm.get().astype(np.float32) / 255.0
+        except Exception:
+            dark_normalized = np.min(normalized_img, axis=2)
+            dark_normalized = cv2.erode(dark_normalized, kernel)
 
         transmission = 1.0 - omega * dark_normalized
 
         # Refine transmission map with a fast guided filter or just a blur
         # Guided filter is better but blur is faster. Let's use a simple blur for now
         # to keep it snappy for the slider.
-        transmission = cv2.GaussianBlur(
-            transmission, (kernel_size * 2 + 1, kernel_size * 2 + 1), 0
-        )
+        try:
+            u_trans = cv2.UMat(transmission)
+            u_trans = cv2.GaussianBlur(
+                u_trans, (kernel_size * 2 + 1, kernel_size * 2 + 1), 0
+            )
+            transmission = u_trans.get()
+        except Exception:
+            transmission = cv2.GaussianBlur(
+                transmission, (kernel_size * 2 + 1, kernel_size * 2 + 1), 0
+            )
+
         transmission = np.maximum(transmission, 0.1)  # Lower bound for transmission
 
         # 4. Recover radiance
@@ -685,6 +728,11 @@ def de_haze_image(img, strength):
 
         # Final clip
         result = np.clip(result, 0, 1)
+
+        elapsed = (time.perf_counter() - start_time) * 1000
+        logger.debug(
+            f"Dehaze: ({backend}) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+        )
 
         if was_pil:
             return Image.fromarray((result * 255).astype(np.uint8))
