@@ -11,6 +11,11 @@ import numpy as np
 import rawpy
 from PIL import Image, ImageFilter
 
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
 # Configure logger for this module
 logger = logging.getLogger(__name__)
 
@@ -39,6 +44,27 @@ except ImportError:
 
 
 # ---------------- Tone Mapping ----------------
+def warmup_hardware_acceleration():
+    """
+    Proactively initializes OpenCV OpenCL hardware acceleration.
+    This can take several seconds on some systems and is best done in a background thread
+    on application startup to avoid UI hangs during the first effect application.
+    """
+    if cv2 is None:
+        return
+
+    try:
+        start = time.perf_counter()
+        # Triggering a UMat operation forces OpenCL initialization
+        dummy = np.zeros((100, 100, 3), dtype=np.uint8)
+        u_dummy = cv2.UMat(dummy)
+        cv2.split(u_dummy)
+        elapsed = (time.perf_counter() - start) * 1000
+        logger.debug(f"Hardware acceleration warmed up in {elapsed:.2f}ms")
+    except Exception as e:
+        logger.warning(f"Hardware acceleration warmup failed: {e}")
+
+
 def apply_tone_map(
     img,
     exposure=0.0,
@@ -426,7 +452,8 @@ def sharpen_image(img, radius, percent, method="High Quality"):
 
     if method == "High Quality":
         try:
-            import cv2
+            if cv2 is None:
+                raise ImportError("OpenCV not available")
 
             # Create unsharp mask
             blur = cv2.GaussianBlur(img_float, (0, 0), radius)
@@ -459,7 +486,8 @@ def sharpen_image(img, radius, percent, method="High Quality"):
 
     # Fallback for Numpy (Basic Unsharp Mask)
     try:
-        import cv2
+        if cv2 is None:
+            raise ImportError("OpenCV not available")
 
         # Convert radius to kernel size (must be odd)
         k_size = int(2 * math.ceil(radius * 2) + 1)
@@ -492,7 +520,8 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
     start_time = time.perf_counter()
     denoised = None
     try:
-        import cv2
+        if cv2 is None:
+            raise ImportError("OpenCV not available")
 
         if strength <= 0:
             return img
@@ -596,7 +625,8 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
 
     # Fallback for Numpy (Median Filter)
     try:
-        import cv2
+        if cv2 is None:
+            raise ImportError("OpenCV not available")
 
         size = int(strength / 5.0)
         if size < 3:
@@ -751,123 +781,6 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
     except Exception as e:
         logger.error(f"Dehaze failed: {e}")
         return img, None
-
-    if isinstance(img, Image.Image):
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-        img_array = np.array(img).astype(np.float32) / 255.0
-        was_pil = True
-    else:
-        img_array = img
-        was_pil = False
-
-    h_img, w_img = img_array.shape[:2]
-    zoom_str = f" | Zoom: {zoom * 100:.0f}%" if zoom is not None else ""
-    size_str = f" | Size: {w_img}x{h_img}"
-    start_time = time.perf_counter()
-
-    try:
-        import cv2
-
-        # 1. Dark Channel estimation
-        # We use a small window for speed
-        kernel_size = 15
-
-        # Attempt UMat for performance on the morphological operations
-        backend = "CPU"
-        try:
-            # We can do the dark channel estimation on uint8 for speed
-            img_uint8 = (img_array * 255).astype(np.uint8)
-            u_img = cv2.UMat(img_uint8)
-            u_bgr = cv2.split(u_img)
-            u_dark = cv2.min(cv2.min(u_bgr[0], u_bgr[1]), u_bgr[2])
-
-            kernel = cv2.getStructuringElement(
-                cv2.MORPH_RECT, (kernel_size, kernel_size)
-            )
-            u_dark = cv2.erode(u_dark, kernel)
-            dark_channel = u_dark.get().astype(np.float32) / 255.0
-            backend = "UMat (OpenCL)"
-        except Exception:
-            dark_channel = np.min(img_array, axis=2)
-            kernel = cv2.getStructuringElement(
-                cv2.MORPH_RECT, (kernel_size, kernel_size)
-            )
-            dark_channel = cv2.erode(dark_channel, kernel)
-
-        # 2. Atmospheric light estimation
-        # Top 0.1% brightest pixels in the dark channel
-        num_pixels = dark_channel.size
-        num_brightest = max(1, num_pixels // 1000)
-        indices = np.argpartition(dark_channel.flatten(), -num_brightest)[
-            -num_brightest:
-        ]
-
-        # Of these pixels, pick the brightest in the original image
-        brightest_pixels = img_array.reshape(-1, 3)[indices]
-        atmospheric_light = np.max(brightest_pixels, axis=0)
-
-        # 3. Transmission map estimation
-        # t(x) = 1 - omega * min_c(I_c(x) / A_c)
-        omega = 0.95 * (strength / 50.0 if strength > 1.0 else strength)
-
-        # Avoid division by zero in A
-        a_safe = np.maximum(atmospheric_light, 0.001)
-
-        normalized_img = img_array / a_safe
-
-        try:
-            # Use UMat for the second dark channel estimation and smoothing
-            u_norm = cv2.UMat((normalized_img * 255).astype(np.uint8))
-            u_norm_channels = cv2.split(u_norm)
-            u_dark_norm = cv2.min(
-                cv2.min(u_norm_channels[0], u_norm_channels[1]), u_norm_channels[2]
-            )
-            u_dark_norm = cv2.erode(u_dark_norm, kernel)
-            dark_normalized = u_dark_norm.get().astype(np.float32) / 255.0
-        except Exception:
-            dark_normalized = np.min(normalized_img, axis=2)
-            dark_normalized = cv2.erode(dark_normalized, kernel)
-
-        transmission = 1.0 - omega * dark_normalized
-
-        # Refine transmission map with a fast guided filter or just a blur
-        # Guided filter is better but blur is faster. Let's use a simple blur for now
-        # to keep it snappy for the slider.
-        try:
-            u_trans = cv2.UMat(transmission)
-            u_trans = cv2.GaussianBlur(
-                u_trans, (kernel_size * 2 + 1, kernel_size * 2 + 1), 0
-            )
-            transmission = u_trans.get()
-        except Exception:
-            transmission = cv2.GaussianBlur(
-                transmission, (kernel_size * 2 + 1, kernel_size * 2 + 1), 0
-            )
-
-        transmission = np.maximum(transmission, 0.1)  # Lower bound for transmission
-
-        # 4. Recover radiance
-        # J(x) = (I(x) - A) / max(t(x), t0) + A
-        transmission_3d = transmission[:, :, np.newaxis]
-        result = (img_array - atmospheric_light) / transmission_3d + atmospheric_light
-
-        # Final clip
-        result = np.clip(result, 0, 1)
-
-        elapsed = (time.perf_counter() - start_time) * 1000
-        logger.debug(
-            f"Dehaze: ({backend}) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
-        )
-
-        if was_pil:
-            return Image.fromarray((result * 255).astype(np.uint8))
-        else:
-            return result
-
-    except Exception as e:
-        logger.error(f"Dehaze failed: {e}")
-        return img
 
 
 def save_image(pil_img, output_path, quality=95):

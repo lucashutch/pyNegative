@@ -75,6 +75,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         request_id,
         calculate_histogram=False,
         cache=None,
+        last_heavy_adjusted="de_haze",
     ):
         super().__init__()
         self.signals = signals
@@ -87,6 +88,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.request_id = request_id
         self.calculate_histogram = calculate_histogram
         self.cache = cache
+        self.last_heavy_adjusted = last_heavy_adjusted
 
     def run(self):
         try:
@@ -97,14 +99,23 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
     def _process_heavy_stage(self, img, res_key, heavy_params, zoom_scale):
         """Processes and caches the heavy effects stage for a full image tier."""
-        if self.cache:
-            cached = self.cache.get(res_key, "heavy", heavy_params)
-            if cached is not None:
-                return cached
 
-        processed = img
-        # 1.1 De-haze
-        if heavy_params["de_haze"] > 0:
+        # 1. Group parameters by effect
+        dehaze_p = {"de_haze": heavy_params["de_haze"]}
+        denoise_p = {
+            "de_noise": heavy_params["de_noise"],
+            "denoise_method": heavy_params["denoise_method"],
+        }
+        sharpen_p = {
+            "sharpen_value": heavy_params["sharpen_value"],
+            "sharpen_radius": heavy_params["sharpen_radius"],
+            "sharpen_percent": heavy_params["sharpen_percent"],
+        }
+
+        # 2. Define application functions
+        def apply_dehaze(image):
+            if dehaze_p["de_haze"] <= 0:
+                return image
             # Always sync atmospheric light from preview if possible
             atmos_fixed = (
                 self.cache.estimated_params.get("atmospheric_light")
@@ -112,35 +123,81 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 else None
             )
             processed, atmos = pynegative.de_haze_image(
-                processed,
-                heavy_params["de_haze"],
+                image,
+                dehaze_p["de_haze"],
                 zoom=zoom_scale,
                 fixed_atmospheric_light=atmos_fixed,
             )
             # If we are processing preview, store the estimated light for other tiers
             if res_key == "preview" and self.cache and atmos_fixed is None:
                 self.cache.estimated_params["atmospheric_light"] = atmos
+            return processed
 
-        # 1.2 De-noise
-        if heavy_params["de_noise"] > 0:
-            processed = pynegative.de_noise_image(
-                processed,
-                heavy_params["de_noise"],
-                heavy_params["denoise_method"],
+        def apply_denoise(image):
+            if denoise_p["de_noise"] <= 0:
+                return image
+            return pynegative.de_noise_image(
+                image,
+                denoise_p["de_noise"],
+                denoise_p["denoise_method"],
                 zoom=zoom_scale,
             )
 
-        # 1.3 Sharpen
-        if heavy_params["sharpen_value"] > 0:
-            processed = pynegative.sharpen_image(
-                processed,
-                heavy_params["sharpen_radius"],
-                heavy_params["sharpen_percent"],
+        def apply_sharpen(image):
+            if sharpen_p["sharpen_value"] <= 0:
+                return image
+            return pynegative.sharpen_image(
+                image,
+                sharpen_p["sharpen_radius"],
+                sharpen_p["sharpen_percent"],
                 "High Quality",
             )
 
-        if self.cache:
-            self.cache.put(res_key, "heavy", heavy_params, processed)
+        # 3. Determine execution order based on the last adjusted parameter.
+        # The goal is to keep the "active" parameter at the end of the chain
+        # so that earlier stages can be retrieved from cache.
+        active = self.last_heavy_adjusted
+        if active == "de_haze":
+            # Adjusting Dehaze -> Denoise and Sharpen come first
+            pipeline = [
+                ("denoise", denoise_p, apply_denoise),
+                ("sharpen", sharpen_p, apply_sharpen),
+                ("dehaze", dehaze_p, apply_dehaze),
+            ]
+        elif active == "de_noise":
+            # Adjusting Denoise -> Dehaze and Sharpen come first
+            pipeline = [
+                ("dehaze", dehaze_p, apply_dehaze),
+                ("sharpen", sharpen_p, apply_sharpen),
+                ("denoise", denoise_p, apply_denoise),
+            ]
+        else:
+            # Adjusting Sharpen or other -> Default order
+            pipeline = [
+                ("dehaze", dehaze_p, apply_dehaze),
+                ("denoise", denoise_p, apply_denoise),
+                ("sharpen", sharpen_p, apply_sharpen),
+            ]
+
+        # 4. Execute pipeline with multi-stage caching
+        processed = img
+        accumulated_params = {}
+        for i, (name, params, func) in enumerate(pipeline):
+            accumulated_params.update(params)
+            stage_id = f"heavy_stage_{i + 1}_{name}"
+
+            if self.cache:
+                cached = self.cache.get(res_key, stage_id, accumulated_params)
+                if cached is not None:
+                    processed = cached
+                    continue
+
+            # Cache miss: compute this stage
+            processed = func(processed)
+
+            # Store in cache
+            if self.cache:
+                self.cache.put(res_key, stage_id, accumulated_params, processed)
 
         return processed
 
@@ -403,6 +460,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.base_img_quarter = None
         self.base_img_preview = None
         self._processing_params = {}
+        self._last_heavy_adjusted = "de_haze"
         self._view_ref = None
         self.perf_start_time = 0
         self.histogram_enabled = False
@@ -456,6 +514,12 @@ class ImageProcessingPipeline(QtCore.QObject):
             self.request_update()
 
     def set_processing_params(self, **kwargs):
+        # Track which heavy effect was last adjusted to optimize pipeline order
+        heavy_keys = {"de_haze", "de_noise", "sharpen_value"}
+        for k in kwargs:
+            if k in heavy_keys:
+                self._last_heavy_adjusted = k
+                break
         self._processing_params.update(kwargs)
 
     def get_current_settings(self):
@@ -491,6 +555,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             self._current_request_id,
             calculate_histogram=self.histogram_enabled,
             cache=self.cache,
+            last_heavy_adjusted=self._last_heavy_adjusted,
         )
         self.thread_pool.start(worker)
 
