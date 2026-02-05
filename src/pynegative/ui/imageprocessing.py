@@ -94,6 +94,13 @@ class ImageProcessorWorker(QtCore.QRunnable):
             img_render_base, **tone_map_settings, calculate_stats=False
         )
 
+        # Apply De-haze to background
+        if not is_zoomed_in and self.settings.get("de_haze", 0) > 0:
+            processed_bg = pynegative.de_haze_image(
+                processed_bg,
+                self.settings["de_haze"],
+            )
+
         # Apply De-noise to background (Skip if zoomed in to save performance, as ROI will cover it)
         if not is_zoomed_in and self.settings.get("de_noise", 0) > 0:
             processed_bg = pynegative.de_noise_image(
@@ -271,6 +278,13 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 processed_roi, _ = pynegative.apply_tone_map(
                     crop_chunk, **tone_map_settings, calculate_stats=False
                 )
+
+                # 1.5 De-haze
+                if self.settings.get("de_haze", 0) > 0:
+                    processed_roi = pynegative.de_haze_image(
+                        processed_roi,
+                        self.settings["de_haze"],
+                    )
 
                 # 2. De-noise first
                 if self.settings.get("de_noise", 0) > 0:
