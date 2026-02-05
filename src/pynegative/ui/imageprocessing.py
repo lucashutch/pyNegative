@@ -99,6 +99,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
             processed_bg = pynegative.de_haze_image(
                 processed_bg,
                 self.settings["de_haze"],
+                zoom=zoom_scale,
             )
 
         # Apply De-noise to background (Skip if zoomed in to save performance, as ROI will cover it)
@@ -284,6 +285,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     processed_roi = pynegative.de_haze_image(
                         processed_roi,
                         self.settings["de_haze"],
+                        zoom=zoom_scale,
                     )
 
                 # 2. De-noise first
