@@ -16,6 +16,50 @@ class ImageProcessorSignals(QtCore.QObject):
     error = QtCore.Signal(str, int)
 
 
+class PipelineCache:
+    """Manages cached stages of the image processing pipeline."""
+
+    def __init__(self):
+        # caches[resolution_key][stage_id] = (parameters_dict, numpy_array)
+        self.caches = {}
+        # Effect parameters that are estimated once on the preview and synced
+        self.estimated_params = {}
+
+    def get(self, resolution, stage_id, current_params):
+        """Returns the cached array if parameters match exactly."""
+        res_cache = self.caches.get(resolution, {})
+        cached_data = res_cache.get(stage_id)
+
+        if cached_data:
+            cached_params, cached_array = cached_data
+            # Check if all relevant parameters for this stage match
+            if all(
+                current_params.get(k) == cached_params.get(k) for k in cached_params
+            ):
+                return cached_array
+        return None
+
+    def put(self, resolution, stage_id, params, array):
+        """Stores a stage in the cache."""
+        if resolution not in self.caches:
+            self.caches[resolution] = {}
+        self.caches[resolution][stage_id] = (params.copy(), array)
+
+    def invalidate(self, stage_id=None):
+        """Invalidates stages. If stage_id is None, invalidates everything."""
+        if stage_id is None:
+            self.caches = {}
+            self.estimated_params = {}
+        else:
+            # In real-world use, we'd only invalidate from a certain stage onwards
+            # but for simplicity in this prototype, we'll clear per resolution
+            pass
+
+    def clear(self):
+        self.caches = {}
+        self.estimated_params = {}
+
+
 class ImageProcessorWorker(QtCore.QRunnable):
     """Worker to process a single large ROI in a background thread."""
 
@@ -30,6 +74,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         settings,
         request_id,
         calculate_histogram=False,
+        cache=None,
     ):
         super().__init__()
         self.signals = signals
@@ -41,6 +86,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.settings = settings
         self.request_id = request_id
         self.calculate_histogram = calculate_histogram
+        self.cache = cache
 
     def run(self):
         try:
@@ -69,56 +115,76 @@ class ImageProcessorWorker(QtCore.QRunnable):
         )
 
         # --- Part 1: Global Background ---
-        # Use the pre-resized preview for the background and histogram.
-        # This is MUCH faster than resizing from full-res on every slider move.
+        # Resolution key for caching
+        res_key = "preview"
         img_render_base = self.base_img_preview
 
-        tone_map_settings = {
-            k: v
-            for k, v in self.settings.items()
-            if k
-            in [
-                "temperature",
-                "tint",
-                "exposure",
-                "contrast",
-                "blacks",
-                "whites",
-                "shadows",
-                "highlights",
-                "saturation",
-            ]
+        # Stage 1: Heavy Effects (Dehaze, Denoise, Sharpen)
+        heavy_params = {
+            "de_haze": self.settings.get("de_haze", 0),
+            "de_noise": self.settings.get("de_noise", 0),
+            "denoise_method": self.settings.get("denoise_method", "High Quality"),
+            "sharpen_value": self.settings.get("sharpen_value", 0),
+            "sharpen_radius": self.settings.get("sharpen_radius", 0.5),
+            "sharpen_percent": self.settings.get("sharpen_percent", 0.0),
         }
-        # Optimization: Pass calculate_stats=False for live preview
+
+        processed_bg = None
+        if self.cache:
+            processed_bg = self.cache.get(res_key, "heavy", heavy_params)
+
+        if processed_bg is None:
+            # We must re-calculate heavy stage
+            processed_bg = img_render_base
+
+            # 1.1 De-haze
+            if heavy_params["de_haze"] > 0:
+                processed_bg, atmos = pynegative.de_haze_image(
+                    processed_bg,
+                    heavy_params["de_haze"],
+                    zoom=zoom_scale,
+                )
+                if self.cache:
+                    self.cache.estimated_params["atmospheric_light"] = atmos
+
+            # 1.2 De-noise
+            if heavy_params["de_noise"] > 0:
+                processed_bg = pynegative.de_noise_image(
+                    processed_bg,
+                    heavy_params["de_noise"],
+                    heavy_params["denoise_method"],
+                    zoom=zoom_scale,
+                )
+
+            # 1.3 Sharpen
+            if heavy_params["sharpen_value"] > 0:
+                processed_bg = pynegative.sharpen_image(
+                    processed_bg,
+                    heavy_params["sharpen_radius"],
+                    heavy_params["sharpen_percent"],
+                    "High Quality",
+                )
+
+            if self.cache:
+                self.cache.put(res_key, "heavy", heavy_params, processed_bg)
+
+        # Stage 2: Tone Mapping (Fast)
+        tone_map_settings = {
+            "temperature": self.settings.get("temperature", 0.0),
+            "tint": self.settings.get("tint", 0.0),
+            "exposure": self.settings.get("exposure", 0.0),
+            "contrast": self.settings.get("contrast", 1.0),
+            "blacks": self.settings.get("blacks", 0.0),
+            "whites": self.settings.get("whites", 1.0),
+            "shadows": self.settings.get("shadows", 0.0),
+            "highlights": self.settings.get("highlights", 0.0),
+            "saturation": self.settings.get("saturation", 1.0),
+        }
+
+        # Apply Tone Map to the result of heavy stage
         processed_bg, _ = pynegative.apply_tone_map(
-            img_render_base, **tone_map_settings, calculate_stats=False
+            processed_bg, **tone_map_settings, calculate_stats=False
         )
-
-        # Apply De-haze to background
-        if not is_zoomed_in and self.settings.get("de_haze", 0) > 0:
-            processed_bg = pynegative.de_haze_image(
-                processed_bg,
-                self.settings["de_haze"],
-                zoom=zoom_scale,
-            )
-
-        # Apply De-noise to background (Skip if zoomed in to save performance, as ROI will cover it)
-        if not is_zoomed_in and self.settings.get("de_noise", 0) > 0:
-            processed_bg = pynegative.de_noise_image(
-                processed_bg,
-                self.settings["de_noise"],
-                self.settings.get("denoise_method", "High Quality"),
-                zoom=zoom_scale,
-            )
-
-        # Apply Sharpening to background (Skip if zoomed in)
-        if not is_zoomed_in and self.settings.get("sharpen_value", 0) > 0:
-            processed_bg = pynegative.sharpen_image(
-                processed_bg,
-                self.settings.get("sharpen_radius", 0.5),
-                self.settings.get("sharpen_percent", 0.0),
-                "High Quality",
-            )
 
         # Prepare image for geometry (convert to uint8 for OpenCV)
         img_uint8 = (processed_bg * 255).astype(np.uint8)
@@ -130,37 +196,22 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "crop", None
         )  # (left, top, right, bottom) normalized
 
-        # 0. Apply Flip
+        # Geometry operations...
         if flip_h or flip_v:
             flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
             img_uint8 = cv2.flip(img_uint8, flip_code)
 
-        # 1. Apply Rotation using OpenCV (Much faster than PIL)
         if abs(rotate_val) > 0.01:
             h, w = img_uint8.shape[:2]
             center = (w / 2, h / 2)
-
-            # Add alpha channel for transparency if rotating
             img_uint8 = cv2.cvtColor(img_uint8, cv2.COLOR_RGB2RGBA)
-
-            # Rotation Matrix
-            # OpenCV rotates CCW for positive angles.
-            # The user wants negative to be CW, so positive is CCW.
-            # This matches OpenCV's behavior.
             M = cv2.getRotationMatrix2D(center, rotate_val, 1.0)
-
-            # Calculate new bounding box to avoid clipping (equivalent to expand=True)
             cos_val = np.abs(M[0, 0])
             sin_val = np.abs(M[0, 1])
             new_w = int((h * sin_val) + (w * cos_val))
             new_h = int((h * cos_val) + (w * sin_val))
-
-            # Adjust translation
             M[0, 2] += (new_w / 2) - center[0]
             M[1, 2] += (new_h / 2) - center[1]
-
-            # Perform rotation (INTER_NEAREST for speed during interactive preview)
-            # Use borderValue=(0,0,0,0) for transparent background
             img_uint8 = cv2.warpAffine(
                 img_uint8,
                 M,
@@ -170,50 +221,24 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 borderValue=(0, 0, 0, 0),
             )
 
-        # 2. Apply Crop using Numpy Slicing
         if crop_val is not None:
             h, w = img_uint8.shape[:2]
             c_left, c_top, c_right, c_bottom = crop_val
-
-            x1 = int(c_left * w)
-            y1 = int(c_top * h)
-            x2 = int(c_right * w)
-            y2 = int(c_bottom * h)
-
-            # Clamp
-            x1 = max(0, x1)
-            y1 = max(0, y1)
-            x2 = min(w, x2)
-            y2 = min(h, y2)
-
+            x1, y1 = int(c_left * w), int(c_top * h)
+            x2, y2 = int(c_right * w), int(c_bottom * h)
+            x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
             if x2 > x1 and y2 > y1:
                 img_uint8 = img_uint8[y1:y2, x1:x2]
 
-        # Convert back to RGB for PIL if we added an alpha channel for rotation
-        if img_uint8.shape[2] == 4:
-            # But wait, we want to keep transparency in the background if possible?
-            # Actually ZoomableGraphicsView background is black anyway.
-            # If we want transparent export later, we need RGBA.
-            # PIL supports RGBA.
-            pass
-
         pil_bg = Image.fromarray(img_uint8)
-
-        # Calculate new virtual full dimensions
-        # The preview is a scaled down version. We need to project the new dimensions back to full resolution.
-        preview_h, preview_w = img_render_base.shape[:2]
-        full_h, full_w = self.base_img_full.shape[:2]
+        preview_h, preview_w = self.base_img_preview.shape[:2]
         scale_x = full_w / preview_w
         scale_y = full_h / preview_h
-
-        # New "Full" dimensions after geometry
         new_full_w = int(pil_bg.width * scale_x)
         new_full_h = int(pil_bg.height * scale_y)
 
-        # --- Part 1.5: Histogram ---
         if self.calculate_histogram:
             try:
-                # Use the already processed uint8 image for histogram (much faster)
                 hist_data = self._calculate_histograms(img_uint8)
                 self.signals.histogramUpdated.emit(hist_data, self.request_id)
             except Exception as e:
@@ -230,44 +255,35 @@ class ImageProcessorWorker(QtCore.QRunnable):
             ).boundingRect()
 
             v_x, v_y, v_w, v_h = roi.x(), roi.y(), roi.width(), roi.height()
-
             offset_x, offset_y = 0, 0
             if crop_val:
-                orig_full_w = self.base_img_full.shape[1]
-                orig_full_h = self.base_img_full.shape[0]
-                offset_x = int(crop_val[0] * orig_full_w)
-                offset_y = int(crop_val[1] * orig_full_h)
+                offset_x = int(crop_val[0] * full_w)
+                offset_y = int(crop_val[1] * full_h)
 
             src_x, src_y = int(v_x + offset_x), int(v_y + offset_y)
             src_w, src_h = int(v_w), int(v_h)
 
-            orig_w, orig_h = self.base_img_full.shape[1], self.base_img_full.shape[0]
             if flip_h:
-                src_x = orig_w - (src_x + src_w)
+                src_x = full_w - (src_x + src_w)
             if flip_v:
-                src_y = orig_h - (src_y + src_h)
+                src_y = full_h - (src_y + src_h)
 
             src_x, src_y = max(0, src_x), max(0, src_y)
-            src_x2, src_y2 = min(orig_w, src_x + src_w), min(orig_h, src_y + src_h)
+            src_x2, src_y2 = min(full_w, src_x + src_w), min(full_h, src_y + src_h)
 
             if (req_w := src_x2 - src_x) > 10 and (req_h := src_y2 - src_y) > 10:
-                # Decide which source to use based on zoom level
-                # Tiered approach for performance:
-                # 1. Zoom < 50%: Use 1/4 size RAW
-                # 2. 50% <= Zoom < 150%: Use 1/2 size RAW
-                # 3. Zoom >= 150%: Use Full size RAW
+                # ROI Resolution Selection
+                res_key_roi = "full"
                 if zoom_scale < 0.5 and self.base_img_quarter is not None:
-                    # Scale coordinates to quarter-res
-                    q_src_x, q_src_y = src_x // 4, src_y // 4
-                    q_src_x2, q_src_y2 = src_x2 // 4, src_y2 // 4
+                    res_key_roi = "quarter"
                     crop_chunk = self.base_img_quarter[
-                        q_src_y:q_src_y2, q_src_x:q_src_x2
+                        src_y // 4 : src_y2 // 4, src_x // 4 : src_x2 // 4
                     ]
                 elif zoom_scale < 1.5 and self.base_img_half is not None:
-                    # Scale coordinates to half-res
-                    h_src_x, h_src_y = src_x // 2, src_y // 2
-                    h_src_x2, h_src_y2 = src_x2 // 2, src_y2 // 2
-                    crop_chunk = self.base_img_half[h_src_y:h_src_y2, h_src_x:h_src_x2]
+                    res_key_roi = "half"
+                    crop_chunk = self.base_img_half[
+                        src_y // 2 : src_y2 // 2, src_x // 2 : src_x2 // 2
+                    ]
                 else:
                     crop_chunk = self.base_img_full[src_y:src_y2, src_x:src_x2]
 
@@ -275,43 +291,52 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
                     crop_chunk = cv2.flip(crop_chunk, flip_code)
 
-                # Process ROI in float32 Numpy
-                processed_roi, _ = pynegative.apply_tone_map(
-                    crop_chunk, **tone_map_settings, calculate_stats=False
+                # Heavy Stage for ROI (Using fixed params from preview)
+                processed_roi = crop_chunk
+
+                # We don't cache ROI stages because they change constantly with pan
+                # BUT we use the FIXED atmospheric light from the preview for consistency!
+                atmos_fixed = (
+                    self.cache.estimated_params.get("atmospheric_light")
+                    if self.cache
+                    else None
                 )
 
-                # 1.5 De-haze
-                if self.settings.get("de_haze", 0) > 0:
-                    processed_roi = pynegative.de_haze_image(
+                if heavy_params["de_haze"] > 0:
+                    processed_roi, _ = pynegative.de_haze_image(
                         processed_roi,
-                        self.settings["de_haze"],
+                        heavy_params["de_haze"],
                         zoom=zoom_scale,
+                        fixed_atmospheric_light=atmos_fixed,
                     )
 
-                # 2. De-noise first
-                if self.settings.get("de_noise", 0) > 0:
+                if heavy_params["de_noise"] > 0:
                     processed_roi = pynegative.de_noise_image(
                         processed_roi,
-                        self.settings["de_noise"],
-                        self.settings.get("denoise_method", "High Quality"),
+                        heavy_params["de_noise"],
+                        heavy_params["denoise_method"],
                         zoom=zoom_scale,
                     )
 
-                # 3. Sharpen second (to avoid sharpening noise)
-                if self.settings.get("sharpen_value", 0) > 0:
+                if heavy_params["sharpen_value"] > 0:
                     processed_roi = pynegative.sharpen_image(
                         processed_roi,
-                        self.settings["sharpen_radius"],
-                        self.settings["sharpen_percent"],
+                        heavy_params["sharpen_radius"],
+                        heavy_params["sharpen_percent"],
                         "High Quality",
                     )
 
-                # Final ROI conversion to QPixmap
+                # Tone Map for ROI (Fast)
+                processed_roi, _ = pynegative.apply_tone_map(
+                    processed_roi, **tone_map_settings, calculate_stats=False
+                )
+
                 pil_roi = Image.fromarray((processed_roi * 255).astype(np.uint8))
                 pix_roi = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_roi))
-
                 roi_x, roi_y = src_x - offset_x, src_y - offset_y
                 roi_w, roi_h = req_w, req_h
+
+        return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
 
         return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
 
@@ -387,6 +412,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         # Request ID tracking to prevent out-of-order frames
         self._current_request_id = 0
         self._last_processed_id = -1
+        self.cache = PipelineCache()
 
         self.signals = ImageProcessorSignals()
         self.signals.finished.connect(self._on_worker_finished)
@@ -395,6 +421,7 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     def set_image(self, img_array):
         self.base_img_full = img_array
+        self.cache.clear()
         # Reset processing parameters for the new image to avoid carrying over
         # edits from the previous one, unless we explicitly load them.
         self._processing_params = {}
@@ -465,6 +492,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             self.get_current_settings(),
             self._current_request_id,
             calculate_histogram=self.histogram_enabled,
+            cache=self.cache,
         )
         self.thread_pool.start(worker)
 

@@ -9,7 +9,7 @@ class TestDehaze:
     def test_no_dehaze(self):
         """Test that strength=0 returns original image"""
         img = np.random.rand(100, 100, 3).astype(np.float32)
-        result = pynegative.de_haze_image(img, 0)
+        result, _ = pynegative.de_haze_image(img, 0)
         np.testing.assert_array_equal(result, img)
 
     def test_dehaze_output_range(self):
@@ -19,13 +19,13 @@ class TestDehaze:
         img += np.random.normal(0, 0.1, (100, 100, 3))
         img = np.clip(img, 0, 1)
 
-        result = pynegative.de_haze_image(img, 10.0)
+        result, _ = pynegative.de_haze_image(img, 10.0)
         assert np.all(result >= 0.0)
         assert np.all(result <= 1.0)
         assert result.shape == img.shape
 
         # Test with PIL input
         pil_img = Image.fromarray((img * 255).astype(np.uint8))
-        result_pil = pynegative.de_haze_image(pil_img, 10.0)
+        result_pil, _ = pynegative.de_haze_image(pil_img, 10.0)
         assert isinstance(result_pil, Image.Image)
         assert result_pil.size == pil_img.size
