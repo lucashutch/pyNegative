@@ -95,6 +95,55 @@ class ImageProcessorWorker(QtCore.QRunnable):
         except Exception as e:
             self.signals.error.emit(str(e), self.request_id)
 
+    def _process_heavy_stage(self, img, res_key, heavy_params, zoom_scale):
+        """Processes and caches the heavy effects stage for a full image tier."""
+        if self.cache:
+            cached = self.cache.get(res_key, "heavy", heavy_params)
+            if cached is not None:
+                return cached
+
+        processed = img
+        # 1.1 De-haze
+        if heavy_params["de_haze"] > 0:
+            # Always sync atmospheric light from preview if possible
+            atmos_fixed = (
+                self.cache.estimated_params.get("atmospheric_light")
+                if self.cache
+                else None
+            )
+            processed, atmos = pynegative.de_haze_image(
+                processed,
+                heavy_params["de_haze"],
+                zoom=zoom_scale,
+                fixed_atmospheric_light=atmos_fixed,
+            )
+            # If we are processing preview, store the estimated light for other tiers
+            if res_key == "preview" and self.cache and atmos_fixed is None:
+                self.cache.estimated_params["atmospheric_light"] = atmos
+
+        # 1.2 De-noise
+        if heavy_params["de_noise"] > 0:
+            processed = pynegative.de_noise_image(
+                processed,
+                heavy_params["de_noise"],
+                heavy_params["denoise_method"],
+                zoom=zoom_scale,
+            )
+
+        # 1.3 Sharpen
+        if heavy_params["sharpen_value"] > 0:
+            processed = pynegative.sharpen_image(
+                processed,
+                heavy_params["sharpen_radius"],
+                heavy_params["sharpen_percent"],
+                "High Quality",
+            )
+
+        if self.cache:
+            self.cache.put(res_key, "heavy", heavy_params, processed)
+
+        return processed
+
     def _update_preview(self):
         if self.base_img_full is None or self._view_ref is None:
             return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0
@@ -129,44 +178,10 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "sharpen_percent": self.settings.get("sharpen_percent", 0.0),
         }
 
-        processed_bg = None
-        if self.cache:
-            processed_bg = self.cache.get(res_key, "heavy", heavy_params)
-
-        if processed_bg is None:
-            # We must re-calculate heavy stage
-            processed_bg = img_render_base
-
-            # 1.1 De-haze
-            if heavy_params["de_haze"] > 0:
-                processed_bg, atmos = pynegative.de_haze_image(
-                    processed_bg,
-                    heavy_params["de_haze"],
-                    zoom=zoom_scale,
-                )
-                if self.cache:
-                    self.cache.estimated_params["atmospheric_light"] = atmos
-
-            # 1.2 De-noise
-            if heavy_params["de_noise"] > 0:
-                processed_bg = pynegative.de_noise_image(
-                    processed_bg,
-                    heavy_params["de_noise"],
-                    heavy_params["denoise_method"],
-                    zoom=zoom_scale,
-                )
-
-            # 1.3 Sharpen
-            if heavy_params["sharpen_value"] > 0:
-                processed_bg = pynegative.sharpen_image(
-                    processed_bg,
-                    heavy_params["sharpen_radius"],
-                    heavy_params["sharpen_percent"],
-                    "High Quality",
-                )
-
-            if self.cache:
-                self.cache.put(res_key, "heavy", heavy_params, processed_bg)
+        # Use helper to get/calculate cached heavy background
+        processed_bg = self._process_heavy_stage(
+            img_render_base, res_key, heavy_params, zoom_scale
+        )
 
         # Stage 2: Tone Mapping (Fast)
         tone_map_settings = {
@@ -182,12 +197,15 @@ class ImageProcessorWorker(QtCore.QRunnable):
         }
 
         # Apply Tone Map to the result of heavy stage
-        processed_bg, _ = pynegative.apply_tone_map(
+        bg_output, _ = pynegative.apply_tone_map(
             processed_bg, **tone_map_settings, calculate_stats=False
         )
 
         # Prepare image for geometry (convert to uint8 for OpenCV)
-        img_uint8 = (processed_bg * 255).astype(np.uint8)
+        if isinstance(bg_output, Image.Image):
+            img_uint8 = np.array(bg_output)
+        else:
+            img_uint8 = (bg_output * 255).astype(np.uint8)
 
         rotate_val = self.settings.get("rotation", 0.0)
         flip_h = self.settings.get("flip_h", False)
@@ -274,67 +292,47 @@ class ImageProcessorWorker(QtCore.QRunnable):
             if (req_w := src_x2 - src_x) > 10 and (req_h := src_y2 - src_y) > 10:
                 # ROI Resolution Selection
                 res_key_roi = "full"
+                base_roi_img = self.base_img_full
                 if zoom_scale < 0.5 and self.base_img_quarter is not None:
                     res_key_roi = "quarter"
-                    crop_chunk = self.base_img_quarter[
-                        src_y // 4 : src_y2 // 4, src_x // 4 : src_x2 // 4
-                    ]
+                    base_roi_img = self.base_img_quarter
                 elif zoom_scale < 1.5 and self.base_img_half is not None:
                     res_key_roi = "half"
-                    crop_chunk = self.base_img_half[
-                        src_y // 2 : src_y2 // 2, src_x // 2 : src_x2 // 2
-                    ]
-                else:
-                    crop_chunk = self.base_img_full[src_y:src_y2, src_x:src_x2]
+                    base_roi_img = self.base_img_half
+
+                # Use helper to get/calculate cached heavy image for this TIER
+                processed_full_tier = self._process_heavy_stage(
+                    base_roi_img, res_key_roi, heavy_params, zoom_scale
+                )
+
+                # Now crop the ROI from the CACHED heavy tier
+                # Coordinates must be scaled to the tier's resolution
+                h_tier, w_tier = base_roi_img.shape[:2]
+                s_x = int(src_x * (w_tier / full_w))
+                s_y = int(src_y * (h_tier / full_h))
+                s_x2 = int(src_x2 * (w_tier / full_w))
+                s_y2 = int(src_y2 * (h_tier / full_h))
+
+                crop_chunk = processed_full_tier[s_y:s_y2, s_x:s_x2]
 
                 if flip_h or flip_v:
                     flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
                     crop_chunk = cv2.flip(crop_chunk, flip_code)
 
-                # Heavy Stage for ROI (Using fixed params from preview)
-                processed_roi = crop_chunk
-
-                # We don't cache ROI stages because they change constantly with pan
-                # BUT we use the FIXED atmospheric light from the preview for consistency!
-                atmos_fixed = (
-                    self.cache.estimated_params.get("atmospheric_light")
-                    if self.cache
-                    else None
-                )
-
-                if heavy_params["de_haze"] > 0:
-                    processed_roi, _ = pynegative.de_haze_image(
-                        processed_roi,
-                        heavy_params["de_haze"],
-                        zoom=zoom_scale,
-                        fixed_atmospheric_light=atmos_fixed,
-                    )
-
-                if heavy_params["de_noise"] > 0:
-                    processed_roi = pynegative.de_noise_image(
-                        processed_roi,
-                        heavy_params["de_noise"],
-                        heavy_params["denoise_method"],
-                        zoom=zoom_scale,
-                    )
-
-                if heavy_params["sharpen_value"] > 0:
-                    processed_roi = pynegative.sharpen_image(
-                        processed_roi,
-                        heavy_params["sharpen_radius"],
-                        heavy_params["sharpen_percent"],
-                        "High Quality",
-                    )
-
-                # Tone Map for ROI (Fast)
+                # Tone Map for ROI (Fast) - operates on the already heavy-processed chunk
                 processed_roi, _ = pynegative.apply_tone_map(
-                    processed_roi, **tone_map_settings, calculate_stats=False
+                    crop_chunk, **tone_map_settings, calculate_stats=False
                 )
 
-                pil_roi = Image.fromarray((processed_roi * 255).astype(np.uint8))
+                if isinstance(processed_roi, Image.Image):
+                    pil_roi = processed_roi
+                else:
+                    pil_roi = Image.fromarray((processed_roi * 255).astype(np.uint8))
                 pix_roi = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_roi))
                 roi_x, roi_y = src_x - offset_x, src_y - offset_y
                 roi_w, roi_h = req_w, req_h
+
+        return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
 
         return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
 

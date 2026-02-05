@@ -645,8 +645,12 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
         import cv2
 
         # 1. Dark Channel estimation
-        # We use a small window for speed
-        kernel_size = 15
+        # Scale kernel size relative to image width for consistency across resolutions
+        # Base kernel size 15 for a ~2048px preview
+        kernel_size = max(3, int(15 * (w_img / 2048.0)))
+        # Ensure kernel size is odd for GaussianBlur later
+        if kernel_size % 2 == 0:
+            kernel_size += 1
 
         # Atmospheric light estimation
         if fixed_atmospheric_light is not None:
