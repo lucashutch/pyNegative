@@ -9,12 +9,12 @@ This document tracks planned features, project goals, and areas for technical im
 - [ ] **User Presets**: Allow saving and applying named adjustment presets.
 - [ ] **Metadata Panel**: Display EXIF data (ISO, Shutter, Aperture) in the editor.
 - [ ] **General Code Cleanup**: Analyse the codebase for redundant, duplicate or unused code.
-- [ ] **image dehaze**: implement image dehazing with a slider like denoise.
 
 ## Performance Optimisation
 
 - [ ] **Persistent Thumbnail Cache**: Store thumbnails on disk to speed up gallery loading.
 - [ ] **GPU Acceleration**: Explore OpenCL/CuPy for faster tone-mapping calculations.
+- [ ] **pipeline reordering** investigate re-ordering the operations in teh image pipeline to de-noise etc before colour/tone adjustments. This would allow us to generally apply the dehaze/denoise once and then not have to re-calculate it every time the image is re-rendered.
 
 ## Bugs
 
