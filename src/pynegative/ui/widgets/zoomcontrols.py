@@ -9,15 +9,16 @@ class ZoomControls(QtWidgets.QFrame):
         super().__init__(parent)
         self.setObjectName("ZoomControls")
         self.layout = QtWidgets.QHBoxLayout(self)
-        self.layout.setContentsMargins(4, 0, 4, 0)
-        self.layout.setSpacing(4)
+        self.layout.setContentsMargins(6, 0, 6, 0)
+        self.layout.setSpacing(8)
+        self.setFixedHeight(28)
 
-        # Slider (50 to 400)
+        # Slider (1 to 400)
         self.slider = QtWidgets.QSlider(Qt.Horizontal)
         self.slider.setRange(1, 400)
         self.slider.setValue(100)
         self.slider.setFixedWidth(120)
-        self.slider.setFixedHeight(20)  # Tighten the slider itself
+        self.slider.setFixedHeight(22)
         self.slider.valueChanged.connect(self._on_slider_changed)
         self.layout.addWidget(self.slider)
 
@@ -28,8 +29,8 @@ class ZoomControls(QtWidgets.QFrame):
         self.spin.setSuffix("%")
         self.spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.spin.setAlignment(Qt.AlignCenter)
-        self.spin.setFixedWidth(45)
-        self.spin.setFixedHeight(16)
+        self.spin.setFixedWidth(55)
+        self.spin.setFixedHeight(22)
         self.spin.valueChanged.connect(self._on_spin_changed)
         self.layout.addWidget(self.spin)
 
@@ -40,16 +41,16 @@ class ZoomControls(QtWidgets.QFrame):
                 border: 1px solid #444;
             }
             QSlider {
-                min-height: 0px;
-                height: 18px;
+                background: transparent;
             }
             QSpinBox {
                 background-color: #1a1a1a;
                 border: 1px solid #333;
                 border-radius: 2px;
                 color: #ccc;
-                font-size: 10px;
-                padding: 0px;
+                font-size: 13px;
+                font-weight: bold;
+                padding: 0px 2px;
             }
         """)
 

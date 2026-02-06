@@ -446,6 +446,8 @@ class ImageProcessingPipeline(QtCore.QObject):
     )
     histogramUpdated = QtCore.Signal(dict)
     performanceMeasured = QtCore.Signal(float)
+    uneditedPixmapUpdated = QtCore.Signal(QtGui.QPixmap)
+    editedPixmapUpdated = QtCore.Signal(QtGui.QPixmap)
 
     def __init__(self, thread_pool, parent=None):
         super().__init__(parent)
@@ -459,6 +461,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.base_img_half = None
         self.base_img_quarter = None
         self.base_img_preview = None
+        self._unedited_img_full = None  # Original raw data for unedited comparison
         self._processing_params = {}
         self._last_heavy_adjusted = "de_haze"
         self._view_ref = None
@@ -477,6 +480,11 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     def set_image(self, img_array):
         self.base_img_full = img_array
+        # Store original unedited data for comparison
+        if img_array is not None:
+            self._unedited_img_full = img_array.copy()
+        else:
+            self._unedited_img_full = None
         self.cache.clear()
         # Reset processing parameters for the new image to avoid carrying over
         # edits from the previous one, unless we explicitly load them.
@@ -500,6 +508,10 @@ class ImageProcessingPipeline(QtCore.QObject):
             self.base_img_preview = cv2.resize(
                 img_array, (target_w, target_h), interpolation=cv2.INTER_LINEAR
             )
+
+            # Emit unedited pixmap update
+            unedited_pixmap = self.get_unedited_pixmap()
+            self.uneditedPixmapUpdated.emit(unedited_pixmap)
         else:
             self.base_img_half = None
             self.base_img_quarter = None
@@ -507,6 +519,39 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     def set_view_reference(self, view):
         self._view_ref = view
+
+    def get_unedited_pixmap(self) -> QtGui.QPixmap:
+        """Convert the unedited raw image to a QPixmap for comparison view."""
+        if self._unedited_img_full is None:
+            return QtGui.QPixmap()
+
+        try:
+            # Normalize to 0-1 range if needed
+            img = self._unedited_img_full.astype(np.float32)
+            if img.max() > 1.0:
+                img = img / 255.0
+
+            # Clamp to 0-1 range
+            img = np.clip(img, 0.0, 1.0)
+
+            # Convert to uint8 for display
+            img_uint8 = (img * 255).astype(np.uint8)
+
+            # Convert to RGB if needed
+            if img_uint8.shape[2] == 4:
+                img_rgb = cv2.cvtColor(img_uint8, cv2.COLOR_RGBA2RGB)
+            else:
+                img_rgb = img_uint8
+
+            # Convert to QImage then QPixmap
+            h, w, c = img_rgb.shape
+            bytes_per_line = c * w
+            qimage = QtGui.QImage(
+                img_rgb.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888
+            )
+            return QtGui.QPixmap.fromImage(qimage)
+        except Exception:
+            return QtGui.QPixmap()
 
     def set_histogram_enabled(self, enabled):
         self.histogram_enabled = enabled
@@ -589,9 +634,14 @@ class ImageProcessingPipeline(QtCore.QObject):
             return
         self._last_processed_id = request_id
 
+        # Emit preview update (original signal)
         self.previewUpdated.emit(
             pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
         )
+
+        # Emit edited pixmap update for comparison overlay
+        self.editedPixmapUpdated.emit(pix_bg)
+
         self._measure_and_emit_perf()
 
         # If a new request came in while this one was processing, start it now

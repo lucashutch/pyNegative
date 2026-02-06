@@ -120,13 +120,19 @@ class TestRotationHandles:
         # Mocking the hit test or just calling the internal handlers
         # because simulating mouse events in QGraphicsItem is complex with qtbot
 
-        # Manually trigger mouse press
+        # Manually trigger mouse press using non-deprecated constructor
+        from PySide6.QtGui import QPointingDevice
+
+        device = QPointingDevice()
+
         press_event = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonPress,
             rot_top,
+            rot_top,  # globalPos
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.NoModifier,
+            device,
         )
         crop_item.mousePressEvent(press_event)
         assert crop_item._active_rotation_handle == "rot_top"
@@ -137,9 +143,11 @@ class TestRotationHandles:
         move_event = QtGui.QMouseEvent(
             QtCore.QEvent.MouseMove,
             move_pos,
+            move_pos,  # globalPos
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.NoModifier,
+            device,
         )
         crop_item.mouseMoveEvent(move_event)
 
@@ -151,9 +159,11 @@ class TestRotationHandles:
         move_event_ccw = QtGui.QMouseEvent(
             QtCore.QEvent.MouseMove,
             move_pos_ccw,
+            move_pos_ccw,  # globalPos
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.NoModifier,
+            device,
         )
         crop_item.mouseMoveEvent(move_event_ccw)
 

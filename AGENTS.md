@@ -5,7 +5,7 @@
 - **NO COMMITS TO MAIN** - Always create a feature branch. Never commit directly to the main branch.
 - **Keep commit messages short and concise** - No need for a long explanation.
 - **Keep PR descriptions short and concise** - No need for a long explanation or lots of sections about testing. Just a brief summary of what was done.
-- **Add tests** - Always add tests for new features.
+- **Add tests** - Always add tests for new features. ensure no new warnings are added.
 - **Don't use "fixup" commits.** Instead, amend the relevant commit. Force-pushing to your feature branch is encouraged to keep the history clean.
 - **Ask questions, dont make assumptions** - Always ask questions instead of making assumptions
 - **put plans in .opencode/plans/** - Create a new markdown file for each plan. inlcude a task list.

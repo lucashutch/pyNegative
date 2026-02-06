@@ -2,6 +2,10 @@
 
 This document tracks planned features, project goals, and areas for technical improvement.
 
+## Completed Features
+
+- [x] **Unedited Photo Comparison**: Added a split-view interface (Shortcut: U) with a draggable handle to compare the original RAW image with current edits, featuring pixel-perfect alignment and zoom/pan support.
+
 ## Roadmap / TODO
 
 - [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
@@ -14,9 +18,11 @@ This document tracks planned features, project goals, and areas for technical im
 
 - [ ] **Persistent Thumbnail Cache**: Store thumbnails on disk to speed up gallery loading.
 - [ ] **GPU Acceleration**: Explore OpenCL/CuPy for faster tone-mapping calculations.
-- [ ] **pipeline reordering** investigate re-ordering the operations in teh image pipeline to de-noise etc before colour/tone adjustments. This would allow us to generally apply the dehaze/denoise once and then not have to re-calculate it every time the image is re-rendered.
+- [ ] **improve gpu acceleration startup time** - it takes a few seconds for the gpu acceleration to kick in. investigate if this can be improved.
 
 ## Bugs
+
+-- [ ] **preview double clikck** - in gallery preview double clicking the photo makes it larger, but sometimes it doesnt work. in particular if i had it enlarged, then changed the gallery filter to something taht doesnt include the photo. It will revert tot he gallery view, but when i try and double clikc another image to enlarge it, nothing happens.
 
 ## Testing Improvement Areas
 

@@ -247,7 +247,7 @@ class CropRectItem(QtWidgets.QGraphicsObject):
         }
 
     def hoverMoveEvent(self, event):
-        pos = event.pos()
+        pos = event.position()
 
         # Check rotation zone first (handle + far outside)
         rotation_handle = self._hit_test_rotation(pos)
@@ -286,7 +286,7 @@ class CropRectItem(QtWidgets.QGraphicsObject):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            pos = event.pos()
+            pos = event.position()
 
             # 1. Check specific rotation handle (top middle)
             handle = self._hit_test_rotation(pos)
@@ -340,7 +340,7 @@ class CropRectItem(QtWidgets.QGraphicsObject):
     def mouseMoveEvent(self, event):
         if self._active_rotation_handle:
             # Calculate rotation angle
-            current_angle = self._calculate_angle_from_center(event.pos())
+            current_angle = self._calculate_angle_from_center(event.position())
             delta_angle = current_angle - self._rotation_start_angle
 
             # Handle angle wrapping (crossing the 180/-180 boundary)

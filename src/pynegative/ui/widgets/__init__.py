@@ -10,6 +10,7 @@ from .combobox import ComboBox
 from .carouseldelegate import CarouselDelegate
 from .toast import ToastWidget
 from .histogram import HistogramWidget
+from .comparisonoverlay import ComparisonOverlay, ComparisonHandle
 
 __all__ = [
     "HorizontalListWidget",
@@ -24,4 +25,6 @@ __all__ = [
     "CarouselDelegate",
     "ToastWidget",
     "HistogramWidget",
+    "ComparisonOverlay",
+    "ComparisonHandle",
 ]

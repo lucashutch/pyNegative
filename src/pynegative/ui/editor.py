@@ -4,7 +4,14 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
 
 from .loaders import RawLoader
-from .widgets import ZoomControls, ToastWidget, ZoomableGraphicsView, StarRatingWidget
+from .widgets import (
+    ZoomControls,
+    ToastWidget,
+    ZoomableGraphicsView,
+    StarRatingWidget,
+    ComparisonOverlay,
+    ComparisonHandle,
+)
 from .imageprocessing import ImageProcessingPipeline
 from .editingcontrols import EditingControls
 from .settingsmanager import SettingsManager
@@ -75,6 +82,9 @@ class EditorWidget(QtWidgets.QWidget):
         )
         self._pending_rotation_from_handle = None
 
+        # Comparison overlay state
+        self._comparison_enabled = False
+
     def _init_ui(self):
         """Initialize the user interface."""
         main_layout = QtWidgets.QHBoxLayout(self)
@@ -136,7 +146,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.canvas_container.addWidget(
             self.zoom_ctrl, 0, 0, Qt.AlignBottom | Qt.AlignRight
         )
-        self.zoom_ctrl.setContentsMargins(0, 0, 20, 20)
+        # self.zoom_ctrl.setContentsMargins(0, 0, 20, 20)  # Removed: this adds INTERNAL padding
 
         # Add carousel from carousel manager
         self.carousel_widget = self.carousel_manager.get_widget()
@@ -173,6 +183,53 @@ class EditorWidget(QtWidgets.QWidget):
         self.preview_rating_widget.setContentsMargins(20, 0, 0, 20)
         self.preview_rating_widget.hide()
 
+        # Comparison Drawing Layer
+        self.comparison_overlay = ComparisonOverlay(self.canvas_frame)
+        self.comparison_overlay.setView(self.view)
+        self.canvas_container.addWidget(self.comparison_overlay, 0, 0)
+        self.comparison_overlay.raise_()
+
+        # Comparison Toggle Button
+        self.comparison_btn = QtWidgets.QToolButton(self.canvas_frame)
+        self.comparison_btn.setFixedSize(30, 30)
+        self.comparison_btn.setCheckable(True)
+        self.comparison_btn.setToolTip("Compare (U)")
+        self.comparison_btn.setIcon(self._create_comparison_icon())
+        self.comparison_btn.setStyleSheet("""
+            QToolButton {
+                background-color: rgba(0, 0, 0, 128);
+                border: 1px solid rgba(255, 255, 255, 30);
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QToolButton:hover {
+                background-color: rgba(0, 0, 0, 180);
+                border-color: rgba(255, 255, 255, 80);
+            }
+            QToolButton:checked {
+                background-color: rgba(138, 43, 226, 180);
+                border-color: rgba(138, 43, 226, 200);
+            }
+        """)
+        self.comparison_btn.clicked.connect(self._toggle_comparison)
+        self.comparison_btn.show()
+
+        # Comparison Handle
+        self.comparison_handle = ComparisonHandle(self.canvas_frame)
+        self.comparison_handle.dragged.connect(self._on_comparison_handle_dragged)
+        self.comparison_handle.hide()
+
+        # Ensure UI controls are ABOVE everything
+        self.zoom_ctrl.raise_()
+        self.preview_rating_widget.raise_()
+        self.toast.raise_()
+        self.perf_label.raise_()
+        self.comparison_btn.raise_()
+        self.comparison_handle.raise_()
+
+        # Initial positioning
+        QtCore.QTimer.singleShot(100, self._reposition_floating_ui)
+
     def _setup_connections(self):
         """Setup signal/slot connections between components."""
         # Editing controls -> Image processor
@@ -197,6 +254,12 @@ class EditorWidget(QtWidgets.QWidget):
         # Image processor -> View
         self.image_processor.previewUpdated.connect(self.view.set_pixmaps)
         self.image_processor.performanceMeasured.connect(self._on_performance_measured)
+
+        # Comparison logic
+        self.image_processor.uneditedPixmapUpdated.connect(
+            self._on_unedited_pixmap_updated
+        )
+        self.image_processor.editedPixmapUpdated.connect(self._on_edited_pixmap_updated)
 
         # Settings manager
         self.settings_manager.showToast.connect(self.show_toast)
@@ -236,6 +299,9 @@ class EditorWidget(QtWidgets.QWidget):
             QtGui.QKeySequence("F12"), self, self._toggle_performance_overlay
         )
 
+        # Comparison overlay shortcut
+        QtGui.QShortcut(QtGui.QKeySequence("U"), self, self.comparison_btn.animateClick)
+
         # Rating shortcuts (1-5, 0)
         for key in [Qt.Key_1, Qt.Key_2, Qt.Key_3, Qt.Key_4, Qt.Key_5, Qt.Key_0]:
             if key == Qt.Key_0:
@@ -255,14 +321,116 @@ class EditorWidget(QtWidgets.QWidget):
 
     def resizeEvent(self, event):
         """Handle widget resize."""
+        super().resizeEvent(event)
         # Auto-fit image if in fitting mode
         if (
             hasattr(self, "image_processor")
             and self.image_processor.base_img_full is not None
         ):
-            if getattr(self.view, "_is_fitting", False):
+            if self.view._is_fitting:
                 self.view.reset_zoom()
-        super().resizeEvent(event)
+
+        # Position floating UI elements after layout settles
+        QtCore.QTimer.singleShot(0, self._reposition_floating_ui)
+
+    def _reposition_floating_ui(self):
+        """Reposition floating controls (comparison btn, handle, etc)."""
+        if not hasattr(self, "comparison_btn") or not hasattr(self, "zoom_ctrl"):
+            return
+
+        cw, ch = self.canvas_frame.width(), self.canvas_frame.height()
+
+        # 1. Force layout update to get accurate geometries
+        self.canvas_container.activate()
+        z_geom = self.zoom_ctrl.geometry()
+
+        # 2. Position Comparison Button exactly 10px above zoom slider
+        # We align its right edge with the zoom slider's right edge
+        bx = z_geom.right() - self.comparison_btn.width()
+        by = z_geom.top() - self.comparison_btn.height() - 10
+
+        # If geometries are invalid (0,0), use fallback positioning
+        if z_geom.width() <= 0:
+            bx = cw - self.comparison_btn.width() - 20
+            by = (
+                ch - self.comparison_btn.height() - 70
+            )  # Roughly above where zoom slider will be
+
+        self.comparison_btn.move(bx, by)
+        self.comparison_btn.show()
+        self.comparison_btn.raise_()
+
+        # 3. Position Comparison Handle
+        self._update_comparison_handle_position()
+
+    def _update_comparison_handle_position(self):
+        if hasattr(self, "comparison_handle") and hasattr(self, "comparison_overlay"):
+            split_pos = self.comparison_overlay._split_position
+            split_x = int(self.canvas_frame.width() * split_pos)
+            hx = split_x - (self.comparison_handle.width() / 2)
+            hy = (self.canvas_frame.height() - self.comparison_handle.height()) / 2
+            self.comparison_handle.move(hx, hy)
+
+    def _create_comparison_icon(self):
+        pixmap = QtGui.QPixmap(24, 24)
+        pixmap.fill(Qt.transparent)
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        left_color = QtGui.QColor(100, 100, 100)
+        right_color = QtGui.QColor(150, 150, 150)
+        painter.setBrush(left_color)
+        painter.setPen(Qt.NoPen)
+        painter.drawRect(2, 4, 8, 16)
+        painter.setBrush(right_color)
+        painter.drawRect(14, 4, 8, 16)
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255), 2))
+        painter.drawLine(12, 2, 12, 22)
+        painter.end()
+        return QtGui.QIcon(pixmap)
+
+    def _toggle_comparison(self):
+        """Toggle comparison mode."""
+        if hasattr(self, "comparison_btn"):
+            # If called from button click, it's already toggled.
+            # If called from keyboard, we toggle it manually.
+            is_checked = self.comparison_btn.isChecked()
+            # If called from keyboard shortcut (Qt.Key_U), we need to flip it
+            # But wait, button.clicked already flips it if it's checkable.
+            # The shortcut should just click the button.
+            self._on_comparison_toggled(is_checked)
+
+    def _on_comparison_toggled(self, enabled):
+        """Handle comparison mode toggle."""
+        self._comparison_enabled = enabled
+        self.comparison_overlay.setComparisonActive(enabled)
+
+        if enabled:
+            self.comparison_handle.show()
+            self._update_comparison_handle_position()
+            unedited_pixmap = self.image_processor.get_unedited_pixmap()
+            self.comparison_overlay.setUneditedPixmap(unedited_pixmap)
+            if self.view._bg_item and self.view._bg_item.pixmap():
+                self.comparison_overlay.setEditedPixmap(self.view._bg_item.pixmap())
+            self.show_toast("Comparison enabled")
+        else:
+            self.comparison_handle.hide()
+            self.show_toast("Comparison disabled")
+
+    def _on_unedited_pixmap_updated(self, pixmap):
+        """Handle unedited pixmap updates from image processor."""
+        if self._comparison_enabled and self.comparison_overlay:
+            self.comparison_overlay.setUneditedPixmap(pixmap)
+
+    def _on_edited_pixmap_updated(self, pixmap):
+        """Handle edited pixmap updates from image processor (live preview)."""
+        if self._comparison_enabled and self.comparison_overlay:
+            self.comparison_overlay.setEditedPixmap(pixmap)
+
+    def _on_comparison_handle_dragged(self, global_x):
+        local_pos = self.canvas_frame.mapFromGlobal(QtCore.QPointF(global_x, 0))
+        split_pos = max(0.0, min(1.0, local_pos.x() / self.canvas_frame.width()))
+        self.comparison_overlay.setSplitPosition(split_pos)
+        self._update_comparison_handle_position()
 
     def eventFilter(self, obj, event):
         """Filter events to handle arrow key navigation in carousel."""
@@ -300,6 +468,11 @@ class EditorWidget(QtWidgets.QWidget):
         # Reset Crop Tool
         self.editing_controls.set_crop_checked(False)
         self.view.set_crop_mode(False)
+
+        # Update comparison overlay if enabled
+        if self._comparison_enabled and self.comparison_overlay:
+            unedited_pixmap = self.image_processor.get_unedited_pixmap()
+            self.comparison_overlay.setUneditedPixmap(unedited_pixmap)
 
         QtWidgets.QApplication.processEvents()
 
@@ -535,6 +708,12 @@ class EditorWidget(QtWidgets.QWidget):
         # 4. Request a fit once the UI settles
         QtCore.QTimer.singleShot(50, self.view.reset_zoom)
         QtCore.QTimer.singleShot(200, self.view.reset_zoom)
+
+        # 5. Update comparison overlay if enabled
+        if self._comparison_enabled and self.comparison_overlay:
+            self.comparison_overlay.setUneditedPixmap(
+                self.image_processor.get_unedited_pixmap()
+            )
 
     def _request_update_from_view(self):
         """Request image update from current view state."""
