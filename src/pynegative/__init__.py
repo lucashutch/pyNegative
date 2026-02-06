@@ -27,3 +27,5 @@ __all__ = [
     "SUPPORTED_EXTS",
     "HEIF_SUPPORTED",
 ]
+
+__version__ = "0.1.3"
