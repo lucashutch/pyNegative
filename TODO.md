@@ -19,7 +19,6 @@ This document tracks planned features, project goals, and areas for technical im
 
 ## Bugs
 
-- [ ] **sharpening defaults to a value of 20** - the sharpening slider defaults to a value of 20. this is not correct. it should default to 0.
 - [ ] **preview double clikck** - in gallery preview double clicking the photo makes it larger, but sometimes it doesnt work. in particular if i had it enlarged, then changed the gallery filter to something taht doesnt include the photo. It will revert tot he gallery view, but when i try and double clikc another image to enlarge it, nothing happens.
 
 ## Testing Improvement Areas
