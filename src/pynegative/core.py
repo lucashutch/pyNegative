@@ -113,39 +113,61 @@ def apply_tone_map(
         img *= contrast
         img += 0.5
 
-    # 2. Levels (Blacks & Whites)
-    if blacks != 0.0 or whites != 1.0:
-        denom = whites - blacks
-        if abs(denom) < 1e-6:
-            denom = 1e-6
-        img -= blacks
-        img /= denom
-
-    # 3. Tone EQ (Shadows & Highlights) and 4. Saturation
-    # Both need luminance. We calculate it once and reuse it.
-    if shadows != 0.0 or highlights != 0.0 or saturation != 1.0:
+    # 2. Tone EQ (Blacks, Whites, Shadows & Highlights) and 3. Saturation
+    # We calculate luminance once and reuse it.
+    # IMPORTANT: We use unclipped luminance to allow for highlight recovery of >1.0 values.
+    if (
+        blacks != 0.0
+        or whites != 1.0
+        or shadows != 0.0
+        or highlights != 0.0
+        or saturation != 1.0
+    ):
         # Calculate luminance (Rec. 709)
         lum = 0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
-        np.clip(lum, 0, 1, out=lum)
         lum_3d = lum[:, :, np.newaxis]
 
+        # 2.1 Blacks (Linear Offset/Crush)
+        if blacks != 0.0:
+            img -= blacks
+
+        # 2.2 Whites (Linear Level Adjustment)
+        if whites != 1.0:
+            denom = whites - blacks
+            if abs(denom) < 1e-6:
+                denom = 1e-6
+            img /= denom
+
+        # 2.3 Shadows & Highlights
         if shadows != 0.0:
-            s_mask = (1.0 - lum_3d) ** 2
+            s_mask = (1.0 - np.clip(lum_3d, 0, 1)) ** 2
             img *= 1.0 + shadows * s_mask
 
         if highlights != 0.0:
-            h_mask = lum_3d**2
-            # img += highlights * h_mask * (1.0 - img) -> img = img * (1 - h_term) + h_term
-            h_term = highlights * h_mask
-            img *= 1.0 - h_term
-            img += h_term
+            if highlights < 0:
+                # RECOVERY: Compress over-exposed highlights
+                # Use unclipped luminance for the mask to distinguish clipped areas
+                h_mask = np.maximum(lum_3d, 0) ** 2
+                img /= 1.0 + abs(highlights) * h_mask
+            else:
+                # BOOST: Brighten highlights
+                h_mask = np.clip(lum_3d, 0, 1) ** 2
+                h_term = highlights * h_mask
+                # Use a blend that caps at 1.0
+                img = img * (1.0 - h_term) + h_term
 
         if saturation != 1.0:
-            # Reusing original luminance for saturation prevents color shifting
-            # after Tone EQ adjustments.
-            img -= lum_3d
+            # Re-calculate luminance after tone adjustments for accurate saturation
+            # Use clipped luminance for saturation to avoid color shifts in over-exposed areas
+            curr_lum = (
+                0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
+            )
+            np.clip(curr_lum, 0, 1, out=curr_lum)
+            curr_lum_3d = curr_lum[:, :, np.newaxis]
+
+            img -= curr_lum_3d
             img *= saturation
-            img += lum_3d
+            img += curr_lum_3d
 
     # Stats and Clipping
     if calculate_stats:
@@ -176,32 +198,27 @@ def calculate_auto_exposure(img):
     # 1. Calculate luminance
     lum = 0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
 
-    # Baseline for "Standard Look"
-    # Most cameras underexpose the RAW data by ~1 stop to protect highlights.
-    # We apply a default +1.25 EV boost to counteract this and match the JPEG brightness.
-    base_exposure = 1.25
+    # Target: 98th percentile should be at ~0.85 (bright but not clipped)
+    # This works well for linear RAW data.
+    p98 = np.percentile(lum, 98)
+    if p98 < 0.001:
+        p98 = 0.001
 
-    # We still analyze the histogram just to avoid massive clipping if the photo is ALREADY bright.
-    avg_lum = np.mean(lum)
+    exposure = math.log2(0.85 / p98)
+    # Clamp to reasonable range for auto-start
+    exposure = float(np.clip(exposure, 0.5, 4.0))
 
-    # If image is super bright (High Key), reduce the base boost
-    if avg_lum > 0.6:  # Relaxed threshold for high key
-        base_exposure = 0.5
-    elif avg_lum > 0.3:
-        base_exposure = 1.0  # Aggressive boost even for mid-tones
-
-    # Standard Contrast (S-Curve simulation via Levels)
-    # We pull blacks down and push whites up slightly to create "Pop"
-    base_blacks = 0.08  # Very aggressive black crush for high contrast
-    base_whites = 0.92
+    # Standard Contrast & Levels
+    base_blacks = 0.01
+    base_whites = 0.95  # Slight boost to peaks in our new curve logic
 
     return {
-        "exposure": float(base_exposure),
+        "exposure": exposure,
         "blacks": float(base_blacks),
         "whites": float(base_whites),
         "highlights": 0.0,
         "shadows": 0.0,
-        "saturation": 1.10,  # 10% Saturation boost (Standard Profile)
+        "saturation": 1.05,  # 5% Saturation boost (Standard Profile)
     }
 
 
@@ -384,7 +401,9 @@ def open_raw(path, half_size=False, output_bps=8):
         rgb = raw.postprocess(
             use_camera_wb=True,
             half_size=half_size,
-            no_auto_bright=False,
+            no_auto_bright=True,  # Disable auto-brighten to allow manual recovery
+            bright=1.0,
+            user_flip=0,
             output_bps=output_bps,
         )
 
@@ -431,7 +450,7 @@ def extract_thumbnail(path):
             rgb = raw.postprocess(
                 use_camera_wb=True,
                 half_size=True,  # 1/4 resolution
-                no_auto_bright=True,
+                no_auto_bright=False,
                 output_bps=8,
             )
             return Image.fromarray(rgb)
