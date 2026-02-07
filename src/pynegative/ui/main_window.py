@@ -230,11 +230,22 @@ class MainWindow(QtWidgets.QMainWindow):
         pass
 
     def _on_gallery_list_changed(self, image_list):
+        # Update Gallery Preview if active
         if self.gallery._is_large_preview and self.gallery.preview_widget.raw_path:
-            self.gallery.preview_widget.set_carousel_images(
-                image_list, self.gallery.preview_widget.raw_path
-            )
+            current_path = str(self.gallery.preview_widget.raw_path)
+            if current_path not in image_list:
+                if image_list:
+                    self.gallery.preview_widget.open(image_list[0], image_list)
+                else:
+                    # Gallery is empty, GalleryWidget.load_folder should have handled this,
+                    # but we ensure consistency here.
+                    self.gallery.toggle_view_mode()
+            else:
+                self.gallery.preview_widget.set_carousel_images(
+                    image_list, current_path
+                )
 
+        # Update separate Editor tab if active
         if not self.editor.raw_path:
             return  # Editor isn't open, nothing to do
 

@@ -4,22 +4,20 @@ This document tracks planned features, project goals, and areas for technical im
 
 ## Roadmap / TODO
 
-- [ ] **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
-- [ ] **Kelvin White Balance**: Map relative temperature to absolute Kelvin values based on RAW metadata.
-- [ ] **User Presets**: Allow saving and applying named adjustment presets.
-- [ ] **Metadata Panel**: Display EXIF data (ISO, Shutter, Aperture) in the editor.
-- [ ] **Gallery sorting** - currnetly the gallery is unsorted. users should be able to sort by filename, date taken, rating, and last edited date. users should be able to sort in ascending and descending order.
+- **Auto-Enhance Mode**: Automatically adjust tone-mapping to look "good" (auto-exposure/auto-levels).
+- **Kelvin White Balance**: Map relative temperature to absolute Kelvin values based on RAW metadata.
+- **User Presets**: Allow saving and applying named adjustment presets.
+- **Metadata Panel**: Display EXIF data (ISO, Shutter, Aperture) in the editor.
+- **Gallery sorting** - currnetly the gallery is unsorted. users should be able to sort by filename, date taken, rating, and last edited date. users should be able to sort in ascending and descending order.
 
 ## Performance Optimisation
 
-- [ ] **Persistent Thumbnail Cache**: Store thumbnails on disk to speed up gallery loading.
-- [ ] **GPU Acceleration**: Explore OpenCL/CuPy for faster tone-mapping calculations.
-- [ ] **improve gpu acceleration startup time** - it takes a few seconds for the gpu acceleration to kick in. investigate if this can be improved.
-- [ ] **General Code Cleanup**: Analyse the codebase for redundant, duplicate or unused code.
+- **Persistent Thumbnail Cache**: Store thumbnails on disk to speed up gallery loading.
+- **GPU Acceleration**: Explore OpenCL/CuPy for faster tone-mapping calculations.
+- **improve gpu acceleration startup time** - it takes a few seconds for the gpu acceleration to kick in. investigate if this can be improved.
+- **General Code Cleanup**: Analyse the codebase for redundant, duplicate or unused code.
 
 ## Bugs
-
-- [ ] **preview double clikck** - in gallery preview double clicking the photo makes it larger, but sometimes it doesnt work. in particular if i had it enlarged, then changed the gallery filter to something taht doesnt include the photo. It will revert tot he gallery view, but when i try and double clikc another image to enlarge it, nothing happens.
 
 ## Testing Improvement Areas
 
