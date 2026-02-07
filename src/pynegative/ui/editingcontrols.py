@@ -787,13 +787,16 @@ class EditingControls(QtWidgets.QWidget):
         if self.crop_btn:
             self.crop_btn.setChecked(checked)
 
-    def reset_sliders(self):
+    def reset_sliders(self, silent=False):
         """Reset all sliders to their default values."""
         for attr_name in dir(self):
             if attr_name.endswith("_slider"):
                 slider = getattr(self, attr_name)
                 if hasattr(slider, "default_slider_value"):
-                    slider.setValue(slider.default_slider_value)
+                    var_name = attr_name.replace("_slider", "")
+                    self.set_slider_value(
+                        var_name, slider.default_slider_value / 1000.0, silent=silent
+                    )
 
     def _reset_section(self, section_name):
         """Reset all parameters within a specific section."""
@@ -815,7 +818,7 @@ class EditingControls(QtWidgets.QWidget):
             ]
         elif section_name == "details":
             params_to_reset = [
-                ("val_sharpen_value", 20.0, "sharpen_value"),
+                ("val_sharpen_value", 0.0, "sharpen_value"),
                 ("val_de_noise", 0.0, "de_noise"),
                 ("val_de_haze", 0.0, "de_haze"),
             ]

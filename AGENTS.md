@@ -8,7 +8,7 @@
 - **Add tests** - Always add tests for new features. ensure no new warnings are added.
 - **Don't use "fixup" commits.** Instead, amend the relevant commit. Force-pushing to your feature branch is encouraged to keep the history clean.
 - **Ask questions, dont make assumptions** - Always ask questions instead of making assumptions
-- **put plans in .opencode/plans/** - Create a new markdown file for each plan. inlcude a task list.
+- **put plans in `.opencode/plans/`** - Create a new markdown file for each plan. inlcude a task list.
 
 ## Quick Commands (Always use `uv`)
 - **Install**: `uv sync --all-groups`

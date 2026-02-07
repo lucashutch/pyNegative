@@ -675,7 +675,12 @@ class EditorWidget(QtWidgets.QWidget):
         # 1. Set the image first (this clears existing params in the processor)
         self.image_processor.set_image(img_arr)
 
-        # 2. Apply loaded settings if they exist
+        # 2. Reset UI to defaults before applying new settings
+        self.editing_controls.reset_sliders(silent=True)
+        self.editing_controls.set_rating(0)
+        self.preview_rating_widget.set_rating(0)
+
+        # 3. Apply loaded settings if they exist
         if settings:
             # Set rating UI
             rating = settings.get("rating", 0)
