@@ -168,14 +168,19 @@ class GalleryWidget(QtWidgets.QWidget):
             self.load_folder(folder)
 
     def load_folder(self, folder):
-        self.current_folder = Path(folder)
+        new_folder_path = Path(folder)
+        is_same_folder = self.current_folder == new_folder_path
+        self.current_folder = new_folder_path
         self.list_widget.clear()
 
         # Save to settings
         self.settings.setValue("last_folder", str(self.current_folder))
 
-        # Switch to grid view
-        self.stack.setCurrentWidget(self.grid_container)
+        # Determine if we should be in large preview or grid
+        # If it's a new folder, always reset to grid
+        if not is_same_folder:
+            self._is_large_preview = False
+
         self.btn_toggle_view.show()
         self.btn_toggle_view.raise_()
 
@@ -186,8 +191,6 @@ class GalleryWidget(QtWidgets.QWidget):
         ]
 
         # The filter widgets are now in MainWindow, so we need to get the values from there.
-        # This is a bit of a hack. A better way would be to pass the filter values
-        # into load_folder, or use a shared model.
         main_window = self.window()
         filter_mode = main_window.filter_combo.currentText()
         filter_rating = main_window.filter_rating_widget.rating()
@@ -207,7 +210,6 @@ class GalleryWidget(QtWidgets.QWidget):
             item = QtWidgets.QListWidgetItem(path.name)
             item.setData(QtCore.Qt.UserRole, str(path))
             item.setData(QtCore.Qt.UserRole + 1, rating)
-            # Set placeholder icon
             item.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon))
             self.list_widget.addItem(item)
 
@@ -215,6 +217,34 @@ class GalleryWidget(QtWidgets.QWidget):
             loader = ThumbnailLoader(str(path))
             loader.signals.finished.connect(self._on_thumbnail_loaded)
             self.thread_pool.start(loader)
+
+        # Sync UI Stack and Toggle Button
+        if self._is_large_preview:
+            image_list = self.get_current_image_list()
+            if not image_list:
+                # Filtered out everything, fallback to grid
+                self._is_large_preview = False
+                self.stack.setCurrentWidget(self.grid_container)
+                self.btn_toggle_view.setText("⊞")
+            else:
+                self.stack.setCurrentWidget(self.preview_widget)
+                self.btn_toggle_view.setText("❐")
+
+                # Check if current preview image is still in list
+                current_path = (
+                    str(self.preview_widget.raw_path)
+                    if self.preview_widget.raw_path
+                    else None
+                )
+                if current_path not in image_list:
+                    # Current image gone, open first available
+                    self.preview_widget.open(image_list[0], image_list)
+                else:
+                    # Current image still here, just update carousel
+                    self.preview_widget.set_carousel_images(image_list, current_path)
+        else:
+            self.stack.setCurrentWidget(self.grid_container)
+            self.btn_toggle_view.setText("⊞")
 
         self.imageListChanged.emit(self.get_current_image_list())
         self.folderLoaded.emit(str(folder))
@@ -237,13 +267,14 @@ class GalleryWidget(QtWidgets.QWidget):
 
     def _on_item_double_clicked(self, item):
         path = item.data(QtCore.Qt.UserRole)
+        # Safety check: if we think we are in large preview but stack says otherwise, fix it
+        if self._is_large_preview and self.stack.currentWidget() != self.preview_widget:
+            self._is_large_preview = False
+
         if self._is_large_preview:
-            # This shouldn't really happen from grid, but for consistency:
             self.preview_widget.open(path, self.get_current_image_list())
         else:
             self.toggle_view_mode()
-            # The toggle_view_mode will load the current selection,
-            # and double click also selects the item.
 
     def _on_rating_changed(self, top_left_index, bottom_right_index):
         if top_left_index != bottom_right_index:
