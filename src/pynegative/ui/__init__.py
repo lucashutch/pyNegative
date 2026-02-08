@@ -2,9 +2,13 @@ import sys
 import logging
 import argparse
 from pathlib import Path
+
 from PySide6 import QtWidgets, QtGui, QtCore
 from .main_window import MainWindow
 from .. import __version__, core as pynegative
+
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -95,7 +99,7 @@ def main():
         # Process events to keep UI updated
         app.processEvents()
 
-    update_splash_status("Initializing Hardware Acceleration...")
+    update_splash_status("Initializing...")
 
     # Force initial events processing to make sure splash is visible
     for _ in range(50):

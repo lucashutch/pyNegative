@@ -340,6 +340,7 @@ class EditorWidget(QtWidgets.QWidget):
         QtGui.QShortcut(
             QtGui.QKeySequence("F12"), self, self._toggle_performance_overlay
         )
+        QtGui.QShortcut(QtGui.QKeySequence("F11"), self, self._toggle_gpu_mode)
 
         # Comparison overlay shortcut
         QtGui.QShortcut(QtGui.QKeySequence("U"), self, self.comparison_btn.animateClick)
@@ -996,6 +997,24 @@ class EditorWidget(QtWidgets.QWidget):
         is_visible = not self.perf_label.isVisible()
         self.perf_label.setVisible(is_visible)
         self.show_toast(f"Performance Overlay {'On' if is_visible else 'Off'}")
+
+    def _toggle_gpu_mode(self):
+        """Toggle GPU/OpenCL acceleration on/off for benchmarking."""
+        try:
+            import cv2
+
+            if not hasattr(cv2, "ocl") or not cv2.ocl.haveOpenCL():
+                self.show_toast("GPU Mode: OpenCL not available")
+                return
+
+            current_state = cv2.ocl.useOpenCL()
+            new_state = not current_state
+            cv2.ocl.setUseOpenCL(new_state)
+
+            mode_name = "GPU (OpenCL)" if new_state else "CPU Only"
+            self.show_toast(f"Rendering Mode: {mode_name}")
+        except Exception as e:
+            self.show_toast(f"GPU Mode Error: {e}")
 
     def _set_rating_shortcut(self, key):
         """Set rating from keyboard shortcut (1-5, 0)."""
