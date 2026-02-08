@@ -83,7 +83,7 @@ class GalleryWidget(QtWidgets.QWidget):
         self.list_widget.setViewMode(QtWidgets.QListView.IconMode)
         self.list_widget.setIconSize(QtCore.QSize(180, 180))
         self.list_widget.setGridSize(QtCore.QSize(220, 215))
-        self.list_widget.setResizeMode(QtWidgets.QListView.Adjust)
+        self.list_widget.setResizeMode(QtWidgets.QListView.Fixed)
         self.list_widget.setSpacing(10)
         self.list_widget.setUniformItemSizes(True)
         self.list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)

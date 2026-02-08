@@ -148,13 +148,12 @@ class TestGallerySorting:
 
     def test_on_rating_changed_recursion_fix(self, qtbot):
         thread_pool = MagicMock()
-        with patch("PySide6.QtCore.QSettings") as mock_settings_class, patch(
-            "src.pynegative.ui.gallery.pynegative.save_sidecar"
-        ) as mock_save, patch(
-            "src.pynegative.ui.gallery.pynegative.load_sidecar"
-        ) as mock_load, patch(
-            "src.pynegative.ui.gallery.pynegative.get_sidecar_mtime"
-        ) as mock_mtime:
+        with (
+            patch("PySide6.QtCore.QSettings") as mock_settings_class,
+            patch("src.pynegative.ui.gallery.pynegative.save_sidecar") as mock_save,
+            patch("src.pynegative.ui.gallery.pynegative.load_sidecar"),
+            patch("src.pynegative.ui.gallery.pynegative.get_sidecar_mtime"),
+        ):
             mock_settings = mock_settings_class.return_value
             mock_settings.value.side_effect = lambda key, default, type=None: default
             widget = GalleryWidget(thread_pool)
