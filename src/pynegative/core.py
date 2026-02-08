@@ -972,6 +972,8 @@ def get_exif_capture_date(raw_path: str | Path) -> str | None:
     except Exception as e:
         logger.error(f"Error reading file {raw_path}: {e}")
         return None
+
+
 def format_date(timestamp: float) -> str:
     """Formats a timestamp as YYYY-MM-DD."""
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
