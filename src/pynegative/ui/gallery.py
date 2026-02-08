@@ -2,7 +2,7 @@ from pathlib import Path
 from PySide6 import QtWidgets, QtGui, QtCore
 from .. import core as pynegative
 from .loaders import ThumbnailLoader
-from .widgets import GalleryItemDelegate, GalleryListWidget
+from .widgets import GalleryItemDelegate, GalleryListWidget, ComboBox
 from .editor import EditorWidget
 
 
@@ -18,6 +18,8 @@ class GalleryWidget(QtWidgets.QWidget):
         self.thread_pool = thread_pool
         self.current_folder = None
         self.settings = QtCore.QSettings("pyNegative", "Gallery")
+        self._sort_by = self.settings.value("sort_by", "Filename")
+        self._sort_ascending = self.settings.value("sort_ascending", True, type=bool)
         self._is_large_preview = False
         self._init_ui()
 
@@ -42,7 +44,38 @@ class GalleryWidget(QtWidgets.QWidget):
 
         # Top Bar (only visible when folder is loaded)
         top_bar = QtWidgets.QHBoxLayout()
+        top_bar.setContentsMargins(10, 2, 10, 2)
         grid_layout.addLayout(top_bar)
+
+        top_bar.addWidget(QtWidgets.QLabel("Sort by:"))
+
+        self.sort_combo = ComboBox()
+        self.sort_combo.setObjectName("GallerySortCombo")
+        self.sort_combo.setStyleSheet("""
+            QComboBox#GallerySortCombo {
+                padding: 2px 8px;
+                min-height: 24px;
+            }
+        """)
+        self.sort_combo.addItems(["Filename", "Date Taken", "Rating", "Last Edited"])
+        self.sort_combo.currentTextChanged.connect(self._on_sort_changed)
+        top_bar.addWidget(self.sort_combo)
+
+        self.sort_order_btn = QtWidgets.QToolButton()
+        self.sort_order_btn.setText("↑")
+        self.sort_order_btn.setToolTip("Sort Order: Ascending")
+        self.sort_order_btn.setCheckable(True)
+        self.sort_order_btn.clicked.connect(self._on_sort_order_changed)
+        top_bar.addWidget(self.sort_order_btn)
+
+        top_bar.addStretch()  # Push controls to left
+
+        # Set initial values from settings
+        index = self.sort_combo.findText(self._sort_by)
+        if index >= 0:
+            self.sort_combo.setCurrentIndex(index)
+        self.sort_order_btn.setChecked(not self._sort_ascending)
+        self._update_sort_order_button()
 
         # Grid View
         self.list_widget = GalleryListWidget()
@@ -212,6 +245,15 @@ class GalleryWidget(QtWidgets.QWidget):
             item = QtWidgets.QListWidgetItem(path.name)
             item.setData(QtCore.Qt.UserRole, str(path))
             item.setData(QtCore.Qt.UserRole + 1, rating)
+
+            # Cache date taken
+            date_taken = pynegative.get_exif_capture_date(str(path))
+            item.setData(QtCore.Qt.UserRole + 2, date_taken)
+
+            # Cache last edited time
+            last_edited = pynegative.get_sidecar_mtime(str(path))
+            item.setData(QtCore.Qt.UserRole + 3, last_edited)
+
             item.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon))
             self.list_widget.addItem(item)
 
@@ -248,7 +290,7 @@ class GalleryWidget(QtWidgets.QWidget):
             self.stack.setCurrentWidget(self.grid_container)
             self.btn_toggle_view.setText("⊞")
 
-        self.imageListChanged.emit(self.get_current_image_list())
+        self._apply_sort()
         self.folderLoaded.emit(str(folder))
 
     def _apply_filter(self):
@@ -278,7 +320,10 @@ class GalleryWidget(QtWidgets.QWidget):
         else:
             self.toggle_view_mode()
 
-    def _on_rating_changed(self, top_left_index, bottom_right_index):
+    def _on_rating_changed(self, top_left_index, bottom_right_index, roles=None):
+        if roles and (QtCore.Qt.UserRole + 1) not in roles:
+            return
+
         if top_left_index != bottom_right_index:
             return
 
@@ -290,6 +335,14 @@ class GalleryWidget(QtWidgets.QWidget):
             settings = pynegative.load_sidecar(path_str) or {}
             settings["rating"] = rating
             pynegative.save_sidecar(path_str, settings)
+
+            # Update last edited timestamp in item data
+            last_edited = pynegative.get_sidecar_mtime(path_str)
+            item.setData(QtCore.Qt.UserRole + 3, last_edited)
+
+            # Re-sort if sorting by last edited or rating
+            if self._sort_by in ["Last Edited", "Rating"]:
+                self._apply_sort()
 
             self.ratingChanged.emit(path_str, rating)
 
@@ -307,5 +360,98 @@ class GalleryWidget(QtWidgets.QWidget):
             item = self.list_widget.item(i)
             if item.data(QtCore.Qt.UserRole) == path:
                 item.setData(QtCore.Qt.UserRole + 1, rating)
+
+                # Update last edited timestamp in item data
+                last_edited = pynegative.get_sidecar_mtime(path)
+                item.setData(QtCore.Qt.UserRole + 3, last_edited)
+
                 self.list_widget.update(self.list_widget.visualItemRect(item))
+
+                # Re-sort if sorting by last edited or rating
+                if self._sort_by in ["Last Edited", "Rating"]:
+                    self._apply_sort()
                 break
+
+    def _on_sort_changed(self, sort_by):
+        """Handle sort criteria change."""
+        self._sort_by = sort_by
+        self.settings.setValue("sort_by", sort_by)
+        self._apply_sort()
+
+    def _on_sort_order_changed(self):
+        """Handle sort order toggle."""
+        self._sort_ascending = not self.sort_order_btn.isChecked()
+        self.settings.setValue("sort_ascending", self._sort_ascending)
+        self._update_sort_order_button()
+        self._apply_sort()
+
+    def _update_sort_order_button(self):
+        """Update sort order button appearance."""
+        if self._sort_ascending:
+            self.sort_order_btn.setText("↑")
+            self.sort_order_btn.setToolTip("Sort Order: Ascending")
+        else:
+            self.sort_order_btn.setText("↓")
+            self.sort_order_btn.setToolTip("Sort Order: Descending")
+
+    def _apply_sort(self):
+        """Sort the current gallery items based on selected criteria."""
+        if self.list_widget.count() == 0:
+            self.imageListChanged.emit([])
+            return
+
+        # Extract all items with their data
+        items_data = []
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            path = item.data(QtCore.Qt.UserRole)
+            rating = item.data(QtCore.Qt.UserRole + 1)
+            date_taken = item.data(QtCore.Qt.UserRole + 2)  # Cache
+            last_edited = item.data(QtCore.Qt.UserRole + 3)  # Cache
+
+            items_data.append(
+                {
+                    "item": item,
+                    "path": path,
+                    "rating": rating,
+                    "date_taken": date_taken,
+                    "last_edited": last_edited,
+                }
+            )
+
+        # Sort based on criteria
+        if self._sort_by == "Filename":
+            items_data.sort(key=lambda x: Path(x["path"]).name.lower())
+        elif self._sort_by == "Date Taken":
+            # Fallback to empty string for sorting
+            items_data.sort(key=lambda x: x["date_taken"] or "0000-00-00")
+        elif self._sort_by == "Rating":
+            # Secondary sort by filename when ratings equal
+            items_data.sort(key=lambda x: (x["rating"], Path(x["path"]).name.lower()))
+        elif self._sort_by == "Last Edited":
+            items_data.sort(key=lambda x: x["last_edited"] or 0)
+
+        # Apply sort order
+        if not self._sort_ascending:
+            items_data.reverse()
+
+        # Rebuild list widget
+        # We need to block signals to avoid multiple updates
+        self.list_widget.blockSignals(True)
+
+        # Remove all items from list widget without deleting them
+        while self.list_widget.count() > 0:
+            self.list_widget.takeItem(0)
+
+        for data in items_data:
+            self.list_widget.addItem(data["item"])
+        self.list_widget.blockSignals(False)
+
+        # Update image list for preview mode
+        current_images = self.get_current_image_list()
+        self.imageListChanged.emit(current_images)
+
+        # Sync preview carousel if in preview mode
+        if self._is_large_preview and self.preview_widget.raw_path:
+            current_path = str(self.preview_widget.raw_path)
+            self.preview_widget.set_carousel_images(current_images, current_path)

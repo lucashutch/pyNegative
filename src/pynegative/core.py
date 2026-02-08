@@ -3,9 +3,12 @@ import json
 import time
 import math
 import logging
+import re
 from pathlib import Path
+
 from datetime import datetime
 from functools import lru_cache
+from io import BytesIO
 
 import numpy as np
 import rawpy
@@ -443,8 +446,6 @@ def extract_thumbnail(path):
 
             # If we found a JPEG thumbnail
             if thumb and thumb.format == rawpy.ThumbFormat.JPEG:
-                from io import BytesIO
-
                 img = Image.open(BytesIO(thumb.data))
                 return ImageOps.exif_transpose(img)
 
@@ -707,8 +708,6 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
     start_time = time.perf_counter()
 
     try:
-        import cv2
-
         # 1. Dark Channel estimation
         # Scale kernel size relative to image width for consistency across resolutions
         # Base kernel size 15 for a ~2048px preview
@@ -835,7 +834,7 @@ def save_image(pil_img, output_path, quality=95):
 SIDECAR_DIR = ".pyNegative"
 
 
-def get_sidecar_path(raw_path):
+def get_sidecar_path(raw_path: str | Path) -> Path:
     """
     Returns the Path object to the sidecar JSON file for a given RAW file.
     Sidecars are stored in a hidden .pyNegative directory local to the image.
@@ -844,7 +843,7 @@ def get_sidecar_path(raw_path):
     return raw_path.parent / SIDECAR_DIR / f"{raw_path.name}.json"
 
 
-def save_sidecar(raw_path, settings):
+def save_sidecar(raw_path: str | Path, settings: dict) -> None:
     """
     Saves edit settings to a JSON sidecar file.
     """
@@ -866,7 +865,7 @@ def save_sidecar(raw_path, settings):
         json.dump(data, f, indent=4)
 
 
-def load_sidecar(raw_path):
+def load_sidecar(raw_path: str | Path) -> dict | None:
     """
     Loads edit settings from a JSON sidecar file if it exists.
     Returns the settings dict or None.
@@ -888,7 +887,7 @@ def load_sidecar(raw_path):
         return None
 
 
-def rename_sidecar(old_raw_path, new_raw_path):
+def rename_sidecar(old_raw_path: str | Path, new_raw_path: str | Path) -> None:
     """
     Renames a sidecar file when the original RAW is moved/renamed.
     """
@@ -900,7 +899,17 @@ def rename_sidecar(old_raw_path, new_raw_path):
         old_sidecar.rename(new_sidecar)
 
 
-def get_exif_capture_date(raw_path):
+def get_sidecar_mtime(raw_path: str | Path) -> float | None:
+    """
+    Returns the last modified time of the sidecar file if it exists.
+    """
+    sidecar_path = get_sidecar_path(raw_path)
+    if sidecar_path.exists():
+        return sidecar_path.stat().st_mtime
+    return None
+
+
+def get_exif_capture_date(raw_path: str | Path) -> str | None:
     """
     Extracts the capture date from RAW or standard image file EXIF data.
 
@@ -940,9 +949,6 @@ def get_exif_capture_date(raw_path):
                         # Format in EXIF is typically: "2024:01:15 14:30:00"
                         exif_str = exif_data.decode("utf-8", errors="ignore")
 
-                        # Look for DateTimeOriginal (0x9003) or DateTime (0x0132)
-                        import re
-
                         # Search for date patterns in EXIF
                         date_patterns = [
                             r"DateTimeOriginal\s*\x00*\s*(\d{4}):(\d{2}):(\d{2})",
@@ -962,6 +968,7 @@ def get_exif_capture_date(raw_path):
         # Fallback: use file modification time
         mtime = raw_path.stat().st_mtime
         return datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+
     except Exception as e:
         logger.error(f"Error reading file {raw_path}: {e}")
         return None
