@@ -17,6 +17,7 @@ Get the most out of your photos with a powerful, non-destructive editing suite.
 ### 📁 Organize Your Shoots
 Cull and rate your photos faster than ever.
 - **Fluid Gallery**: Browse through hundreds of photos in a responsive grid.
+- **Gallery Sorting**: Sort by filename, date taken, rating, or last edited in ascending or descending order.
 - **Instant Preview**: Toggle between a grid and a full-size, zoomable view with a double-click.
 - **Quick Rating**: Rate your best shots from 1-5 stars instantly.
 - **Smart Filtering**: Find exactly what you need by filtering your gallery by star ratings.
