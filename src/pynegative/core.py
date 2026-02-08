@@ -16,6 +16,9 @@ from PIL import Image, ImageFilter, ImageOps
 
 try:
     import cv2
+
+    # Note: OpenCV cache env var should be set in pynegative/__init__.py
+    # before this module is imported
 except ImportError:
     cv2 = None
 
@@ -57,6 +60,27 @@ def warmup_hardware_acceleration():
         return
 
     try:
+        # Check OpenCL availability and cache status
+        if not hasattr(cv2, "ocl") or not cv2.ocl.haveOpenCL():
+            logger.debug("OpenCL not available, skipping hardware acceleration warmup")
+            return
+
+        cv2.ocl.setUseOpenCL(True)
+        logger.debug("OpenCL is available and enabled")
+
+        # Check cache before warmup
+        import os
+
+        cache_dir = os.environ.get("OPENCV_OPENCL_CACHE_DIR")
+        files_before = 0
+        if cache_dir:
+            cache_path = Path(cache_dir)
+            if cache_path.exists():
+                files_before = len(list(cache_path.iterdir()))
+                logger.debug(
+                    f"OpenCL cache contains {files_before} files before warmup"
+                )
+
         logger.debug(
             "Initializing OpenCV OpenCL kernels (this may take several seconds)..."
         )
@@ -67,6 +91,16 @@ def warmup_hardware_acceleration():
         cv2.split(u_dummy)
         elapsed = (time.perf_counter() - start) * 1000
         logger.debug(f"Hardware acceleration warmed up in {elapsed:.2f}ms")
+
+        # Check cache after warmup
+        if cache_dir and cache_path.exists():
+            files_after = len(list(cache_path.iterdir()))
+            if files_after > files_before:
+                logger.debug(
+                    f"OpenCL cache: {files_after - files_before} new kernel(s) compiled"
+                )
+            elif files_after == files_before and files_after > 0:
+                logger.debug("OpenCL cache: using cached kernels")
     except Exception as e:
         logger.warning(f"Hardware acceleration warmup failed: {e}")
 
@@ -485,20 +519,40 @@ def sharpen_image(img, radius, percent, method="High Quality"):
             if cv2 is None:
                 raise ImportError("OpenCV not available")
 
-            # Create unsharp mask
-            blur = cv2.GaussianBlur(img_float, (0, 0), radius)
-            sharpened = img_float + (img_float - blur) * (percent / 100.0)
+            backend = "CPU"
+            try:
+                # Attempt OpenCL acceleration
+                u_img = cv2.UMat((img_float * 255).astype(np.uint8))
+                u_blur = cv2.GaussianBlur(u_img, (0, 0), radius)
+                blur = u_blur.get().astype(np.float32) / 255.0
+                sharpened = img_float + (img_float - blur) * (percent / 100.0)
 
-            # Edge-aware threshold (Canny needs uint8)
-            gray = cv2.cvtColor((img_float * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
-            edges = cv2.Canny(gray, 50, 150)
+                # Edge detection
+                u_gray = cv2.cvtColor(u_img, cv2.COLOR_RGB2GRAY)
+                u_edges = cv2.Canny(u_gray, 50, 150)
 
-            # Dilate edges slightly
-            kernel = np.ones((3, 3), np.uint8)
-            edges = cv2.dilate(edges, kernel, iterations=1)
+                # Dilate edges
+                kernel = np.ones((3, 3), np.uint8)
+                u_edges = cv2.dilate(u_edges, kernel, iterations=1)
+                edges = u_edges.get()
 
-            # Combine: Sharpened edges, keep original for flat areas
-            result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
+                result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
+                # Check actual OpenCL state, not just if UMat succeeded
+                backend = "UMat (OpenCL)" if cv2.ocl.useOpenCL() else "UMat (CPU)"
+            except Exception:
+                # Fallback to CPU
+                blur = cv2.GaussianBlur(img_float, (0, 0), radius)
+                sharpened = img_float + (img_float - blur) * (percent / 100.0)
+
+                gray = cv2.cvtColor(
+                    (img_float * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY
+                )
+                edges = cv2.Canny(gray, 50, 150)
+
+                kernel = np.ones((3, 3), np.uint8)
+                edges = cv2.dilate(edges, kernel, iterations=1)
+
+                result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
 
             if was_pil:
                 result_array = np.clip(result * 255, 0, 255).astype(np.uint8)
@@ -508,7 +562,7 @@ def sharpen_image(img, radius, percent, method="High Quality"):
 
             elapsed = (time.perf_counter() - start_time) * 1000
             logger.debug(
-                f"Sharpen: High Quality | Radius: {radius:.2f} | Percent: {percent:.1f}% | Time: {elapsed:.2f}ms"
+                f"Sharpen: High Quality ({backend}) | Radius: {radius:.2f} | Percent: {percent:.1f}% | Time: {elapsed:.2f}ms"
             )
             return res
         except Exception as e:
@@ -586,7 +640,8 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
                     umat_img, None, h, hColor, 7, 21
                 )
                 denoised_uint8 = denoised_umat.get()
-                backend = "UMat (OpenCL)"
+                # Check actual OpenCL state, not just if UMat succeeded
+                backend = "UMat (OpenCL)" if cv2.ocl.useOpenCL() else "UMat (CPU)"
             except Exception:
                 # Fallback to standard CPU if UMat fails
                 denoised_uint8 = cv2.fastNlMeansDenoisingColored(
@@ -601,33 +656,61 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
             )
 
         else:  # Default to High Quality (YUV Bilateral)
-            # Sensor-aware de-noising: Separates Luma and Chroma
-            # cvtColor handles float32 RGB -> YUV
-            yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
-            y, u, v = cv2.split(yuv)
+            backend = "CPU"
+            try:
+                # Attempt OpenCL acceleration
+                u_img = cv2.UMat((img_array * 255).astype(np.uint8))
+                u_yuv = cv2.cvtColor(u_img, cv2.COLOR_RGB2YUV)
+                y, u, v = cv2.split(u_yuv)
 
-            # Chroma: Very aggressive to remove color blotches (human eye less sensitive to chroma detail)
-            # Increased diameter and spatial reach to average over larger areas
-            chroma_sigma_color = float(strength) * 4.5 * s_scale
-            chroma_sigma_space = 2.0 + (float(strength) / 10.0)
-            u_denoised = cv2.bilateralFilter(
-                u, 11, chroma_sigma_color, chroma_sigma_space
-            )
-            v_denoised = cv2.bilateralFilter(
-                v, 11, chroma_sigma_color, chroma_sigma_space
-            )
+                # Chroma: Very aggressive to remove color blotches
+                chroma_sigma_color = float(strength) * 4.5 * s_scale
+                chroma_sigma_space = 2.0 + (float(strength) / 10.0)
+                u_denoised = cv2.bilateralFilter(
+                    u, 11, chroma_sigma_color, chroma_sigma_space
+                )
+                v_denoised = cv2.bilateralFilter(
+                    v, 11, chroma_sigma_color, chroma_sigma_space
+                )
 
-            # Luma: Conservative to preserve fine texture/grain
-            luma_sigma_color = float(strength) * 0.4 * s_scale
-            luma_sigma_space = 0.5 + (float(strength) / 100.0)
-            y_denoised = cv2.bilateralFilter(y, 3, luma_sigma_color, luma_sigma_space)
+                # Luma: Conservative to preserve fine texture/grain
+                luma_sigma_color = float(strength) * 0.4 * s_scale
+                luma_sigma_space = 0.5 + (float(strength) / 100.0)
+                y_denoised = cv2.bilateralFilter(
+                    y, 3, luma_sigma_color, luma_sigma_space
+                )
 
-            denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
-            denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
+                denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
+                u_denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
+                denoised = u_denoised.get().astype(np.float32) / 255.0
+                # Check actual OpenCL state, not just if UMat succeeded
+                backend = "UMat (OpenCL)" if cv2.ocl.useOpenCL() else "UMat (CPU)"
+            except Exception:
+                # Fallback to CPU
+                yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
+                y, u, v = cv2.split(yuv)
+
+                chroma_sigma_color = float(strength) * 4.5 * s_scale
+                chroma_sigma_space = 2.0 + (float(strength) / 10.0)
+                u_denoised = cv2.bilateralFilter(
+                    u, 11, chroma_sigma_color, chroma_sigma_space
+                )
+                v_denoised = cv2.bilateralFilter(
+                    v, 11, chroma_sigma_color, chroma_sigma_space
+                )
+
+                luma_sigma_color = float(strength) * 0.4 * s_scale
+                luma_sigma_space = 0.5 + (float(strength) / 100.0)
+                y_denoised = cv2.bilateralFilter(
+                    y, 3, luma_sigma_color, luma_sigma_space
+                )
+
+                denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
+                denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
 
             elapsed = (time.perf_counter() - start_time) * 1000
             logger.debug(
-                f"Denoise: High Quality (YUV Bilateral) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+                f"Denoise: High Quality (YUV Bilateral) ({backend}) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
             )
 
         if denoised is not None:
@@ -735,7 +818,8 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
                 )
                 u_dark = cv2.erode(u_dark, kernel)
                 dark_channel = u_dark.get().astype(np.float32) / 255.0
-                backend = "UMat (OpenCL)"
+                # Check actual OpenCL state
+                backend = "UMat (OpenCL)" if cv2.ocl.useOpenCL() else "UMat (CPU)"
             except Exception:
                 dark_channel = np.min(img_array, axis=2)
                 kernel = cv2.getStructuringElement(
@@ -765,6 +849,7 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
         normalized_img = img_array / a_safe
 
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
+        transmission_backend = "CPU"
         try:
             # Use UMat for the second dark channel estimation and smoothing
             u_norm = cv2.UMat((np.clip(normalized_img, 0, 1) * 255).astype(np.uint8))
@@ -774,6 +859,10 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
             )
             u_dark_norm = cv2.erode(u_dark_norm, kernel)
             dark_normalized = u_dark_norm.get().astype(np.float32) / 255.0
+            # Check actual OpenCL state
+            transmission_backend = (
+                "UMat (OpenCL)" if cv2.ocl.useOpenCL() else "UMat (CPU)"
+            )
         except Exception:
             dark_normalized = np.min(normalized_img, axis=2)
             dark_normalized = cv2.erode(dark_normalized, kernel)
@@ -781,12 +870,15 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
         transmission = 1.0 - omega * dark_normalized
 
         # Refine transmission map
+        blur_backend = "CPU"
         try:
             u_trans = cv2.UMat(transmission)
             u_trans = cv2.GaussianBlur(
                 u_trans, (kernel_size * 2 + 1, kernel_size * 2 + 1), 0
             )
             transmission = u_trans.get()
+            # Check actual OpenCL state
+            blur_backend = "UMat (OpenCL)" if cv2.ocl.useOpenCL() else "UMat (CPU)"
         except Exception:
             transmission = cv2.GaussianBlur(
                 transmission, (kernel_size * 2 + 1, kernel_size * 2 + 1), 0
@@ -804,7 +896,8 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
 
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.debug(
-            f"Dehaze: ({backend}) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+            f"Dehaze: (Atmos: {backend}, Trans: {transmission_backend}, Blur: {blur_backend}) | "
+            f"Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
         )
 
         if was_pil:
