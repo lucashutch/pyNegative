@@ -15,6 +15,15 @@ class CarouselManager(QtCore.QObject):
         super().__init__(parent)
         self.thread_pool = thread_pool
         self.current_folder = None
+        self._current_image_list = []
+        self._current_height = 210
+        self._pending_height = 210
+
+        # Performance optimization: throttle item resizing during drag
+        self._resize_timer = QtCore.QTimer()
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.setInterval(16)  # ~60fps target for layout updates
+        self._resize_timer.timeout.connect(self._do_deferred_resize)
 
         self._setup_ui()
         self._setup_connections()
@@ -27,11 +36,17 @@ class CarouselManager(QtCore.QObject):
         self.carousel.setViewMode(QtWidgets.QListView.IconMode)
         self.carousel.setFlow(QtWidgets.QListView.LeftToRight)  # Horizontal
         self.carousel.setWrapping(False)
-        self.carousel.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.carousel.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
         self.carousel.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.carousel.setFixedHeight(165)
-        self.carousel.setIconSize(QtCore.QSize(120, 120))
-        self.carousel.setGridSize(QtCore.QSize(140, 140))
+        self.carousel.setFixedHeight(self._current_height)
+
+        # Calculate item sizes proportional to height, leaving room for padding and scrollbar
+        grid_size = self._current_height - 35
+        icon_width = grid_size - 20
+        icon_height = grid_size - 50
+
+        self.carousel.setIconSize(QtCore.QSize(icon_width, icon_height))
+        self.carousel.setGridSize(QtCore.QSize(grid_size, grid_size))
         self.carousel.setResizeMode(QtWidgets.QListView.Adjust)
         self.carousel.setUniformItemSizes(True)
         self.carousel.setSpacing(8)
@@ -56,6 +71,7 @@ class CarouselManager(QtCore.QObject):
     def load_folder(self, folder):
         """Load images from a folder into the carousel."""
         self.current_folder = Path(folder)
+        self._current_image_list = []
         self.carousel.clear()
         self._update_circle_visibility()  # Update circle visibility
 
@@ -76,27 +92,38 @@ class CarouselManager(QtCore.QObject):
             self.carousel.addItem(item)
 
             # Async load thumbnail
-            loader = ThumbnailLoader(path, size=120)
+            loader = ThumbnailLoader(path, size=400)
             loader.signals.finished.connect(self._on_thumbnail_loaded)
             self.thread_pool.start(loader)
 
     def set_images(self, image_list, current_path):
         """Set specific images in the carousel."""
+        # Convert all to strings for consistent comparison
+        image_list_str = [str(p) for p in image_list]
+        current_path_str = str(current_path) if current_path else None
+
+        if image_list_str == self._current_image_list:
+            # same list, just update selection
+            if current_path_str:
+                self.select_image(current_path_str)
+            return
+
+        self._current_image_list = image_list_str
         self.carousel.clear()
 
-        for path_str in image_list:
+        for path_str in image_list_str:
             f = Path(path_str)
             item = QtWidgets.QListWidgetItem(f.name)
-            item.setData(QtCore.Qt.UserRole, str(f))
+            item.setData(QtCore.Qt.UserRole, path_str)
             item.setIcon(
                 self.carousel.style().standardIcon(QtWidgets.QStyle.SP_FileIcon)
             )
             self.carousel.addItem(item)
-            if f == current_path:
+            if path_str == current_path_str:
                 self.carousel.setCurrentItem(item)
 
             # Async load thumbnail
-            loader = ThumbnailLoader(f, size=120)
+            loader = ThumbnailLoader(path_str, size=400)
             loader.signals.finished.connect(self._on_thumbnail_loaded)
             self.thread_pool.start(loader)
 
@@ -104,10 +131,13 @@ class CarouselManager(QtCore.QObject):
 
     def select_image(self, path):
         """Select a specific image in the carousel."""
+        path_str = str(path)
         for i in range(self.carousel.count()):
             item = self.carousel.item(i)
-            if Path(item.data(QtCore.Qt.UserRole)) == path:
+            if item.data(QtCore.Qt.UserRole) == path_str:
                 self.carousel.setCurrentItem(item)
+                # Ensure it's visible
+                self.carousel.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtCenter)
                 break
 
     def select_previous(self):
@@ -138,6 +168,7 @@ class CarouselManager(QtCore.QObject):
 
     def clear(self):
         """Clear the carousel."""
+        self._current_image_list = []
         self.carousel.clear()
 
     def get_selected_paths(self):
@@ -151,7 +182,7 @@ class CarouselManager(QtCore.QObject):
             return Path(current_item.data(QtCore.Qt.UserRole))
         return None
 
-    def _on_thumbnail_loaded(self, path, pixmap):
+    def _on_thumbnail_loaded(self, path, pixmap, metadata):
         """Handle thumbnail loading completion."""
         for i in range(self.carousel.count()):
             item = self.carousel.item(i)
@@ -159,6 +190,38 @@ class CarouselManager(QtCore.QObject):
                 if pixmap:
                     item.setIcon(QtGui.QIcon(pixmap))
                 break
+
+    def set_carousel_height(self, height):
+        """Request a height update for the carousel layout."""
+        if abs(self._current_height - height) < 1:
+            return
+
+        self._pending_height = height
+
+        # If the timer isn't running, start it.
+        # We use a small interval to allow some real-time feedback but not every pixel.
+        if not self._resize_timer.isActive():
+            self._resize_timer.start()
+
+    def _do_deferred_resize(self):
+        """Perform the actual expensive layout update."""
+        height = self._pending_height
+        self._current_height = height
+
+        # Calculate item sizes proportional to height, leaving room for padding and scrollbar
+        grid_size = height - 35
+        icon_width = grid_size - 20
+        icon_height = grid_size - 50
+
+        # These calls are expensive as they trigger full multi-item layout recalculations
+        self.carousel.setGridSize(QtCore.QSize(grid_size, grid_size))
+        self.carousel.setIconSize(QtCore.QSize(icon_width, icon_height))
+
+        # Update delegate behavior
+        self.carousel_delegate.set_item_size(grid_size)
+
+        # Refresh layout
+        self.carousel.doItemsLayout()
 
     def _on_item_clicked(self, item):
         """Handle item click."""
