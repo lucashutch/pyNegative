@@ -28,8 +28,10 @@ class ExportGalleryManager(QtCore.QObject):
         self.list_widget.setObjectName("ExportGrid")
         self.list_widget.setViewMode(QtWidgets.QListView.IconMode)
         self.list_widget.setIconSize(QtCore.QSize(180, 180))
+        self.list_widget.setGridSize(QtCore.QSize(220, 240))
         self.list_widget.setResizeMode(QtWidgets.QListView.Adjust)
         self.list_widget.setSpacing(10)
+        self.list_widget.setUniformItemSizes(True)
         self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
 
         # Set up carousel delegate for selection circles

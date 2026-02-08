@@ -134,20 +134,22 @@ class TestGalleryItemDelegate:
         list_widget.item(0).setData(QtCore.Qt.UserRole + 1, 0)
 
         option = QtWidgets.QStyleOptionViewItem()
-        option.rect = QtCore.QRect(0, 0, 200, 50)  # Provide rect for star positioning
+        option.rect = QtCore.QRect(0, 0, 220, 240)  # Standard large item rect
         index = list_widget.model().index(0, 0)
 
         # Verify hover state is set correctly
         assert list_widget.get_hovered_item() is not None
         assert list_widget.get_hovered_item().text() == index.data()
 
-        # Click position should be within first star bounds
-        click_x = 10  # Within [5, 21]
-        click_y = 10  # Within [5, 21]
+        # Calculate first star position for 220x240 rect:
+        # is_large = 240 > 150 = True
+        # star_strip_width = 30
+        # bottom_height = 28
+        # stars_y_start = (240 - 28 - 88) // 2 = 62
+        # stars_x = 220 - 30 + (30 - 16) // 2 = 197
 
-        # Verify our calculations
-        assert 5 <= click_x <= 21  # Should be within first star
-        assert 5 <= click_y <= 21  # Should be within first star
+        click_x = 205  # Within [197, 213]
+        click_y = 70  # Within [62, 78]
 
         event = QtGui.QMouseEvent(
             QtCore.QEvent.Type.MouseButtonPress,
@@ -168,14 +170,14 @@ class TestGalleryItemDelegate:
         list_widget._hovered_item = list_widget.item(0)
 
         option = QtWidgets.QStyleOptionViewItem()
-        option.rect = QtCore.QRect(0, 0, 200, 50)  # Provide rect for star positioning
+        option.rect = QtCore.QRect(0, 0, 220, 240)
         index = list_widget.model().index(0, 0)
 
-        # Simulate click outside star area
+        # Simulate click outside star area (e.g., top-left)
         event = QtGui.QMouseEvent(
             QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(200, 10),  # Position outside star area
-            QtCore.QPointF(200, 10),
+            QtCore.QPointF(10, 10),
+            QtCore.QPointF(10, 10),
             QtCore.Qt.MouseButton.LeftButton,
             QtCore.Qt.MouseButton.LeftButton,
             QtCore.Qt.KeyboardModifier.NoModifier,
@@ -193,15 +195,18 @@ class TestGalleryItemDelegate:
         list_widget.item(0).setData(QtCore.Qt.UserRole + 1, 3)
 
         option = QtWidgets.QStyleOptionViewItem()
-        option.rect = QtCore.QRect(0, 0, 200, 50)  # Provide rect for star positioning
+        option.rect = QtCore.QRect(0, 0, 220, 240)
         index = list_widget.model().index(0, 0)
 
-        # Calculate third star position: x = 5 + (2 * (16 + 2)) = 39, y = 5
-        third_star_x = 5 + 2 * (16 + 2)  # star_width=16, spacing=2
+        # Third star: stars_y_start (62) + 2 * (star_height (16) + spacing (2)) = 62 + 36 = 98
+        # x is 197 to 213.
+        click_x = 205
+        click_y = 105  # Within [98, 114]
+
         event = QtGui.QMouseEvent(
             QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(third_star_x + 5, 10),  # Position within third star area
-            QtCore.QPointF(third_star_x + 5, 10),
+            QtCore.QPointF(click_x, click_y),
+            QtCore.QPointF(click_x, click_y),
             QtCore.Qt.MouseButton.LeftButton,
             QtCore.Qt.MouseButton.LeftButton,
             QtCore.Qt.KeyboardModifier.NoModifier,
@@ -246,23 +251,28 @@ class TestGalleryItemDelegate:
     def test_star_positions(self, list_widget, delegate):
         """Test that star positions are calculated correctly."""
         option = QtWidgets.QStyleOptionViewItem()
-        option.rect = QtCore.QRect(0, 0, 200, 50)
+        option.rect = QtCore.QRect(0, 0, 220, 240)
 
-        # First star should be at x=5, y=5 (y = rect.y() + 5, x = rect.x() + 5)
-        expected_x = 5
-        expected_y = 5
-        star_width = delegate.star_empty.width()
+        # Large mode (240 > 150)
+        # star_strip_width = 30
+        # bottom_height = 28
+        # total_stars_height = 5 * 16 + 4 * 2 # 88
+
+        expected_x = 220 - 30 + (30 - 16) // 2  # 197
+        expected_y_start = (240 - 28 - 88) // 2  # 62
+        star_height = 16
 
         # Test star position calculation logic
         for i in range(5):
-            x = expected_x + (i * (star_width + 2))
-            y = expected_y
+            x = expected_x
+            y = expected_y_start + (i * (star_height + 2))
+
             # Verify the pattern matches what the delegate would use
-            assert x == 5 + i * (star_width + 2)
-            assert y == 5
+            assert x == 197
+            assert y == 62 + i * (16 + 2)
 
         # Test with actual painting to ensure no crash
-        pixmap = QtGui.QPixmap(200, 50)
+        pixmap = QtGui.QPixmap(220, 240)
         painter = QtGui.QPainter(pixmap)
         index = list_widget.model().index(0, 0)
         delegate.paint(painter, option, index)

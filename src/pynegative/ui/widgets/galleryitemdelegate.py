@@ -46,9 +46,103 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
         return pixmap
 
     def paint(self, painter, option, index):
-        # Paint standard item (icon + text)
-        super().paint(painter, option, index)
+        # Initialize style option
+        opt = QtWidgets.QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
 
+        widget = opt.widget
+        style = widget.style() if widget else QtWidgets.QApplication.style()
+
+        # Draw Background (CSS styling via PE_PanelItemViewItem)
+        style.drawPrimitive(QtWidgets.QStyle.PE_PanelItemViewItem, opt, painter, widget)
+
+        # Determine layout based on item size
+        is_large = opt.rect.height() > 150
+
+        # New Layout: Vertical star strip on the right, Filename at the bottom
+        star_strip_width = 30 if is_large else 24
+        bottom_height = 28 if is_large else 22
+
+        # Symmetric padding for perfect centering in the item box boundaries.
+        # We use a bit more padding as requested, but keeping it equal for centering.
+        h_padding = 15 if is_large else 10
+        v_padding = 10 if is_large else 6
+
+        # 1. Draw Icon (Centered in the thumbnail area)
+        if opt.features & QtWidgets.QStyleOptionViewItem.HasDecoration:
+            icon = opt.icon
+
+            # Define the target rect as the full area above the filename
+            # This ensures the visual center of the thumbnail aligns with the box center.
+            image_area_rect = QtCore.QRect(
+                opt.rect.left(),
+                opt.rect.top(),
+                opt.rect.width(),
+                opt.rect.height() - bottom_height,
+            )
+
+            # Apply symmetric padding
+            target_rect = image_area_rect.adjusted(
+                h_padding, v_padding, -h_padding, -v_padding
+            )
+
+            # Get and scale pixmap
+            pixmap = icon.pixmap(target_rect.size())
+            scaled_pixmap = pixmap.scaled(
+                target_rect.size(),
+                QtCore.Qt.KeepAspectRatio,
+                QtCore.Qt.SmoothTransformation,
+            )
+
+            # Calculate centered position within target_rect
+            draw_rect = QtWidgets.QStyle.alignedRect(
+                QtCore.Qt.LeftToRight,
+                QtCore.Qt.AlignCenter,
+                scaled_pixmap.size(),
+                target_rect,
+            )
+
+            painter.drawPixmap(draw_rect, scaled_pixmap)
+
+        # 2. Draw Text (Centered at the bottom)
+        if opt.features & QtWidgets.QStyleOptionViewItem.HasDisplay:
+            text = opt.text
+
+            # Use full box width (minus small margins) for centering logic
+            text_rect = QtCore.QRect(
+                opt.rect.left() + 10,
+                opt.rect.bottom() - bottom_height,
+                opt.rect.width() - 20,
+                bottom_height - 4,
+            )
+
+            text_color = opt.palette.text().color()
+            if opt.state & QtWidgets.QStyle.State_Selected:
+                text_color = opt.palette.highlightedText().color()
+
+            painter.setPen(text_color)
+            painter.save()
+            font = painter.font()
+            if not is_large:
+                if font.pointSize() > 1:
+                    font.setPointSize(font.pointSize() - 1)
+                elif font.pixelSize() > 1:
+                    font.setPixelSize(font.pixelSize() - 1)
+            painter.setFont(font)
+
+            font_metrics = painter.fontMetrics()
+            elided_text = font_metrics.elidedText(
+                text, QtCore.Qt.ElideMiddle, text_rect.width()
+            )
+
+            painter.drawText(
+                text_rect,
+                QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter,
+                elided_text,
+            )
+            painter.restore()
+
+        # Custom overlays (Stars, Selection Highlight, Circles)
         list_widget = self.parent()
         if not list_widget:
             return
@@ -60,7 +154,7 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
                 hovered_item is not None and hovered_item.text() == index.data()
             )
 
-        # Handle selection highlight and circles
+        # Handle selection highlight (Custom Overlay)
         is_selected = option.state & QtWidgets.QStyle.State_Selected
 
         # Draw highlight overlay for selected items (in addition to stylesheet border)
@@ -80,14 +174,27 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
             rating = 0
 
         if rating > 0 or is_hovered:
-            y = option.rect.y() + 5
+            # Position stars vertically on the right side
+            star_height = self.star_empty.height()
+            total_stars_height = 5 * star_height + 4 * 2  # 5 stars + 4 spacers
+
+            stars_y_start = (
+                opt.rect.top()
+                + (opt.rect.height() - bottom_height - total_stars_height) // 2
+            )
+            stars_x = (
+                opt.rect.right()
+                - star_strip_width
+                + (star_strip_width - self.star_empty.width()) // 2
+            )
+
             for i in range(5):
                 star_icon = self.star_empty
                 if i < rating:
                     star_icon = self.star_filled
 
-                x = option.rect.x() + 5 + (i * (self.star_empty.width() + 2))
-                painter.drawPixmap(x, y, star_icon)
+                y = int(stars_y_start + (i * (star_height + 2)))
+                painter.drawPixmap(int(stars_x), y, star_icon)
 
         # Draw selection circle if enabled
         if self._show_selection_circles:
@@ -170,20 +277,33 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
 
             if is_hovered:
                 # Check if click is on the stars
-                y = option.rect.y() + 5
-                x_start = option.rect.x() + 5
+                is_large = option.rect.height() > 150
+                star_strip_width = 30 if is_large else 24
+                bottom_height = 28 if is_large else 22
+
                 star_width = self.star_empty.width()
                 star_height = self.star_empty.height()
+                total_stars_height = 5 * star_height + 4 * 2
+
+                stars_x = (
+                    option.rect.right()
+                    - star_strip_width
+                    + (star_strip_width - star_width) // 2
+                )
+                stars_y_start = (
+                    option.rect.top()
+                    + (option.rect.height() - bottom_height - total_stars_height) // 2
+                )
 
                 if (
-                    event.position().y() >= y
-                    and event.position().y() <= y + star_height
+                    event.position().x() >= stars_x
+                    and event.position().x() <= stars_x + star_width
                 ):
                     for i in range(5):
-                        x = x_start + (i * (star_width + 2))
+                        y = stars_y_start + (i * (star_height + 2))
                         if (
-                            event.position().x() >= x
-                            and event.position().x() <= x + star_width
+                            event.position().y() >= y
+                            and event.position().y() <= y + star_height
                         ):
                             new_rating = i + 1
                             current_rating = index.data(QtCore.Qt.UserRole + 1)
