@@ -9,7 +9,7 @@ from functools import lru_cache
 
 import numpy as np
 import rawpy
-from PIL import Image, ImageFilter
+from PIL import Image, ImageFilter, ImageOps
 
 try:
     import cv2
@@ -389,6 +389,7 @@ def open_raw(path, half_size=False, output_bps=8):
 
     if ext in STD_EXTS:
         with Image.open(path) as img:
+            img = ImageOps.exif_transpose(img)
             if img.mode != "RGB":
                 img = img.convert("RGB")
             if half_size:
@@ -403,7 +404,6 @@ def open_raw(path, half_size=False, output_bps=8):
             half_size=half_size,
             no_auto_bright=True,  # Disable auto-brighten to allow manual recovery
             bright=1.0,
-            user_flip=0,
             output_bps=output_bps,
         )
 
@@ -425,6 +425,7 @@ def extract_thumbnail(path):
     if ext in STD_EXTS:
         try:
             img = Image.open(path)
+            img = ImageOps.exif_transpose(img)
             if img.mode != "RGB":
                 img = img.convert("RGB")
             return img
@@ -444,7 +445,8 @@ def extract_thumbnail(path):
             if thumb and thumb.format == rawpy.ThumbFormat.JPEG:
                 from io import BytesIO
 
-                return Image.open(BytesIO(thumb.data))
+                img = Image.open(BytesIO(thumb.data))
+                return ImageOps.exif_transpose(img)
 
             # Fallback: fast postprocess (half_size=True is very fast)
             rgb = raw.postprocess(
