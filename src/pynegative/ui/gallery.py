@@ -20,7 +20,14 @@ class GalleryWidget(QtWidgets.QWidget):
         self.settings = QtCore.QSettings("pyNegative", "Gallery")
         self._sort_by = self.settings.value("sort_by", "Filename")
         self._sort_ascending = self.settings.value("sort_ascending", True, type=bool)
+        self._grid_size = int(self.settings.value("grid_size", 200))
         self._is_large_preview = False
+        # Grid size timer for throttling
+        self._grid_resize_timer = QtCore.QTimer()
+        self._grid_resize_timer.setSingleShot(True)
+        self._grid_resize_timer.setInterval(16)
+        self._grid_resize_timer.timeout.connect(self._do_deferred_grid_resize)
+
         self._init_ui()
 
     def _init_ui(self):
@@ -70,6 +77,21 @@ class GalleryWidget(QtWidgets.QWidget):
 
         top_bar.addStretch()  # Push controls to left
 
+        # Grid View
+        self.list_widget = GalleryListWidget()
+        self.list_widget.setObjectName("GalleryGrid")
+        self.list_widget.setViewMode(QtWidgets.QListView.IconMode)
+        self.list_widget.setIconSize(QtCore.QSize(self._grid_size - 20, self._grid_size - 50))
+        self.list_widget.setGridSize(QtCore.QSize(self._grid_size, self._grid_size))
+        self.list_widget.setResizeMode(QtWidgets.QListView.Adjust)
+        self.list_widget.setSpacing(4)
+        self.list_widget.setUniformItemSizes(True)
+        self.list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
+        delegate = GalleryItemDelegate(self.list_widget)
+        delegate.set_item_size(self._grid_size)
+        self.list_widget.setItemDelegate(delegate)
+        self.list_widget.model().dataChanged.connect(self._on_rating_changed)
+
         # Set initial values from settings
         index = self.sort_combo.findText(self._sort_by)
         if index >= 0:
@@ -77,19 +99,21 @@ class GalleryWidget(QtWidgets.QWidget):
         self.sort_order_btn.setChecked(not self._sort_ascending)
         self._update_sort_order_button()
 
-        # Grid View
-        self.list_widget = GalleryListWidget()
-        self.list_widget.setObjectName("GalleryGrid")
-        self.list_widget.setViewMode(QtWidgets.QListView.IconMode)
-        self.list_widget.setIconSize(QtCore.QSize(180, 180))
-        self.list_widget.setGridSize(QtCore.QSize(220, 215))
-        self.list_widget.setResizeMode(QtWidgets.QListView.Fixed)
-        self.list_widget.setSpacing(10)
-        self.list_widget.setUniformItemSizes(True)
-        self.list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
-        self.list_widget.setItemDelegate(GalleryItemDelegate(self.list_widget))
-        self.list_widget.model().dataChanged.connect(self._on_rating_changed)
         grid_layout.addWidget(self.list_widget)
+
+        # Bottom Bar for Grid Size Slider
+        bottom_bar = QtWidgets.QHBoxLayout()
+        bottom_bar.setContentsMargins(10, 5, 10, 5)
+        grid_layout.addLayout(bottom_bar)
+
+        bottom_bar.addStretch()
+        bottom_bar.addWidget(QtWidgets.QLabel("Grid Size:"))
+        self.size_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.size_slider.setRange(100, 400)
+        self.size_slider.setValue(self._grid_size)
+        self.size_slider.setFixedWidth(150)
+        self.size_slider.valueChanged.connect(self._on_grid_size_changed)
+        bottom_bar.addWidget(self.size_slider)
 
         self.stack.addWidget(self.grid_container)
 
@@ -114,7 +138,7 @@ class GalleryWidget(QtWidgets.QWidget):
         if hasattr(self, "btn_toggle_view"):
             self.btn_toggle_view.move(
                 self.width() - self.btn_toggle_view.width() - 20,
-                self.height() - self.btn_toggle_view.height() - 20,
+                self.height() - self.btn_toggle_view.height() - 40,
             )
             self.btn_toggle_view.raise_()
 
@@ -246,19 +270,16 @@ class GalleryWidget(QtWidgets.QWidget):
             item.setData(QtCore.Qt.UserRole, str(path))
             item.setData(QtCore.Qt.UserRole + 1, rating)
 
-            # Cache date taken
-            date_taken = pynegative.get_exif_capture_date(str(path))
-            item.setData(QtCore.Qt.UserRole + 2, date_taken)
-
-            # Cache last edited time
-            last_edited = pynegative.get_sidecar_mtime(str(path))
-            item.setData(QtCore.Qt.UserRole + 3, last_edited)
+            # Fast metadata fallback (will be refined by async loader)
+            mtime = path.stat().st_mtime
+            item.setData(QtCore.Qt.UserRole + 2, pynegative.format_date(mtime))
+            item.setData(QtCore.Qt.UserRole + 3, mtime)
 
             item.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon))
             self.list_widget.addItem(item)
 
             # Start async load
-            loader = ThumbnailLoader(str(path))
+            loader = ThumbnailLoader(str(path), size=400)
             loader.signals.finished.connect(self._on_thumbnail_loaded)
             self.thread_pool.start(loader)
 
@@ -300,13 +321,17 @@ class GalleryWidget(QtWidgets.QWidget):
     def apply_filter_from_main(self):
         self._apply_filter()
 
-    def _on_thumbnail_loaded(self, path, pixmap):
+    def _on_thumbnail_loaded(self, path, pixmap, metadata):
         # find the item with this path
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
             if item.data(QtCore.Qt.UserRole) == path:
                 if pixmap:
                     item.setIcon(QtGui.QIcon(pixmap))
+
+                # Update with real EXIF date if available
+                if "date" in metadata:
+                    item.setData(QtCore.Qt.UserRole + 2, metadata["date"])
                 break
 
     def _on_item_double_clicked(self, item):
@@ -393,6 +418,31 @@ class GalleryWidget(QtWidgets.QWidget):
         else:
             self.sort_order_btn.setText("↓")
             self.sort_order_btn.setToolTip("Sort Order: Descending")
+
+    def _on_grid_size_changed(self, value):
+        """Handle grid size change from slider."""
+        self._grid_size = value
+        self.settings.setValue("grid_size", value)
+
+        # Throttled update
+        if not self._grid_resize_timer.isActive():
+            self._grid_resize_timer.start()
+
+    def _do_deferred_grid_resize(self):
+        """Actually perform the heavy grid resize."""
+        value = self._grid_size
+
+        # Update list widget
+        self.list_widget.setGridSize(QtCore.QSize(value, value))
+        self.list_widget.setIconSize(QtCore.QSize(value - 20, value - 50))
+
+        # Notify delegate
+        delegate = self.list_widget.itemDelegate()
+        if hasattr(delegate, "set_item_size"):
+            delegate.set_item_size(value)
+
+        # Trigger layout update
+        self.list_widget.doItemsLayout()
 
     def _apply_sort(self):
         """Sort the current gallery items based on selected criteria."""
