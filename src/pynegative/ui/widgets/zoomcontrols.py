@@ -9,16 +9,17 @@ class ZoomControls(QtWidgets.QFrame):
         super().__init__(parent)
         self.setObjectName("ZoomControls")
         self.layout = QtWidgets.QHBoxLayout(self)
-        self.layout.setContentsMargins(6, 0, 6, 0)
-        self.layout.setSpacing(8)
-        self.setFixedHeight(28)
+        self.layout.setContentsMargins(4, 0, 4, 0)
+        self.layout.setSpacing(4)
+        self.setFixedHeight(26)
+        self.setFixedWidth(180)  # Ensure it doesn't stretch
 
         # Slider (1 to 400)
         self.slider = QtWidgets.QSlider(Qt.Horizontal)
         self.slider.setRange(1, 400)
         self.slider.setValue(100)
-        self.slider.setFixedWidth(120)
-        self.slider.setFixedHeight(22)
+        self.slider.setFixedWidth(100)
+        self.slider.setFixedHeight(20)
         self.slider.valueChanged.connect(self._on_slider_changed)
         self.layout.addWidget(self.slider)
 
@@ -29,8 +30,8 @@ class ZoomControls(QtWidgets.QFrame):
         self.spin.setSuffix("%")
         self.spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.spin.setAlignment(Qt.AlignCenter)
-        self.spin.setFixedWidth(55)
-        self.spin.setFixedHeight(22)
+        self.spin.setFixedWidth(50)
+        self.spin.setFixedHeight(20)
         self.spin.valueChanged.connect(self._on_spin_changed)
         self.layout.addWidget(self.spin)
 
