@@ -11,14 +11,27 @@ Usage:
     uv run python scripts/benchmark_pipeline.py [options]
 
 Options:
-    --image PATH          Use specific test image instead of synthetic
-    --raw PATH            Use RAW photo file (CR2, ARW, NEF, etc.)
+    --image PATH          Use test image (JPG, PNG, or auto-detected RAW)
+    --raw PATH            Use RAW photo file (CR2, CR3, ARW, NEF, etc.) at multiple scales
     --resolutions SIZES   Comma-separated list of resolutions (default: 1024,2048,4096)
     --scales SCALES       Comma-separated list of scales for RAW: 0.25,0.5,1.0 (default: all)
     --iterations N        Number of timing iterations (default: 10)
     --warmup N            Number of warmup iterations (default: 3)
     --output PATH         Output JSON file for results
     --markdown PATH       Output Markdown report file
+
+Examples:
+    # Benchmark with synthetic image
+    uv run python scripts/benchmark_pipeline.py
+
+    # Benchmark with a JPG/PNG
+    uv run python scripts/benchmark_pipeline.py --image photo.jpg
+
+    # Benchmark with a RAW file (auto-detected)
+    uv run python scripts/benchmark_pipeline.py --image photo.CR3
+
+    # Benchmark RAW at multiple scales
+    uv run python scripts/benchmark_pipeline.py --raw photo.CR3 --scales 0.25,0.5,1.0
 """
 
 import argparse
@@ -428,7 +441,9 @@ def main():
         description="Benchmark image processing pipeline operations"
     )
     parser.add_argument(
-        "--image", type=str, help="Path to test image (default: generate synthetic)"
+        "--image",
+        type=str,
+        help="Path to test image (JPG/PNG/RAW auto-detected, default: generate synthetic)",
     )
     parser.add_argument(
         "--raw", type=str, help="Path to RAW photo file (CR2, ARW, NEF, etc.)"
@@ -500,11 +515,29 @@ def main():
 
         # Load or generate test image
         if args.image:
-            print(f"Loading test image: {args.image}")
-            from PIL import Image
+            # Check if it's a RAW file
+            raw_extensions = {
+                ".cr2",
+                ".cr3",
+                ".arw",
+                ".nef",
+                ".nrw",
+                ".raf",
+                ".orf",
+                ".rw2",
+                ".pef",
+                ".dng",
+            }
+            if Path(args.image).suffix.lower() in raw_extensions:
+                print(f"Detected RAW file, using RAW loader: {args.image}")
+                raw_img, _ = load_raw_image(args.image)
+                test_image = raw_img
+            else:
+                print(f"Loading test image: {args.image}")
+                from PIL import Image
 
-            img = Image.open(args.image).convert("RGB")
-            test_image = np.array(img).astype(np.float32) / 255.0
+                img = Image.open(args.image).convert("RGB")
+                test_image = np.array(img).astype(np.float32) / 255.0
         else:
             print("Generating synthetic test image (4096x2730)")
             test_image = generate_test_image(4096, 2730)
