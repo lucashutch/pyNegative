@@ -302,9 +302,10 @@ QFrame#CanvasFrame {
 QListWidget#Carousel {
     background-color: #242424;
     border: none;
-    border-top: 2px solid #303030;
+    border-top: 1px solid #303030;
     outline: none;
     padding: 8px;
+    padding-bottom: 20px; /* Extra padding for always-on scrollbar */
     selection-background-color: transparent;
 }
 
@@ -524,9 +525,10 @@ QSplitter::handle:horizontal {
 }
 
 QSplitter::handle:vertical {
-    height: 2px;
+    height: 4px;
+    background-color: #303030;
 }
 
-QSplitter::handle:hover {
+QSplitter::handle:vertical:hover {
     background-color: #6366f1;
 }
