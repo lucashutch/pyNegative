@@ -55,10 +55,16 @@ class EditorWidget(QtWidgets.QWidget):
         self.current_folder = None
         self.raw_path = None
 
-        # Auto-save timer
+        # Auto-save timer for metadata
         self.save_timer = QtCore.QTimer()
         self.save_timer.setSingleShot(True)
         self.save_timer.timeout.connect(self._auto_save_sidecar)
+
+        # Debounce timer for UI settings (grid/carousel size)
+        self._settings_save_timer = QtCore.QTimer()
+        self._settings_save_timer.setSingleShot(True)
+        self._settings_save_timer.setInterval(500) # Save 500ms after last move
+        self._settings_save_timer.timeout.connect(self._save_ui_settings)
 
         # Initialize components
         self._init_components()
@@ -119,16 +125,39 @@ class EditorWidget(QtWidgets.QWidget):
         # Set initial sizes for the splitter: sidebar at 360px, canvas takes rest
         self.splitter.setSizes([360, 1000])
 
-        # View replaced with ZoomableGraphicsView
-        self.view = ZoomableGraphicsView()
-
         # Layout for canvas + zoom controls + carousel
-        self.canvas_container = QtWidgets.QGridLayout(self.canvas_frame)
+        self.canvas_container = QtWidgets.QVBoxLayout(self.canvas_frame)
         self.canvas_container.setContentsMargins(0, 0, 0, 0)
-        self.canvas_container.addWidget(self.view, 0, 0)
+        self.canvas_container.setSpacing(0)
 
-        # Zoom Controls (Bottom Right overlay)
+        # Vertical splitter for canvas and carousel
+        self.canvas_splitter = QtWidgets.QSplitter(Qt.Vertical)
+        self.canvas_container.addWidget(self.canvas_splitter)
+
+        # 1. View replaced with ZoomableGraphicsView
+        self.view = ZoomableGraphicsView()
+        self.canvas_splitter.addWidget(self.view)
+
+        # 2. Add carousel from carousel manager
+        self.carousel_widget = self.carousel_manager.get_widget()
+        self.canvas_splitter.addWidget(self.carousel_widget)
+        self.carousel_widget.installEventFilter(self)
+
+        # Setup splitter properties
+        self.canvas_splitter.setStretchFactor(0, 5)  # View takes more space
+        self.canvas_splitter.setStretchFactor(1, 0)  # Carousel doesn't stretch more than needed
+        self.canvas_splitter.setHandleWidth(4) # Match QSS
+
+        # Enforce height constraints via widget limits
+        self.carousel_widget.setMinimumHeight(100)
+        self.carousel_widget.setMaximumHeight(400)
+        self.canvas_splitter.setCollapsible(1, False)
+
+        self.canvas_splitter.splitterMoved.connect(self._on_carousel_splitter_moved)
+
+        # Zoom Controls (Bottom Right overlay - will be manual positioned since QSplitter doesn't support overlays)
         self.zoom_ctrl = ZoomControls()
+        self.zoom_ctrl.setParent(self.canvas_frame) # Floating on top of splitter
         self.zoom_ctrl.zoomChanged.connect(lambda z: self.view.set_zoom(z, manual=True))
         self.view.zoomChanged.connect(self.zoom_ctrl.update_zoom)
 
@@ -143,16 +172,6 @@ class EditorWidget(QtWidgets.QWidget):
         self.view.zoomChanged.connect(self._request_update_from_view)
         self.view.doubleClicked.connect(self.imageDoubleClicked.emit)
 
-        self.canvas_container.addWidget(
-            self.zoom_ctrl, 0, 0, Qt.AlignBottom | Qt.AlignRight
-        )
-        # self.zoom_ctrl.setContentsMargins(0, 0, 20, 20)  # Removed: this adds INTERNAL padding
-
-        # Add carousel from carousel manager
-        self.carousel_widget = self.carousel_manager.get_widget()
-        self.canvas_container.addWidget(self.carousel_widget, 1, 0)
-        self.carousel_widget.installEventFilter(self)
-
         # Toast widget for notifications
         self.toast = ToastWidget(self.canvas_frame)
 
@@ -161,13 +180,9 @@ class EditorWidget(QtWidgets.QWidget):
         self.perf_label.setStyleSheet(
             "background-color: rgba(0, 0, 0, 128); color: white; padding: 4px; border-radius: 4px;"
         )
-        self.canvas_container.addWidget(
-            self.perf_label, 0, 0, Qt.AlignBottom | Qt.AlignLeft
-        )
         self.perf_label.setContentsMargins(10, 0, 0, 10)
         self.perf_label.hide()
 
-        # Preview Rating Widget (Bottom Left overlay)
         self.preview_rating_widget = PreviewStarRatingWidget(self.canvas_frame)
         self.preview_rating_widget.setObjectName("PreviewRatingWidget")
         self.preview_rating_widget.setStyleSheet("""
@@ -177,16 +192,11 @@ class EditorWidget(QtWidgets.QWidget):
                 padding: 8px;
             }
         """)
-        self.canvas_container.addWidget(
-            self.preview_rating_widget, 0, 0, Qt.AlignBottom | Qt.AlignLeft
-        )
-        self.preview_rating_widget.setContentsMargins(20, 0, 0, 20)
         self.preview_rating_widget.hide()
 
         # Comparison Drawing Layer
         self.comparison_overlay = ComparisonOverlay(self.canvas_frame)
         self.comparison_overlay.setView(self.view)
-        self.canvas_container.addWidget(self.comparison_overlay, 0, 0)
         self.comparison_overlay.raise_()
 
         # Comparison Toggle Button
@@ -229,6 +239,36 @@ class EditorWidget(QtWidgets.QWidget):
 
         # Initial positioning
         QtCore.QTimer.singleShot(100, self._reposition_floating_ui)
+        QtCore.QTimer.singleShot(150, self._load_carousel_height)
+
+    def _load_carousel_height(self):
+        """Load carousel height from settings."""
+        settings = QtCore.QSettings("pyNegative", "Editor")
+        height = int(settings.value("carousel_height", 210))
+        self.carousel_manager.set_carousel_height(height)
+
+        # Adjust splitter sizes
+        total_high = self.canvas_frame.height()
+        if total_high > 0:
+            self.canvas_splitter.setSizes([total_high - height, height])
+
+    def _on_carousel_splitter_moved(self, pos, index):
+        """Handle carousel resizing via splitter."""
+        if index == 1: # Handle between view and carousel
+            # Update carousel contents (throttled inside manager)
+            self.carousel_manager.set_carousel_height(self.carousel_widget.height())
+
+            # Update floating UI (real-time)
+            self._reposition_floating_ui()
+
+            # Debounce settings save
+            self._settings_save_timer.start()
+
+    def _save_ui_settings(self):
+        """Save UI state like carousel height."""
+        height = self.carousel_widget.height()
+        settings = QtCore.QSettings("pyNegative", "Editor")
+        settings.setValue("carousel_height", height)
 
     def _setup_connections(self):
         """Setup signal/slot connections between components."""
@@ -339,29 +379,47 @@ class EditorWidget(QtWidgets.QWidget):
             return
 
         cw, ch = self.canvas_frame.width(), self.canvas_frame.height()
+        vx, vy = self.view.x(), self.view.y()
+        vw, vh = self.view.width(), self.view.height()
 
-        # 1. Force layout update to get accurate geometries
-        self.canvas_container.activate()
-        z_geom = self.zoom_ctrl.geometry()
+        # 1. Position zoom controls at bottom right of the VIEW specifically
+        if hasattr(self, "zoom_ctrl"):
+            zx = vx + vw - self.zoom_ctrl.width() - 20
+            zy = vy + vh - self.zoom_ctrl.height() - 20
+            self.zoom_ctrl.move(zx, zy)
+            self.zoom_ctrl.show()
+            self.zoom_ctrl.raise_()
 
-        # 2. Position Comparison Button exactly 10px above zoom slider
-        # We align its right edge with the zoom slider's right edge
-        bx = z_geom.right() - self.comparison_btn.width()
-        by = z_geom.top() - self.comparison_btn.height() - 10
+        # 2. Position preview rating at bottom left of the VIEW specifically
+        if hasattr(self, "preview_rating_widget"):
+            prx = vx + 20
+            pry = vy + vh - self.preview_rating_widget.height() - 20
+            self.preview_rating_widget.move(prx, pry)
 
-        # If geometries are invalid (0,0), use fallback positioning
-        if z_geom.width() <= 0:
-            bx = cw - self.comparison_btn.width() - 20
-            by = (
-                ch - self.comparison_btn.height() - 70
-            )  # Roughly above where zoom slider will be
+        # 3. Position performance label above the rating widget
+        if hasattr(self, "perf_label"):
+            px = vx + 20
+            py = vy + vh - self.preview_rating_widget.height() - self.perf_label.height() - 30
+            self.perf_label.move(px, py)
 
-        self.comparison_btn.move(bx, by)
-        self.comparison_btn.show()
-        self.comparison_btn.raise_()
+        # 4. Position Comparison Button exactly 10px above zoom slider
+        if hasattr(self, "comparison_btn") and hasattr(self, "zoom_ctrl"):
+            bx = vx + vw - self.comparison_btn.width() - 20
+            by = vy + vh - self.zoom_ctrl.height() - self.comparison_btn.height() - 30
+            self.comparison_btn.move(bx, by)
+            self.comparison_btn.show()
+            self.comparison_btn.raise_()
 
-        # 3. Position Comparison Handle
+        # 5. Position Comparison Handle and Overlay
+        if hasattr(self, "comparison_overlay"):
+            self.comparison_overlay.setGeometry(self.view.geometry())
+            self.comparison_overlay.raise_()
+
         self._update_comparison_handle_position()
+
+        # 6. Center Toast Widget
+        if hasattr(self, "toast"):
+            self.toast.move((cw - self.toast.width()) // 2, (vh - self.toast.height()) // 2 + vy)
 
     def _update_comparison_handle_position(self):
         if hasattr(self, "comparison_handle") and hasattr(self, "comparison_overlay"):
