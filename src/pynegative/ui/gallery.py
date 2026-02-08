@@ -81,7 +81,9 @@ class GalleryWidget(QtWidgets.QWidget):
         self.list_widget = GalleryListWidget()
         self.list_widget.setObjectName("GalleryGrid")
         self.list_widget.setViewMode(QtWidgets.QListView.IconMode)
-        self.list_widget.setIconSize(QtCore.QSize(self._grid_size - 20, self._grid_size - 50))
+        self.list_widget.setIconSize(
+            QtCore.QSize(self._grid_size - 20, self._grid_size - 50)
+        )
         self.list_widget.setGridSize(QtCore.QSize(self._grid_size, self._grid_size))
         self.list_widget.setResizeMode(QtWidgets.QListView.Adjust)
         self.list_widget.setSpacing(4)

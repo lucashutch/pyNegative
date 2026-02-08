@@ -210,15 +210,22 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
 
         if rating > 0 or is_hovered:
             total_stars_height = 5 * self.STAR_SIZE + 4 * 4  # 5 stars + 4 spacers
-            stars_y_start = opt.rect.top() + (opt.rect.height() - self.BOTTOM_HEIGHT - total_stars_height) // 2
-            stars_x = opt.rect.right() - self.STAR_STRIP_WIDTH + (self.STAR_STRIP_WIDTH - self.STAR_SIZE) // 2
+            stars_y_start = (
+                opt.rect.top()
+                + (opt.rect.height() - self.BOTTOM_HEIGHT - total_stars_height) // 2
+            )
+            stars_x = (
+                opt.rect.right()
+                - self.STAR_STRIP_WIDTH
+                + (self.STAR_STRIP_WIDTH - self.STAR_SIZE) // 2
+            )
 
             for i in range(5):
                 star_icon = self.star_empty
                 if i < rating:
                     star_icon = self.star_filled
                 elif not is_hovered and i >= rating:
-                    continue # Don't draw empty stars if not hovered
+                    continue  # Don't draw empty stars if not hovered
 
                 y = int(stars_y_start + (i * (self.STAR_SIZE + 4)))
                 painter.drawPixmap(int(stars_x), y, star_icon)
@@ -250,8 +257,18 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
                 check_end_x = circle_x + self.CIRCLE_SIZE - check_padding + 1
                 check_end_y = circle_y + check_padding + 2
 
-                painter.drawLine(int(check_start_x), int(check_start_y), int(check_mid_x), int(check_mid_y))
-                painter.drawLine(int(check_mid_x), int(check_mid_y), int(check_end_x), int(check_end_y))
+                painter.drawLine(
+                    int(check_start_x),
+                    int(check_start_y),
+                    int(check_mid_x),
+                    int(check_mid_y),
+                )
+                painter.drawLine(
+                    int(check_mid_x),
+                    int(check_mid_y),
+                    int(check_end_x),
+                    int(check_end_y),
+                )
             else:
                 pen = QtGui.QPen(self.EMPTY_CIRCLE_COLOR, 2)
                 painter.setPen(pen)
@@ -267,7 +284,9 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
 
         circle_x = item_rect.right() - self.CIRCLE_SIZE - self.CIRCLE_MARGIN
         circle_y = item_rect.top() + self.CIRCLE_MARGIN
-        circle_rect = QtCore.QRectF(circle_x, circle_y, self.CIRCLE_SIZE, self.CIRCLE_SIZE)
+        circle_rect = QtCore.QRectF(
+            circle_x, circle_y, self.CIRCLE_SIZE, self.CIRCLE_SIZE
+        )
         return circle_rect.contains(pos)
 
     def editorEvent(self, event, model, option, index):
@@ -291,7 +310,11 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
                 # Check if click is on the vertical star strip
                 total_stars_height = 5 * self.STAR_SIZE + 4 * 4
                 stars_x_start = option.rect.right() - self.STAR_STRIP_WIDTH
-                stars_y_start = option.rect.top() + (option.rect.height() - self.BOTTOM_HEIGHT - total_stars_height) // 2
+                stars_y_start = (
+                    option.rect.top()
+                    + (option.rect.height() - self.BOTTOM_HEIGHT - total_stars_height)
+                    // 2
+                )
 
                 if event.position().x() >= stars_x_start:
                     # Determine which star was clicked

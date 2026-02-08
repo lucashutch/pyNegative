@@ -137,7 +137,9 @@ class CarouselManager(QtCore.QObject):
             if item.data(QtCore.Qt.UserRole) == path_str:
                 self.carousel.setCurrentItem(item)
                 # Ensure it's visible
-                self.carousel.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtCenter)
+                self.carousel.scrollToItem(
+                    item, QtWidgets.QAbstractItemView.PositionAtCenter
+                )
                 break
 
     def select_previous(self):
