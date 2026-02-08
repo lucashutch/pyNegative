@@ -29,9 +29,12 @@ class CarouselManager(QtCore.QObject):
         self.carousel.setWrapping(False)
         self.carousel.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.carousel.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.carousel.setFixedHeight(145)
-        self.carousel.setIconSize(QtCore.QSize(100, 100))
-        self.carousel.setSpacing(5)
+        self.carousel.setFixedHeight(165)
+        self.carousel.setIconSize(QtCore.QSize(120, 120))
+        self.carousel.setGridSize(QtCore.QSize(140, 140))
+        self.carousel.setResizeMode(QtWidgets.QListView.Adjust)
+        self.carousel.setUniformItemSizes(True)
+        self.carousel.setSpacing(8)
 
         # Set up carousel delegate for selection circles
         self.carousel_delegate = CarouselDelegate(self.carousel)
@@ -73,7 +76,7 @@ class CarouselManager(QtCore.QObject):
             self.carousel.addItem(item)
 
             # Async load thumbnail
-            loader = ThumbnailLoader(path, size=100)
+            loader = ThumbnailLoader(path, size=120)
             loader.signals.finished.connect(self._on_thumbnail_loaded)
             self.thread_pool.start(loader)
 
@@ -93,7 +96,7 @@ class CarouselManager(QtCore.QObject):
                 self.carousel.setCurrentItem(item)
 
             # Async load thumbnail
-            loader = ThumbnailLoader(f, size=100)
+            loader = ThumbnailLoader(f, size=120)
             loader.signals.finished.connect(self._on_thumbnail_loaded)
             self.thread_pool.start(loader)
 
