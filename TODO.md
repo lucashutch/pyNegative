@@ -14,15 +14,13 @@ This document tracks planned features, project goals, and areas for technical im
 
 - **Persistent Thumbnail Cache**: Store thumbnails on disk to speed up gallery loading.
 - **General Code Cleanup**: Analyse the codebase for redundant, duplicate or unused code.
+- **compile numba kernels on startup** - this should speed up the initialisation of the application. the kernels are cached but only compile jit whent hey are needed. should recompute them on startup if they are needed.
 
 ## Bugs
 
-- **ad maximum CI test time of 2 mins** - the CI tests are occasionanly hanging. add a timeout, but also investigate why occasioanlly the CI (especailly for py3.14 hangs or takes a super long time at the installing dependancies uv sync step
+- **ad maximum CI test time of 2 mins** - the CI tests are occasionanly hanging. add a timeout, but also investigate why occasioanlly the CI (especailly for py3.14 hangs or takes a super long time at the installing dependancies uv sync step)
 -
 ## Testing Improvement Areas
 
-Based on recent project growth, the following areas would benefit from expanded unit testing:
-
-1. **Image Adjustment Logic (`src/pynegative/core.py`)**: Test core functions like `apply_tone_map` and `sharpen_image` with known inputs to assert that the output image data is mathematically correct. (Ease: Medium)
-2. **Gallery Filtering Logic (`src/pynegative/ui/gallery.py`)**: Mock a file system with sidecars to test and assert that the gallery correctly filters images based on different rating criteria. (Ease: Hard)
-3. **Editor Rendering and Throttling (`src/pynegative/ui/editor.py`)**: Test the asynchronous `QTimer`-based rendering loop to ensure updates are correctly throttled and processed, preventing UI lag. (Ease: Hardest)
+- **all alreas nee more tests!**
+- **generate coverage report** - generate a coverage report to see where we need to add more tests. and add coverage badge to the radme if possible

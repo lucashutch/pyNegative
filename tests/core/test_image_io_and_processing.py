@@ -10,28 +10,31 @@ from unittest.mock import patch
 import pynegative
 
 
+import numpy as np
+
+
 class TestSharpening:
     """Tests for image sharpening"""
 
     def test_basic_sharpening(self):
         """Test basic sharpening with typical parameters"""
-        # Create a simple PIL image
-        pil_img = Image.new("RGB", (10, 10), color=(128, 128, 128))
+        # Create a simple NumPy image (float32)
+        img = np.zeros((10, 10, 3), dtype=np.float32) + 0.5
 
-        result = pynegative.sharpen_image(pil_img, radius=2.0, percent=100)
+        result = pynegative.sharpen_image(img, radius=2.0, percent=100)
 
-        # Should return a PIL Image
-        assert isinstance(result, Image.Image)
-        assert result.size == pil_img.size
-        assert result.mode == pil_img.mode
+        # Should return a NumPy array
+        assert isinstance(result, np.ndarray)
+        assert result.shape == img.shape
+        assert result.dtype == np.float32
 
     def test_sharpening_with_floats(self):
         """Regression test for TypeError when floats are passed to sharpen_image"""
-        pil_img = Image.new("RGB", (10, 10), color=(128, 128, 128))
+        img = np.zeros((10, 10, 3), dtype=np.float32) + 0.5
 
         # UI passes these as floats from division
         try:
-            pynegative.sharpen_image(pil_img, radius=2.5, percent=150.0)
+            pynegative.sharpen_image(img, radius=2.5, percent=150.0)
         except TypeError as e:
             pytest.fail(f"sharpen_image failed with floats: {e}")
 
