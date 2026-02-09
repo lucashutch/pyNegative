@@ -349,15 +349,41 @@ class ImageProcessorWorker(QtCore.QRunnable):
             src_x2, src_y2 = min(full_w, src_x + src_w), min(full_h, src_y + src_h)
 
             if (req_w := src_x2 - src_x) > 10 and (req_h := src_y2 - src_y) > 10:
+                # Coverage check: If the ROI covers most of the image, the background
+                # preview (2048px) is already good enough. Computing a second layer
+                # at a similar resolution is wasteful.
+                roi_area = req_w * req_h
+                full_area = full_w * full_h
+                if roi_area / full_area > 0.85:
+                    return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
+
                 # ROI Resolution Selection
+                # We only want to use an ROI tier if it offers MORE detail than
+                # the background preview (2048px).
+                preview_w_res = self.base_img_preview.shape[1]
+
                 res_key_roi = "full"
                 base_roi_img = self.base_img_full
-                if zoom_scale < 0.5 and self.base_img_quarter is not None:
-                    res_key_roi = "quarter"
-                    base_roi_img = self.base_img_quarter
-                elif zoom_scale < 1.5 and self.base_img_half is not None:
-                    res_key_roi = "half"
-                    base_roi_img = self.base_img_half
+
+                # Check if half-res is suitable and better than preview
+                if self.base_img_half is not None:
+                    h_w = self.base_img_half.shape[1]
+                    if h_w > preview_w_res and zoom_scale < 1.5:
+                        res_key_roi = "half"
+                        base_roi_img = self.base_img_half
+
+                # Check if quarter-res is suitable and better than preview
+                # (Only likely for > 32MP images)
+                if self.base_img_quarter is not None:
+                    q_w = self.base_img_quarter.shape[1]
+                    if q_w > preview_w_res and zoom_scale < 0.5:
+                        res_key_roi = "quarter"
+                        base_roi_img = self.base_img_quarter
+
+                # Final safety: If the best tier we found isn't actually better than
+                # the preview, skip ROI entirely.
+                if base_roi_img.shape[1] <= preview_w_res:
+                    return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
 
                 # Resolution-scaled coordinates for the ROI tier
                 h_tier, w_tier = base_roi_img.shape[:2]
