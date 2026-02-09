@@ -32,6 +32,11 @@ test = [
     "pytest-qt",
 ]
 
+performance = [
+    "numba>=0.58.0",
+    "llvmlite>=0.41.0",
+]
+
 [project.gui-scripts]
 pynegative = "pynegative.ui:main"
 
