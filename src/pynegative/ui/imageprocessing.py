@@ -24,6 +24,10 @@ class PipelineCache:
         self.caches = {}
         # Effect parameters that are estimated once on the preview and synced
         self.estimated_params = {}
+        # Cached background pixmap for ROI optimization
+        self._cached_bg_pixmap = None
+        self._cached_bg_full_w = 0
+        self._cached_bg_full_h = 0
 
     def get(self, resolution, stage_id, current_params):
         """Returns the cached array if parameters match exactly."""
@@ -50,6 +54,7 @@ class PipelineCache:
         if stage_id is None:
             self.caches = {}
             self.estimated_params = {}
+            self._cached_bg_pixmap = None
         else:
             # In real-world use, we'd only invalidate from a certain stage onwards
             # but for simplicity in this prototype, we'll clear per resolution
@@ -58,6 +63,22 @@ class PipelineCache:
     def clear(self):
         self.caches = {}
         self.estimated_params = {}
+        self._cached_bg_pixmap = None
+
+    def get_cached_bg_pixmap(self):
+        """Returns cached background pixmap if it exists (no param check).
+
+        When ROI is active, we use any cached background since it's not visible.
+        """
+        if self._cached_bg_pixmap is None:
+            return None, 0, 0
+        return self._cached_bg_pixmap, self._cached_bg_full_w, self._cached_bg_full_h
+
+    def set_cached_bg_pixmap(self, pixmap, full_w, full_h):
+        """Store the cached background pixmap."""
+        self._cached_bg_pixmap = pixmap
+        self._cached_bg_full_w = full_w
+        self._cached_bg_full_h = full_h
 
 
 class ImageProcessorWorker(QtCore.QRunnable):
@@ -104,7 +125,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
         dehaze_p = {"de_haze": heavy_params["de_haze"]}
         denoise_p = {
             "de_noise": heavy_params["de_noise"],
-            "denoise_method": heavy_params["denoise_method"],
+            "denoise_method": heavy_params.get(
+                "denoise_method", "NLMeans (Numba Fast+)"
+            ),
         }
         sharpen_p = {
             "sharpen_value": heavy_params["sharpen_value"],
@@ -139,7 +162,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
             return pynegative.de_noise_image(
                 image,
                 denoise_p["de_noise"],
-                denoise_p["denoise_method"],
+                method=denoise_p["denoise_method"],
                 zoom=zoom_scale,
             )
 
@@ -209,16 +232,21 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         try:
             zoom_scale = self._view_ref.transform().m11()
-            viewport = self._view_ref.viewport()
-            vw, vh = viewport.width(), viewport.height()
         except (AttributeError, RuntimeError):
             return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0
 
-        fit_scale = min(vw / full_w, vh / full_h) if vw > 0 and vh > 0 else 1.0
+        preview_scale = 2048 / max(full_w, full_h)
         is_fitting = getattr(self._view_ref, "_is_fitting", False)
-        is_zoomed_in = not is_fitting and (
-            zoom_scale > fit_scale * 1.01 or zoom_scale > 0.99
-        )
+        rotate_val = self.settings.get("rotation", 0.0)
+        flip_h = self.settings.get("flip_h", False)
+        flip_v = self.settings.get("flip_v", False)
+        crop_val = self.settings.get(
+            "crop", None
+        )  # (left, top, right, bottom) normalized
+
+        # Only trigger ROI processing if we are actually zoomed in MORE than what the
+        # background preview (2048px) can already provide with good quality.
+        is_zoomed_in = not is_fitting and (zoom_scale > preview_scale * 1.1)
 
         # --- Part 1: Global Background ---
         # Resolution key for caching
@@ -229,18 +257,15 @@ class ImageProcessorWorker(QtCore.QRunnable):
         heavy_params = {
             "de_haze": self.settings.get("de_haze", 0),
             "de_noise": self.settings.get("de_noise", 0),
-            "denoise_method": self.settings.get("denoise_method", "High Quality"),
+            "denoise_method": self.settings.get(
+                "denoise_method", "NLMeans (Numba Fast+)"
+            ),
             "sharpen_value": self.settings.get("sharpen_value", 0),
             "sharpen_radius": self.settings.get("sharpen_radius", 0.5),
             "sharpen_percent": self.settings.get("sharpen_percent", 0.0),
         }
 
-        # Use helper to get/calculate cached heavy background
-        processed_bg = self._process_heavy_stage(
-            img_render_base, res_key, heavy_params, zoom_scale
-        )
-
-        # Stage 2: Tone Mapping (Fast)
+        # Stage 2: Tone Mapping settings (used by both background and ROI)
         tone_map_settings = {
             "temperature": self.settings.get("temperature", 0.0),
             "tint": self.settings.get("tint", 0.0),
@@ -253,78 +278,94 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "saturation": self.settings.get("saturation", 1.0),
         }
 
-        # Apply Tone Map to the result of heavy stage
-        bg_output, _ = pynegative.apply_tone_map(
-            processed_bg, **tone_map_settings, calculate_stats=False
-        )
+        # OPTIMIZATION: When zoomed in and ROI will be rendered, skip ALL background
+        # processing. The ROI overlay covers the visible area, so processing the
+        # 2048px background is wasteful. We use any cached pixmap (even if stale).
+        cached_bg, cached_w, cached_h = (None, 0, 0)
+        if self.cache:
+            cached_bg, cached_w, cached_h = self.cache.get_cached_bg_pixmap()
 
-        # Prepare image for geometry (convert to uint8 for OpenCV)
-        if isinstance(bg_output, Image.Image):
-            img_uint8 = np.array(bg_output)
+        if is_zoomed_in and cached_bg is not None:
+            # Use cached background - skip all processing (background is hidden by ROI)
+            pix_bg = cached_bg
+            new_full_w = cached_w
+            new_full_h = cached_h
         else:
-            img_uint8 = (bg_output * 255).astype(np.uint8)
-
-        rotate_val = self.settings.get("rotation", 0.0)
-        flip_h = self.settings.get("flip_h", False)
-        flip_v = self.settings.get("flip_v", False)
-        crop_val = self.settings.get(
-            "crop", None
-        )  # (left, top, right, bottom) normalized
-
-        # Geometry operations...
-        if flip_h or flip_v:
-            flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
-            img_uint8 = cv2.flip(img_uint8, flip_code)
-
-        if abs(rotate_val) > 0.01:
-            h, w = img_uint8.shape[:2]
-            center = (w / 2, h / 2)
-            img_uint8 = cv2.cvtColor(img_uint8, cv2.COLOR_RGB2RGBA)
-            M = cv2.getRotationMatrix2D(center, rotate_val, 1.0)
-            cos_val = np.abs(M[0, 0])
-            sin_val = np.abs(M[0, 1])
-            new_w = int((h * sin_val) + (w * cos_val))
-            new_h = int((h * cos_val) + (w * sin_val))
-            M[0, 2] += (new_w / 2) - center[0]
-            M[1, 2] += (new_h / 2) - center[1]
-            img_uint8 = cv2.warpAffine(
-                img_uint8,
-                M,
-                (new_w, new_h),
-                flags=cv2.INTER_NEAREST,
-                borderMode=cv2.BORDER_CONSTANT,
-                borderValue=(0, 0, 0, 0),
+            # Full background processing required
+            # Use helper to get/calculate cached heavy background
+            processed_bg = self._process_heavy_stage(
+                img_render_base, res_key, heavy_params, zoom_scale
             )
 
-        if crop_val is not None:
-            h, w = img_uint8.shape[:2]
-            c_left, c_top, c_right, c_bottom = crop_val
-            x1, y1 = int(c_left * w), int(c_top * h)
-            x2, y2 = int(c_right * w), int(c_bottom * h)
-            x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
-            if x2 > x1 and y2 > y1:
-                img_uint8 = img_uint8[y1:y2, x1:x2]
+            # Apply Tone Map to the result of heavy stage
+            bg_output, _ = pynegative.apply_tone_map(
+                processed_bg, **tone_map_settings, calculate_stats=False
+            )
 
-        pil_bg = Image.fromarray(img_uint8)
-        preview_h, preview_w = self.base_img_preview.shape[:2]
-        scale_x = full_w / preview_w
-        scale_y = full_h / preview_h
-        new_full_w = int(pil_bg.width * scale_x)
-        new_full_h = int(pil_bg.height * scale_y)
+            # Prepare image for geometry (convert to uint8 for OpenCV)
+            if isinstance(bg_output, Image.Image):
+                img_uint8 = np.array(bg_output)
+            else:
+                img_uint8 = (bg_output * 255).astype(np.uint8)
 
-        if self.calculate_histogram:
-            try:
-                hist_data = self._calculate_histograms(img_uint8)
-                self.signals.histogramUpdated.emit(hist_data, self.request_id)
-            except Exception as e:
-                print(f"Histogram calculation error: {e}")
+            # Geometry operations...
+            if flip_h or flip_v:
+                flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
+                img_uint8 = cv2.flip(img_uint8, flip_code)
 
-        pix_bg = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_bg))
+            if abs(rotate_val) > 0.01:
+                h, w = img_uint8.shape[:2]
+                center = (w / 2, h / 2)
+                img_uint8 = cv2.cvtColor(img_uint8, cv2.COLOR_RGB2RGBA)
+                M = cv2.getRotationMatrix2D(center, rotate_val, 1.0)
+                cos_val = np.abs(M[0, 0])
+                sin_val = np.abs(M[0, 1])
+                new_w = int((h * sin_val) + (w * cos_val))
+                new_h = int((h * cos_val) + (w * sin_val))
+                M[0, 2] += (new_w / 2) - center[0]
+                M[1, 2] += (new_h / 2) - center[1]
+                img_uint8 = cv2.warpAffine(
+                    img_uint8,
+                    M,
+                    (new_w, new_h),
+                    flags=cv2.INTER_NEAREST,
+                    borderMode=cv2.BORDER_CONSTANT,
+                    borderValue=(0, 0, 0, 0),
+                )
+
+            if crop_val is not None:
+                h, w = img_uint8.shape[:2]
+                c_left, c_top, c_right, c_bottom = crop_val
+                x1, y1 = int(c_left * w), int(c_top * h)
+                x2, y2 = int(c_right * w), int(c_bottom * h)
+                x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
+                if x2 > x1 and y2 > y1:
+                    img_uint8 = img_uint8[y1:y2, x1:x2]
+
+            pil_bg = Image.fromarray(img_uint8)
+            preview_h, preview_w = self.base_img_preview.shape[:2]
+            scale_x = full_w / preview_w
+            scale_y = full_h / preview_h
+            new_full_w = int(pil_bg.width * scale_x)
+            new_full_h = int(pil_bg.height * scale_y)
+
+            if self.calculate_histogram:
+                try:
+                    hist_data = self._calculate_histograms(img_uint8)
+                    self.signals.histogramUpdated.emit(hist_data, self.request_id)
+                except Exception as e:
+                    print(f"Histogram calculation error: {e}")
+
+            pix_bg = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_bg))
+
+            # Cache the background for use when ROI is active
+            if self.cache:
+                self.cache.set_cached_bg_pixmap(pix_bg, new_full_w, new_full_h)
 
         # --- Part 2: Detail ROI ---
         pix_roi, roi_x, roi_y, roi_w, roi_h = QtGui.QPixmap(), 0, 0, 0, 0
 
-        if is_zoomed_in and abs(rotate_val) < 0.1:
+        if is_zoomed_in:
             roi = self._view_ref.mapToScene(
                 self._view_ref.viewport().rect()
             ).boundingRect()
@@ -347,30 +388,94 @@ class ImageProcessorWorker(QtCore.QRunnable):
             src_x2, src_y2 = min(full_w, src_x + src_w), min(full_h, src_y + src_h)
 
             if (req_w := src_x2 - src_x) > 10 and (req_h := src_y2 - src_y) > 10:
+                # Coverage check: If the ROI covers most of the image, the background
+                # preview (2048px) is already good enough. Computing a second layer
+                # at a similar resolution is wasteful.
+                roi_area = req_w * req_h
+                full_area = full_w * full_h
+                if roi_area / full_area > 0.85:
+                    return (
+                        pix_bg,
+                        new_full_w,
+                        new_full_h,
+                        pix_roi,
+                        roi_x,
+                        roi_y,
+                        roi_w,
+                        roi_h,
+                    )
+
                 # ROI Resolution Selection
+                # We only want to use an ROI tier if it offers MORE detail than
+                # the background preview (2048px).
+                preview_w_res = self.base_img_preview.shape[1]
+
                 res_key_roi = "full"
                 base_roi_img = self.base_img_full
-                if zoom_scale < 0.5 and self.base_img_quarter is not None:
-                    res_key_roi = "quarter"
-                    base_roi_img = self.base_img_quarter
-                elif zoom_scale < 1.5 and self.base_img_half is not None:
-                    res_key_roi = "half"
-                    base_roi_img = self.base_img_half
 
-                # Use helper to get/calculate cached heavy image for this TIER
-                processed_full_tier = self._process_heavy_stage(
-                    base_roi_img, res_key_roi, heavy_params, zoom_scale
-                )
+                # Check if half-res is suitable and better than preview
+                if self.base_img_half is not None:
+                    h_w = self.base_img_half.shape[1]
+                    if h_w > preview_w_res and zoom_scale < 1.5:
+                        res_key_roi = "half"
+                        base_roi_img = self.base_img_half
 
-                # Now crop the ROI from the CACHED heavy tier
-                # Coordinates must be scaled to the tier's resolution
+                # Check if quarter-res is suitable and better than preview
+                # (Only likely for > 32MP images)
+                if self.base_img_quarter is not None:
+                    q_w = self.base_img_quarter.shape[1]
+                    if q_w > preview_w_res and zoom_scale < 0.5:
+                        res_key_roi = "quarter"
+                        base_roi_img = self.base_img_quarter
+
+                # Final safety: If the best tier we found isn't actually better than
+                # the preview, skip ROI entirely.
+                if base_roi_img.shape[1] <= preview_w_res:
+                    return (
+                        pix_bg,
+                        new_full_w,
+                        new_full_h,
+                        pix_roi,
+                        roi_x,
+                        roi_y,
+                        roi_w,
+                        roi_h,
+                    )
+
+                # Resolution-scaled coordinates for the ROI tier
                 h_tier, w_tier = base_roi_img.shape[:2]
                 s_x = int(src_x * (w_tier / full_w))
                 s_y = int(src_y * (h_tier / full_h))
                 s_x2 = int(src_x2 * (w_tier / full_w))
                 s_y2 = int(src_y2 * (h_tier / full_h))
 
-                crop_chunk = processed_full_tier[s_y:s_y2, s_x:s_x2]
+                # COMPUTE ROI CHUNK ONLY
+                # We crop the raw data first to avoid processing the whole large image.
+                # We add some padding to the crop so that local filters (like bilateral)
+                # don't have artifacts at the edges of the visible ROI.
+                pad = 16
+                p_x1 = max(0, s_x - pad)
+                p_y1 = max(0, s_y - pad)
+                p_x2 = min(w_tier, s_x2 + pad)
+                p_y2 = min(h_tier, s_y2 + pad)
+
+                raw_chunk = base_roi_img[p_y1:p_y2, p_x1:p_x2]
+
+                # We use a unique resolution key for this ROI position to enable caching
+                # of intermediate stages while panning.
+                roi_res_key = (res_key_roi, s_x, s_y, s_x2, s_y2)
+
+                processed_chunk_padded = self._process_heavy_stage(
+                    raw_chunk, roi_res_key, heavy_params, zoom_scale
+                )
+
+                # Remove the padding we added earlier
+                c_y1 = s_y - p_y1
+                c_x1 = s_x - p_x1
+                c_y2 = c_y1 + (s_y2 - s_y)
+                c_x2 = c_x1 + (s_x2 - s_x)
+
+                crop_chunk = processed_chunk_padded[c_y1:c_y2, c_x1:c_x2]
 
                 if flip_h or flip_v:
                     flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
@@ -388,10 +493,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 pix_roi = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_roi))
                 roi_x, roi_y = src_x - offset_x, src_y - offset_y
                 roi_w, roi_h = req_w, req_h
-
-        return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
-
-        return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
 
         return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
 

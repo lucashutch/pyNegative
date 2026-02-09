@@ -35,7 +35,7 @@ class EditingControls(QtWidgets.QWidget):
         self.val_sharpen_percent = 0.0
         self.val_de_noise = 0
         self.val_de_haze = 0.0
-        self.val_denoise_method = "High Quality"
+        self.val_denoise_method = "NLMeans (Numba Fast+)"
         self.val_flip_h = False
         self.val_flip_v = False
         self.rotation = 0.0
@@ -324,28 +324,6 @@ class EditingControls(QtWidgets.QWidget):
             1,
             self.details_section,
         )
-
-        # Denoise Method Selector
-        denoise_method_layout = QtWidgets.QHBoxLayout()
-        denoise_method_label = QtWidgets.QLabel("Method:")
-        denoise_method_label.setStyleSheet("font-size: 11px; color: #aaa;")
-        self.denoise_method_combo = QtWidgets.QComboBox()
-        self.denoise_method_combo.addItems(["High Quality", "NLMeans"])
-        self.denoise_method_combo.setCurrentText(self.val_denoise_method)
-        self.denoise_method_combo.setStyleSheet("""
-            QComboBox {
-                min-height: 18px;
-                max-height: 20px;
-                font-size: 11px;
-                padding: 0px 5px;
-            }
-        """)
-        self.denoise_method_combo.currentTextChanged.connect(
-            self._on_denoise_method_changed
-        )
-        denoise_method_layout.addWidget(denoise_method_label)
-        denoise_method_layout.addWidget(self.denoise_method_combo)
-        self.details_section.add_layout(denoise_method_layout)
 
         # 6. Geometry
         self.geometry_section = CollapsibleSection("Geometry")
@@ -863,11 +841,6 @@ class EditingControls(QtWidgets.QWidget):
         self.histogram_widget.set_mode(mode)
         self.histogramModeChanged.emit(mode)
 
-    def _on_denoise_method_changed(self, method):
-        """Handle denoise method change."""
-        self.val_denoise_method = method
-        self.settingChanged.emit("denoise_method", method)
-
     def _on_aspect_ratio_changed(self, index):
         """Handle aspect ratio selection change."""
         text = self.aspect_ratio_combo.currentText()
@@ -905,8 +878,9 @@ class EditingControls(QtWidgets.QWidget):
         self.presetApplied.emit(preset_type)
 
     def get_all_settings(self):
-        """Get all current settings as a dictionary."""
-        return {
+        """Get all current settings as a dictionary, including raw slider values for persistence."""
+        settings = {
+            "version": 2,
             "temperature": self.val_temperature,
             "tint": self.val_tint,
             "exposure": self.val_exposure,
@@ -928,59 +902,98 @@ class EditingControls(QtWidgets.QWidget):
             "flip_v": self.val_flip_v,
         }
 
+        # Add raw slider positions for improved robustness across algorithm changes
+        for attr in dir(self):
+            if attr.endswith("_slider"):
+                var_name = attr.replace("_slider", "")
+                slider = getattr(self, attr)
+                if isinstance(slider, QtWidgets.QSlider):
+                    settings[f"raw_{var_name}"] = slider.value()
+
+        return settings
+
     def apply_settings(self, settings):
-        """Apply settings from a dictionary."""
-        self.set_slider_value(
-            "val_temperature", settings.get("temperature", 0.0), silent=True
-        )
-        self.set_slider_value("val_tint", settings.get("tint", 0.0), silent=True)
-        self.set_slider_value(
-            "val_exposure", settings.get("exposure", 0.0), silent=True
-        )
-        self.set_slider_value(
-            "val_contrast", settings.get("contrast", 1.0), silent=True
-        )
-        self.set_slider_value("val_whites", settings.get("whites", 1.0), silent=True)
-        self.set_slider_value("val_blacks", settings.get("blacks", 0.0), silent=True)
-        self.set_slider_value(
-            "val_highlights", settings.get("highlights", 0.0), silent=True
-        )
-        self.set_slider_value("val_shadows", settings.get("shadows", 0.0), silent=True)
-        self.set_slider_value(
-            "val_saturation", settings.get("saturation", 1.0), silent=True
-        )
+        """Apply settings from a dictionary, with support for versioned raw slider values."""
+        if settings is None:
+            return
 
-        # Geometry
-        self.set_slider_value("rotation", settings.get("rotation", 0.0), silent=True)
+        version = settings.get("version", 1)
 
+        # 1. Geometry and metadata (always logical)
         self.btn_flip_h.blockSignals(True)
         self.btn_flip_h.setChecked(settings.get("flip_h", False))
         self.btn_flip_h.blockSignals(False)
-
         self.btn_flip_v.blockSignals(True)
         self.btn_flip_v.setChecked(settings.get("flip_v", False))
         self.btn_flip_v.blockSignals(False)
-
         self.val_flip_h = settings.get("flip_h", False)
         self.val_flip_v = settings.get("flip_v", False)
 
-        sharpen_val = settings.get("sharpen_value", 0.0)
-        if sharpen_val is not None:
-            # Clamp to new max of 50
-            sharpen_val = min(50.0, sharpen_val)
-            self.set_slider_value("val_sharpen_value", sharpen_val, silent=True)
-            # Update derived sharpening parameters using the scale factor of 100 for compatibility
-            self.val_sharpen_radius = 0.5 + (sharpen_val / 100.0) * 2.5
-            self.val_sharpen_percent = (sharpen_val / 100.0) * 300.0
+        # 2. Main Processing Sliders
+        # We look for 'raw_' prefixed absolute slider values first if version >= 2
+        slider_vars = [
+            "val_temperature",
+            "val_tint",
+            "val_exposure",
+            "val_contrast",
+            "val_whites",
+            "val_blacks",
+            "val_highlights",
+            "val_shadows",
+            "val_saturation",
+            "val_sharpen_value",
+            "val_de_noise",
+            "val_de_haze",
+            "rotation",
+        ]
 
-        denoise_val = settings.get("de_noise", 0)
-        self.set_slider_value("val_de_noise", min(50.0, denoise_val), silent=True)
+        for var in slider_vars:
+            raw_key = f"raw_{var}"
+            if version >= 2 and raw_key in settings:
+                slider = getattr(self, f"{var}_slider", None)
+                if slider:
+                    slider.blockSignals(True)
+                    slider.setValue(int(settings[raw_key]))
+                    slider.blockSignals(False)
+                    # Trigger the programmatic update to recalculate logical values
+                    # We call the slider's valueChanged handler manually but safely
+                    # or just use our set_slider_value logic.
+                    # Actually, the most robust way is to use the raw value to drive the slider
+                    # and then pull the logical value from the slider's own mapping.
+                    multiplier = 1000.0
+                    logical_val = slider.value() / multiplier
+                    if getattr(self, f"{var}_flipped", False):
+                        # Recalculate flipped logical value
+                        s_min = slider.minimum() / multiplier
+                        s_max = slider.maximum() / multiplier
+                        logical_val = s_max + s_min - logical_val
+                    setattr(self, var, logical_val)
+                    label = getattr(self, f"{var}_label", None)
+                    if label:
+                        label.setText(f"{logical_val:.2f}")
+            else:
+                # Version 1 or missing raw value: Load logical value
+                key = var.replace("val_", "")
+                default_val = (
+                    1.0 if key in ["contrast", "saturation", "whites"] else 0.0
+                )
+                val = settings.get(key, default_val)
+                # Apply clamping and logical-to-slider conversion
+                if var == "val_sharpen_value":
+                    val = min(50.0, val)
+                if var == "val_de_noise":
+                    val = min(50.0, val)
+                if var == "val_de_haze":
+                    val = min(50.0, val)
+                self.set_slider_value(var, val, silent=True)
 
-        de_haze_val = settings.get("de_haze", 0)
-        self.set_slider_value("val_de_haze", min(50.0, de_haze_val), silent=True)
+        # 3. Special derived parameters
+        # Sharpening derived values
+        s_val = self.val_sharpen_value
+        self.val_sharpen_radius = 0.5 + (s_val / 100.0) * 2.5
+        self.val_sharpen_percent = (s_val / 100.0) * 300.0
 
-        denoise_method = settings.get("denoise_method", "High Quality")
-        self.denoise_method_combo.blockSignals(True)
-        self.denoise_method_combo.setCurrentText(denoise_method)
-        self.denoise_method_combo.blockSignals(False)
-        self.val_denoise_method = denoise_method
+        # Method strings
+        self.val_denoise_method = settings.get(
+            "denoise_method", "NLMeans (Numba Fast+)"
+        )
