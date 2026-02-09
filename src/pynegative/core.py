@@ -109,153 +109,50 @@ def apply_tone_map(
     total_pixels = img.shape[0] * img.shape[1]
 
     # --- NUMBA OPTIMIZATION ---
-    if img.dtype == np.float32 and img.flags["C_CONTIGUOUS"]:
-        try:
-            # Prepare WB multipliers
-            t_scale = 0.4
-            tint_scale = 0.2
-            r_mult = np.exp(temperature * t_scale - tint * (tint_scale / 2))
-            g_mult = np.exp(tint * tint_scale)
-            b_mult = np.exp(-temperature * t_scale - tint * (tint_scale / 2))
+    # Ensure float32 and C-contiguous for Numba
+    if img.dtype != np.float32:
+        img = img.astype(np.float32)
+    if not img.flags["C_CONTIGUOUS"]:
+        img = np.ascontiguousarray(img)
 
-            # Exposure multiplier
-            exp_mult = 2.0**exposure
+    # Prepare WB multipliers
+    t_scale = 0.4
+    tint_scale = 0.2
+    r_mult = np.exp(temperature * t_scale - tint * (tint_scale / 2))
+    g_mult = np.exp(tint * tint_scale)
+    b_mult = np.exp(-temperature * t_scale - tint * (tint_scale / 2))
 
-            # Call kernel (in-place)
-            clipped_shadows, clipped_highlights, pixel_sum = tone_map_kernel(
-                img,
-                exp_mult,
-                contrast,
-                blacks,
-                whites,
-                shadows,
-                highlights,
-                saturation,
-                r_mult,
-                g_mult,
-                b_mult,
-            )
+    # Exposure multiplier
+    exp_mult = 2.0**exposure
 
-            # Skip NumPy Implementation
-            if calculate_stats:
-                stats = {
-                    "pct_shadows_clipped": clipped_shadows / total_pixels * 100,
-                    "pct_highlights_clipped": clipped_highlights / total_pixels * 100,
-                    "mean": pixel_sum
-                    / total_pixels,  # pixel_sum is already averaged per channel in kernel
-                }
-            else:
-                stats = {}
+    # Call kernel (in-place)
+    clipped_shadows, clipped_highlights, pixel_sum = tone_map_kernel(
+        img,
+        exp_mult,
+        contrast,
+        blacks,
+        whites,
+        shadows,
+        highlights,
+        saturation,
+        r_mult,
+        g_mult,
+        b_mult,
+    )
 
-            elapsed = (time.perf_counter() - start_time) * 1000
-            logger.debug(
-                f"Tone Map (Numba): Size: {img.shape[1]}x{img.shape[0]} | Time: {elapsed:.2f}ms"
-            )
-            return img, stats
-
-        except Exception as e:
-            logger.warning(f"Numba kernel failed, falling back to NumPy: {e}")
-            # Fall through to NumPy implementation
-
-    # --- NUMPY FALLBACK (Original Implementation) ---
-
-    # 0. White Balance (Relative Scaling)
-    if temperature != 0.0 or tint != 0.0:
-        t_scale = 0.4
-        tint_scale = 0.2
-
-        r_mult = np.exp(temperature * t_scale - tint * (tint_scale / 2))
-        g_mult = np.exp(tint * tint_scale)
-        b_mult = np.exp(-temperature * t_scale - tint * (tint_scale / 2))
-
-        img[:, :, 0] *= r_mult
-        img[:, :, 1] *= g_mult
-        img[:, :, 2] *= b_mult
-
-    # 1. Exposure (2^stops)
-    if exposure != 0.0:
-        img *= 2**exposure
-
-    # 1.5 Contrast (Symmetric around 0.5)
-    if contrast != 1.0:
-        img -= 0.5
-        img *= contrast
-        img += 0.5
-
-    # 2. Tone EQ (Blacks, Whites, Shadows & Highlights) and 3. Saturation
-    # We calculate luminance once and reuse it.
-    # IMPORTANT: We use unclipped luminance to allow for highlight recovery of >1.0 values.
-    if (
-        blacks != 0.0
-        or whites != 1.0
-        or shadows != 0.0
-        or highlights != 0.0
-        or saturation != 1.0
-    ):
-        # Calculate luminance (Rec. 709)
-        lum = 0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
-        lum_3d = lum[:, :, np.newaxis]
-
-        # 2.1 Blacks (Linear Offset/Crush)
-        if blacks != 0.0:
-            img -= blacks
-
-        # 2.2 Whites (Linear Level Adjustment)
-        if whites != 1.0:
-            denom = whites - blacks
-            if abs(denom) < 1e-6:
-                denom = 1e-6
-            img /= denom
-
-        # 2.3 Shadows & Highlights
-        if shadows != 0.0:
-            s_mask = (1.0 - np.clip(lum_3d, 0, 1)) ** 2
-            img *= 1.0 + shadows * s_mask
-
-        if highlights != 0.0:
-            if highlights < 0:
-                # RECOVERY: Compress over-exposed highlights
-                # Use unclipped luminance for the mask to distinguish clipped areas
-                h_mask = np.maximum(lum_3d, 0) ** 2
-                img /= 1.0 + abs(highlights) * h_mask
-            else:
-                # BOOST: Brighten highlights
-                h_mask = np.clip(lum_3d, 0, 1) ** 2
-                h_term = highlights * h_mask
-                # Use a blend that caps at 1.0
-                img = img * (1.0 - h_term) + h_term
-
-        if saturation != 1.0:
-            # Re-calculate luminance after tone adjustments for accurate saturation
-            # Use clipped luminance for saturation to avoid color shifts in over-exposed areas
-            curr_lum = (
-                0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
-            )
-            np.clip(curr_lum, 0, 1, out=curr_lum)
-            curr_lum_3d = curr_lum[:, :, np.newaxis]
-
-            img -= curr_lum_3d
-            img *= saturation
-            img += curr_lum_3d
-
-    # Stats and Clipping
     if calculate_stats:
-        clipped_shadows = np.sum(img < 0.0)
-        clipped_highlights = np.sum(img > 1.0)
         stats = {
             "pct_shadows_clipped": clipped_shadows / total_pixels * 100,
             "pct_highlights_clipped": clipped_highlights / total_pixels * 100,
-            "mean": img.mean(),
+            "mean": pixel_sum / total_pixels,
         }
     else:
         stats = {}
 
-    # Final Clip in-place
-    np.clip(img, 0.0, 1.0, out=img)
-
     elapsed = (time.perf_counter() - start_time) * 1000
-    logger.debug(f"Tone Map: (Group) | Time: {elapsed:.2f}ms")
-
+    logger.debug(
+        f"Tone Map (Numba): Size: {img.shape[1]}x{img.shape[0]} | Time: {elapsed:.2f}ms"
+    )
     return img, stats
 
 
@@ -572,17 +469,11 @@ def sharpen_image(img, radius, percent, method="High Quality"):
             edges = cv2.dilate(edges, kernel, iterations=1)
 
             # 1. Numba JIT (Primary)
-            try:
-                # Numba kernel is in-place, so we copy for the 'sharpened' version
-                sharpened = img_float.copy()
-                sharpen_kernel(sharpened, blur, percent)
-                result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
-                backend = "Numba JIT"
-            except Exception as e:
-                logger.warning(f"Numba Sharpen failed: {e}")
-                sharpened = img_float + (img_float - blur) * (percent / 100.0)
-                result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
-                backend = "NumPy"
+            # Numba kernel is in-place, so we copy for the 'sharpened' version
+            sharpened = img_float.copy()
+            sharpen_kernel(sharpened, blur, percent)
+            result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
+            backend = "Numba JIT"
 
             if was_pil:
                 result_array = np.clip(result * 255, 0, 255).astype(np.uint8)
@@ -859,18 +750,9 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
         # 4. Recover radiance
         # J(x) = (I(x) - A) / max(t(x), t0) + A
         backend_rec = "Numba JIT"
-        try:
-            result = dehaze_recovery_kernel(
-                img_array, transmission, atmospheric_light
-            )
-        except Exception as e:
-            logger.warning(f"Numba Dehaze recovery failed: {e}")
-            transmission_3d = transmission[:, :, np.newaxis]
-            result = (
-                img_array - atmospheric_light
-            ) / transmission_3d + atmospheric_light
-            result = np.clip(result, 0, 1)
-            backend_rec = "NumPy"
+        result = dehaze_recovery_kernel(
+            img_array, transmission, atmospheric_light
+        )
 
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.debug(
