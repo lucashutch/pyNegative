@@ -10,10 +10,9 @@ from .widgets import (
 class EditingControls(QtWidgets.QWidget):
     DENOISE_METHODS = [
         "High Quality",
+        "NLMeans (Numba Hybrid YUV)",
         "NLMeans (Numba Fast+ YUV)",
-        "NLMeans (Numba Fast+ UV)",
         "NLMeans (Numba Fast YUV)",
-        "NLMeans (Numba Fast UV)",
     ]
 
     # Signals for changes
