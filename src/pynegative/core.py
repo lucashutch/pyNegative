@@ -234,7 +234,7 @@ def calculate_auto_wb(img):
     }
 
 
-def apply_geometry(pil_img, rotate=0.0, crop=None, flip_h=False, flip_v=False):
+def apply_geometry(img, rotate=0.0, crop=None, flip_h=False, flip_v=False):
     """
     Applies geometric transformations: Flip -> Rotation -> Crop.
 
@@ -246,40 +246,47 @@ def apply_geometry(pil_img, rotate=0.0, crop=None, flip_h=False, flip_v=False):
         flip_h: bool, mirror horizontally
         flip_v: bool, mirror vertically
     """
-    # 0. Apply Flip
-    if flip_h:
-        pil_img = pil_img.transpose(Image.FLIP_LEFT_RIGHT)
-    if flip_v:
-        pil_img = pil_img.transpose(Image.FLIP_TOP_BOTTOM)
+    if img is None:
+        return None
 
-    # 1. Apply Rotation
-    if rotate != 0.0:
-        # expand=True changes the image size to fit the rotated image
-        # PIL rotates CCW by default. The user wants negative to be CW, so
-        # positive is CCW. This matches PIL's behavior.
-        pil_img = pil_img.rotate(rotate, resample=Image.BICUBIC, expand=True)
+    # 1. Apply Flip
+    if flip_h or flip_v:
+        # flipCode: 0 for x-axis, 1 for y-axis, -1 for both
+        flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
+        img = cv2.flip(img, flip_code)
 
-    # 2. Apply Crop
+    # 2. Apply Rotation
+    if abs(rotate) > 0.01:
+        h, w = img.shape[:2]
+        center = (w / 2, h / 2)
+        # Use INTER_CUBIC for rotation quality
+        M = cv2.getRotationMatrix2D(center, rotate, 1.0)
+        cos_val = np.abs(M[0, 0])
+        sin_val = np.abs(M[0, 1])
+        new_w = int((h * sin_val) + (w * cos_val))
+        new_h = int((h * cos_val) + (w * sin_val))
+        M[0, 2] += (new_w / 2) - center[0]
+        M[1, 2] += (new_h / 2) - center[1]
+        img = cv2.warpAffine(
+            img,
+            M,
+            (new_w, new_h),
+            flags=cv2.INTER_CUBIC,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=(0, 0, 0),
+        )
+
+    # 3. Apply Crop
     if crop is not None:
-        w, h = pil_img.size
+        h, w = img.shape[:2]
         c_left, c_top, c_right, c_bottom = crop
+        x1, y1 = int(c_left * w), int(c_top * h)
+        x2, y2 = int(c_right * w), int(c_bottom * h)
+        x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
+        if x2 > x1 and y2 > y1:
+            img = img[y1:y2, x1:x2]
 
-        # Convert to pixels
-        left = int(c_left * w)
-        top = int(c_top * h)
-        right = int(c_right * w)
-        bottom = int(c_bottom * h)
-
-        # Clamp
-        left = max(0, left)
-        top = max(0, top)
-        right = min(w, right)
-        bottom = min(h, bottom)
-
-        if right > left and bottom > top:
-            pil_img = pil_img.crop((left, top, right, bottom))
-
-    return pil_img
+    return img
 
 
 def calculate_max_safe_crop(w, h, angle_deg, aspect_ratio=None):
@@ -427,7 +434,7 @@ def extract_thumbnail(path):
 
 
 def sharpen_image(img, radius, percent, method="High Quality"):
-    """Advanced sharpening with support for both PIL and Numpy float32."""
+    """Advanced sharpening that operates on NumPy float32 arrays."""
     if img is None:
         return None
 
@@ -442,76 +449,37 @@ def sharpen_image(img, radius, percent, method="High Quality"):
         return img
 
     start_time = time.perf_counter()
-    if isinstance(img, Image.Image):
-        # Convert PIL to RGB if needed
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-        img_array = np.array(img)
-        img_float = img_array.astype(np.float32) / 255.0
-        was_pil = True
-    else:
-        # Assume Numpy array
-        img_float = img
-        if img_float.dtype != np.float32:
-            img_float = img_float.astype(np.float32) / 255.0
-        was_pil = False
 
-    h, w = img_float.shape[:2]
+    # Ensure float32
+    if img.dtype != np.float32:
+        img = img.astype(np.float32) / 255.0
+
+    h, w = img.shape[:2]
     size_str = f" | Size: {w}x{h}"
 
-    if method == "High Quality":
-        try:
-            # Setup: Blur and Edges (CPU)
-            blur = cv2.GaussianBlur(img_float, (0, 0), radius)
-            gray = cv2.cvtColor((img_float * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
-            edges = cv2.Canny(gray, 50, 150)
-            kernel = np.ones((3, 3), np.uint8)
-            edges = cv2.dilate(edges, kernel, iterations=1)
-
-            # 1. Numba JIT (Primary)
-            # Numba kernel is in-place, so we copy for the 'sharpened' version
-            sharpened = img_float.copy()
-            sharpen_kernel(sharpened, blur, percent)
-            result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
-            backend = "Numba JIT"
-
-            if was_pil:
-                result_array = np.clip(result * 255, 0, 255).astype(np.uint8)
-                res = Image.fromarray(result_array)
-            else:
-                res = np.clip(result, 0, 1.0)
-
-            elapsed = (time.perf_counter() - start_time) * 1000
-            logger.debug(
-                f"Sharpen: High Quality ({backend}) | Radius: {radius:.2f} | Percent: {percent:.1f}%{size_str} | Time: {elapsed:.2f}ms"
-            )
-            return res
-        except Exception as e:
-            logger.error(f"High Quality Sharpen failed: {e}")
-
-    # Fallback for PIL
-    if was_pil:
-        return img.filter(
-            ImageFilter.UnsharpMask(radius=float(radius), percent=int(percent))
-        )
-
-    # Fallback for Numpy (Basic Unsharp Mask)
     try:
+        # Setup: Blur and Edges (CPU)
+        blur = cv2.GaussianBlur(img, (0, 0), radius)
+        gray = cv2.cvtColor((img * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
+        edges = cv2.Canny(gray, 50, 150)
+        kernel = np.ones((3, 3), np.uint8)
+        edges = cv2.dilate(edges, kernel, iterations=1)
 
-        # Convert radius to kernel size (must be odd)
-        k_size = int(2 * math.ceil(radius * 2) + 1)
-        if k_size % 2 == 0:
-            k_size += 1
-        blur = cv2.GaussianBlur(img_float, (k_size, k_size), radius)
-        result = img_float + (img_float - blur) * (percent / 100.0)
+        # 1. Numba JIT (Primary)
+        # Numba kernel is in-place, so we copy for the 'sharpened' version
+        sharpened = img.copy()
+        sharpen_kernel(sharpened, blur, percent)
+        result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img)
+        backend = "Numba JIT"
 
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.debug(
-            f"Sharpen: Basic CPU Fallback | Radius: {radius:.2f} | Percent: {percent:.1f}%{size_str} | Time: {elapsed:.2f}ms"
+            f"Sharpen: High Quality ({backend}) | Radius: {radius:.2f} | Percent: {percent:.1f}%{size_str} | Time: {elapsed:.2f}ms"
         )
         return np.clip(result, 0, 1.0)
-    except Exception:
-        return img_float
+    except Exception as e:
+        logger.error(f"High Quality Sharpen failed: {e}")
+        return img
 
 
 def _apply_nl_means_path(img_array, l_str, c_str, method):
@@ -591,8 +559,7 @@ def de_noise_image(
     img, luma_strength=0, chroma_strength=0, method="High Quality", zoom=None
 ):
     """
-    Numba-accelerated de-noising with separate Luma/Chroma control.
-    Orchestrates between NL-Means, Bilateral, and fallback methods.
+    Numba-accelerated de-noising strictly for NumPy float32 arrays.
     """
     if img is None:
         return None
@@ -603,16 +570,11 @@ def de_noise_image(
     if l_str <= 0 and c_str <= 0:
         return img
 
-    # Input Conversion
-    img_array = img
-    was_pil = False
-    if isinstance(img, Image.Image):
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-        img_array = np.array(img).astype(np.float32) / 255.0
-        was_pil = True
+    # Ensure float32
+    if img.dtype != np.float32:
+        img = img.astype(np.float32) / 255.0
 
-    h, w = img_array.shape[:2]
+    h, w = img.shape[:2]
     zoom_str = f" | Zoom: {zoom * 100:.0f}%" if zoom is not None else ""
     size_str = f" | Size: {w}x{h}"
 
@@ -622,7 +584,6 @@ def de_noise_image(
     method_name = method
 
     try:
-
         if method.startswith("NLMeans (Numba"):
             backend = "Numba JIT"
             # Get clean variant name for logging
@@ -630,11 +591,11 @@ def de_noise_image(
             variant = parts[-1].replace(")", "") if len(parts) > 1 else "Full"
             method_name = f"NL-Means ({variant})"
 
-            denoised = _apply_nl_means_path(img_array, l_str, c_str, method)
+            denoised = _apply_nl_means_path(img, l_str, c_str, method)
         else:
             backend = "Numba JIT"
             method_name = "Bilateral"
-            denoised = _apply_bilateral_path(img_array, l_str, c_str)
+            denoised = _apply_bilateral_path(img, l_str, c_str)
 
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.debug(
@@ -645,8 +606,6 @@ def de_noise_image(
         logger.error(f"Core Denoise failed: {e}")
 
     if denoised is not None:
-        if was_pil:
-            return Image.fromarray((np.clip(denoised, 0, 1) * 255).astype(np.uint8))
         return np.clip(denoised, 0, 1)
 
     return img
@@ -677,14 +636,11 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
     except (ValueError, TypeError):
         return img, fixed_atmospheric_light
 
-    if isinstance(img, Image.Image):
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-        img_array = np.array(img).astype(np.float32) / 255.0
-        was_pil = True
-    else:
-        img_array = img
-        was_pil = False
+    # Ensure float32
+    if img.dtype != np.float32:
+        img = img.astype(np.float32) / 255.0
+
+    img_array = img
 
     h_img, w_img = img_array.shape[:2]
     zoom_str = f" | Zoom: {zoom * 100:.0f}%" if zoom is not None else ""
@@ -760,10 +716,7 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
             f"Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
         )
 
-        if was_pil:
-            return Image.fromarray((result * 255).astype(np.uint8)), atmospheric_light
-        else:
-            return result, atmospheric_light
+        return result, atmospheric_light
 
     except Exception as e:
         logger.error(f"Dehaze failed: {e}")

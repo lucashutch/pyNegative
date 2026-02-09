@@ -105,15 +105,9 @@ class ExportProcessor(QtCore.QRunnable):
             saturation=sidecar_settings.get("saturation", 1.0),
         )
 
-        # Convert to PIL Image
-        if output_bps == 16:
-            pil_img = Image.fromarray((img * 65535).astype("uint16"), "RGB")
-        else:
-            pil_img = Image.fromarray((img * 255).astype("uint8"))
-
         # Apply Geometry (Flip, Rotate, Crop)
-        pil_img = pynegative.apply_geometry(
-            pil_img,
+        img = pynegative.apply_geometry(
+            img,
             rotate=sidecar_settings.get("rotation", 0.0),
             crop=sidecar_settings.get("crop"),
             flip_h=sidecar_settings.get("flip_h", False),
@@ -123,20 +117,18 @@ class ExportProcessor(QtCore.QRunnable):
         # Apply Dehaze if present in sidecar
         dehaze_val = sidecar_settings.get("de_haze", 0)
         if dehaze_val > 0:
-            pil_img, _ = pynegative.de_haze_image(pil_img, dehaze_val, zoom=1.0)
+            img, _ = pynegative.de_haze_image(img, dehaze_val, zoom=1.0)
 
         # Apply Denoise if present in sidecar
-        # Support both new split settings and legacy de_noise
         luma_str = sidecar_settings.get("denoise_luma")
         chroma_str = sidecar_settings.get("denoise_chroma")
         legacy_str = sidecar_settings.get("de_noise", 0)
-
         l_str = float(luma_str if luma_str is not None else legacy_str)
         c_str = float(chroma_str if chroma_str is not None else legacy_str)
 
         if l_str > 0 or c_str > 0:
-            pil_img = pynegative.de_noise_image(
-                pil_img,
+            img = pynegative.de_noise_image(
+                img,
                 luma_strength=l_str,
                 chroma_strength=c_str,
                 method=sidecar_settings.get("denoise_method", "NLMeans (Numba Fast+)"),
@@ -146,12 +138,18 @@ class ExportProcessor(QtCore.QRunnable):
         # Apply Sharpening if present in sidecar
         sharpen_val = sidecar_settings.get("sharpen_value", 0)
         if sharpen_val > 0:
-            pil_img = pynegative.sharpen_image(
-                pil_img,
+            img = pynegative.sharpen_image(
+                img,
                 sidecar_settings.get("sharpen_radius", 0.5),
                 sidecar_settings.get("sharpen_percent", 0.0),
                 method="High Quality",
             )
+
+        # Convert to PIL Image for final steps
+        if output_bps == 16:
+            pil_img = Image.fromarray((np.clip(img, 0, 1) * 65535).astype("uint16"), "RGB")
+        else:
+            pil_img = Image.fromarray((np.clip(img, 0, 1) * 255).astype("uint8"))
 
         # Apply size constraints if specified
         max_w = self.settings.get("max_width")
