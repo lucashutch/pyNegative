@@ -15,12 +15,12 @@ def benchmark_method(image, method, strength, iterations=3):
     print(f"Benchmarking {method}...")
 
     # Warmup
-    _ = de_noise_image(image, strength, method=method)
+    _ = de_noise_image(image, luma_strength=strength, chroma_strength=strength, method=method)
 
     times = []
     for i in range(iterations):
         start = time.perf_counter()
-        _ = de_noise_image(image, strength, method=method)
+        _ = de_noise_image(image, luma_strength=strength, chroma_strength=strength, method=method)
         elapsed = (time.perf_counter() - start) * 1000
         times.append(elapsed)
         print(f"  Iteration {i + 1}: {elapsed:.2f} ms")
@@ -63,7 +63,6 @@ def main():
     methods = [
         ("High Quality", 3),
         ("NLMeans (Numba Hybrid YUV)", 3),
-        ("NLMeans (Numba Fast YUV)", 3),
         ("NLMeans (Numba Fast+ YUV)", 5),
     ]
 
@@ -86,10 +85,9 @@ def main():
     print("Saving visual comparison to 'denoise_comparison.png'...")
 
     # We'll save the "Full" and "Fast" versions for comparison
-    res_bilateral = de_noise_image(noisy_img, strength, method="High Quality")
-    res_hybrid = de_noise_image(noisy_img, strength, method="NLMeans (Numba Hybrid)")
-    res_fast = de_noise_image(noisy_img, strength, method="NLMeans (Numba Fast)")
-    res_fast_plus = de_noise_image(noisy_img, strength, method="NLMeans (Numba Fast+)")
+    res_bilateral = de_noise_image(noisy_img, luma_strength=strength, chroma_strength=strength, method="High Quality")
+    res_hybrid = de_noise_image(noisy_img, luma_strength=strength, chroma_strength=strength, method="NLMeans (Numba Hybrid)")
+    res_fast_plus = de_noise_image(noisy_img, luma_strength=strength, chroma_strength=strength, method="NLMeans (Numba Fast+)")
 
     # Convert to uint8 for saving
     def to_u8(img):
@@ -100,7 +98,6 @@ def main():
             to_u8(noisy_img),
             to_u8(res_bilateral),
             to_u8(res_hybrid),
-            to_u8(res_fast),
             to_u8(res_fast_plus),
         ]
     )
@@ -111,10 +108,7 @@ def main():
     cv2.putText(h_stack, "Bilateral", (size[1] + 10, 30), font, 1, (255, 255, 255), 2)
     cv2.putText(h_stack, "NLM Hybrid", (size[1] * 2 + 10, 30), font, 1, (255, 255, 255), 2)
     cv2.putText(
-        h_stack, "NLM Fast", (size[1] * 3 + 10, 30), font, 1, (255, 255, 255), 2
-    )
-    cv2.putText(
-        h_stack, "NLM Fast+", (size[1] * 4 + 10, 30), font, 1, (255, 255, 255), 2
+        h_stack, "NLM Fast+", (size[1] * 3 + 10, 30), font, 1, (255, 255, 255), 2
     )
 
     cv2.imwrite("denoise_comparison.png", cv2.cvtColor(h_stack, cv2.COLOR_RGB2BGR))

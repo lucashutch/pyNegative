@@ -126,11 +126,19 @@ class ExportProcessor(QtCore.QRunnable):
             pil_img, _ = pynegative.de_haze_image(pil_img, dehaze_val, zoom=1.0)
 
         # Apply Denoise if present in sidecar
-        denoise_val = sidecar_settings.get("de_noise", 0)
-        if denoise_val > 0:
+        # Support both new split settings and legacy de_noise
+        luma_str = sidecar_settings.get("denoise_luma")
+        chroma_str = sidecar_settings.get("denoise_chroma")
+        legacy_str = sidecar_settings.get("de_noise", 0)
+
+        l_str = float(luma_str if luma_str is not None else legacy_str)
+        c_str = float(chroma_str if chroma_str is not None else legacy_str)
+
+        if l_str > 0 or c_str > 0:
             pil_img = pynegative.de_noise_image(
                 pil_img,
-                denoise_val,
+                luma_strength=l_str,
+                chroma_strength=c_str,
                 method=sidecar_settings.get("denoise_method", "NLMeans (Numba Fast+)"),
                 zoom=1.0,
             )

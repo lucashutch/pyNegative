@@ -12,7 +12,6 @@ class EditingControls(QtWidgets.QWidget):
         "High Quality",
         "NLMeans (Numba Hybrid YUV)",
         "NLMeans (Numba Fast+ YUV)",
-        "NLMeans (Numba Fast YUV)",
     ]
 
     # Signals for changes
