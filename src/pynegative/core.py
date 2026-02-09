@@ -34,6 +34,7 @@ try:
         dehaze_recovery_kernel,
         dark_channel_kernel,
         nl_means_numba,
+        nl_means_numba_multichannel,
     )
 
     NUMBA_AVAILABLE = True
@@ -716,15 +717,21 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
                 denoised_yuv = cv2.merge([y_denoised, u, v])
             elif "UV)" in method:
                 # Chroma only
-                u_denoised = nl_means_numba(u, h=h_uv, patch_size=p_size, search_size=s_size)
-                v_denoised = nl_means_numba(v, h=h_uv, patch_size=p_size, search_size=s_size)
-                denoised_yuv = cv2.merge([y, u_denoised, v_denoised])
+                uv_stack = np.ascontiguousarray(yuv[:, :, 1:])
+                uv_denoised = nl_means_numba_multichannel(uv_stack, h=(h_uv, h_uv), patch_size=p_size, search_size=s_size)
+                denoised_yuv = cv2.merge([y, uv_denoised[:, :, 0], uv_denoised[:, :, 1]])
             else:
-                # Default: UV only (skip Luma for comparison)
+                # Default (no suffix): Full YUV using multichannel
+                # (But user asked for UV-only default previously, so I'll keep the 'UV only' label in the log if needed,
+                # or just do full YUV if that's what's expected from a 'Full' method).
+                # To satisfy "I just want to see what it looks like (UV only)", I will keep it UV-only for now.
                 method_name += " (UV only)"
-                u_denoised = nl_means_numba(u, h=h_uv, patch_size=p_size, search_size=s_size)
-                v_denoised = nl_means_numba(v, h=h_uv, patch_size=p_size, search_size=s_size)
-                denoised_yuv = cv2.merge([y, u_denoised, v_denoised])
+                uv_stack = np.ascontiguousarray(yuv[:, :, 1:])
+                uv_denoised = nl_means_numba_multichannel(uv_stack, h=(h_uv, h_uv), patch_size=p_size, search_size=s_size)
+                denoised_yuv = cv2.merge([y, uv_denoised[:, :, 0], uv_denoised[:, :, 1]])
+
+                # OPTION: If we wanted to switch back to full YUV:
+                # denoised_yuv = nl_means_numba_multichannel(yuv, h=(h_y, h_uv, h_uv), patch_size=p_size, search_size=s_size)
 
             denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
 
