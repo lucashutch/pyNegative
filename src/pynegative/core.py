@@ -645,24 +645,24 @@ def sharpen_image(img, radius, percent, method="High Quality"):
         return img_float
 
 
-def de_noise_image(img, strength, method="High Quality", zoom=None):
-    """Advanced de-noising with support for both PIL and Numpy float32.
-    Preserves float32 precision throughout the pipeline to avoid bit-depth artifacts.
+def de_noise_image(
+    img, luma_strength=0, chroma_strength=0, method="High Quality", zoom=None
+):
+    """
+    Numba-accelerated de-noising with separate Luma/Chroma control.
     """
     if img is None:
         return None
 
+    # Handle legacy single-setting calls if any
     try:
-        # Ensure strength is a valid positive float
-        if strength is None:
-            strength = 0.0
-        strength = float(strength)
-        if strength < 0:
-            strength = 0.0
+        l_str = float(luma_strength)
+        c_str = float(chroma_strength)
     except (TypeError, ValueError):
-        strength = 0.0
+        l_str = 0.0
+        c_str = 0.0
 
-    if strength <= 0:
+    if l_str <= 0 and c_str <= 0:
         return img
 
     if isinstance(img, Image.Image):
@@ -684,9 +684,6 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
         if cv2 is None:
             raise ImportError("OpenCV not available")
 
-        if strength <= 0:
-            return img
-
         # Scaling factor for sigmaColor based on 0-1 range
         s_scale = 1.0 / 255.0
 
@@ -702,24 +699,30 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
             yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
             y, u, v = cv2.split(yuv)
 
-            # Map strength 0-50 to h parameters (Reduced by factor of 5)
-            h_y = (float(strength) / 50.0) * 1.0
-            h_uv = (float(strength) / 50.0) * 3.0
+            # Map strength 0-50 to h parameters
+            # Luma scaling: 0.01 max
+            h_y = (l_str / 50.0) * 0.01
+            # Chroma scaling: 50.0 max
+            h_uv = (c_str / 50.0) * 50.0
 
-            p_size, s_size = 7, 21
+            p_size, s_size = 5, 13
             if "Fast+" in method:
                 p_size, s_size = 3, 5
             elif "Fast" in method:
                 p_size, s_size = 3, 7
 
-            if "Y)" in method:
-                # Luminance only
+            # Even if method says "Y" or "UV", we now respect individual strengths.
+            # However, if both > 0, we can use multichannel for speed.
+            if l_str > 0 and c_str > 0:
+                denoised_yuv = nl_means_numba_multichannel(
+                    yuv, h=(h_y, h_uv, h_uv), patch_size=p_size, search_size=s_size
+                )
+            elif l_str > 0:
                 y_denoised = nl_means_numba(
                     y, h=h_y, patch_size=p_size, search_size=s_size
                 )
                 denoised_yuv = cv2.merge([y_denoised, u, v])
-            elif "UV)" in method:
-                # Chroma only
+            elif c_str > 0:
                 uv_stack = np.ascontiguousarray(yuv[:, :, 1:])
                 uv_denoised = nl_means_numba_multichannel(
                     uv_stack, h=(h_uv, h_uv), patch_size=p_size, search_size=s_size
@@ -728,23 +731,10 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
                     [y, uv_denoised[:, :, 0], uv_denoised[:, :, 1]]
                 )
             else:
-                # Default (no suffix): Full YUV using multichannel
-                # (But user asked for UV-only default previously, so I'll keep the 'UV only' label in the log if needed,
-                # or just do full YUV if that's what's expected from a 'Full' method).
-                # To satisfy "I just want to see what it looks like (UV only)", I will keep it UV-only for now.
-                method_name += " (UV only)"
-                uv_stack = np.ascontiguousarray(yuv[:, :, 1:])
-                uv_denoised = nl_means_numba_multichannel(
-                    uv_stack, h=(h_uv, h_uv), patch_size=p_size, search_size=s_size
-                )
-                denoised_yuv = cv2.merge(
-                    [y, uv_denoised[:, :, 0], uv_denoised[:, :, 1]]
-                )
-
-                # OPTION: If we wanted to switch back to full YUV:
-                # denoised_yuv = nl_means_numba_multichannel(yuv, h=(h_y, h_uv, h_uv), patch_size=p_size, search_size=s_size)
+                denoised_yuv = yuv
 
             denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
+
 
         else:  # Default to High Quality (YUV Bilateral)
             method_name = "Bilateral"
@@ -753,14 +743,14 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
                 try:
                     # Prepare YUV for Numba
                     yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
-                    sigma_color_y = float(strength) * 0.4 * s_scale
-                    sigma_space_y = 0.5 + (float(strength) / 100.0)
-                    sigma_color_uv = float(strength) * 4.5 * s_scale
-                    sigma_space_uv = 2.0 + (float(strength) / 10.0)
+                    sigma_color_y = l_str * 0.4 * s_scale
+                    sigma_space_y = 0.5 + (l_str / 100.0)
+                    sigma_color_uv = c_str * 4.5 * s_scale
+                    sigma_space_uv = 2.0 + (c_str / 10.0)
 
                     img_yuv_denoised = bilateral_kernel_yuv(
                         yuv,
-                        strength,
+                        l_str,  # Passing luma strength
                         sigma_color_y,
                         sigma_space_y,
                         sigma_color_uv,
@@ -776,27 +766,27 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
                 yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
                 y, u, v = cv2.split(yuv)
 
-                chroma_sigma_color = float(strength) * 4.5 * s_scale
-                chroma_sigma_space = 2.0 + (float(strength) / 10.0)
-                u_denoised = cv2.bilateralFilter(
-                    u, 11, chroma_sigma_color, chroma_sigma_space
-                )
-                v_denoised = cv2.bilateralFilter(
-                    v, 11, chroma_sigma_color, chroma_sigma_space
-                )
+                if c_str > 0:
+                    chroma_sigma_color = c_str * 4.5 * s_scale
+                    chroma_sigma_space = 2.0 + (c_str / 10.0)
+                    u = cv2.bilateralFilter(
+                        u, 11, chroma_sigma_color, chroma_sigma_space
+                    )
+                    v = cv2.bilateralFilter(
+                        v, 11, chroma_sigma_color, chroma_sigma_space
+                    )
 
-                luma_sigma_color = float(strength) * 0.4 * s_scale
-                luma_sigma_space = 0.5 + (float(strength) / 100.0)
-                y_denoised = cv2.bilateralFilter(
-                    y, 3, luma_sigma_color, luma_sigma_space
-                )
+                if l_str > 0:
+                    luma_sigma_color = l_str * 0.4 * s_scale
+                    luma_sigma_space = 0.5 + (l_str / 100.0)
+                    y = cv2.bilateralFilter(y, 3, luma_sigma_color, luma_sigma_space)
 
-                denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
+                denoised_yuv = cv2.merge([y, u, v])
                 denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
 
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.debug(
-            f"Denoise: {method_name} ({backend}) | Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+            f"Denoise: {method_name} ({backend}) | Luma: {l_str:.2f} Chroma: {c_str:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
         )
 
         if denoised is not None:
