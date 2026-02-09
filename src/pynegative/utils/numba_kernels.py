@@ -206,7 +206,7 @@ def tone_map_kernel(
             img[r, c, 1] = g_val
             img[r, c, 2] = b_val
 
-            pixel_sum += r_val + g_val + b_val
+            pixel_sum += (r_val + g_val + b_val) / 3.0
 
     return clipped_shadows, clipped_highlights, pixel_sum
 
