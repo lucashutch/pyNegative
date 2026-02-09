@@ -8,6 +8,12 @@ from .widgets import (
 
 
 class EditingControls(QtWidgets.QWidget):
+    DENOISE_METHODS = [
+        "High Quality",
+        "NLMeans (Numba Hybrid YUV)",
+        "NLMeans (Numba Fast+ YUV)",
+    ]
+
     # Signals for changes
     settingChanged = QtCore.Signal(str, object)  # setting_name, value
     ratingChanged = QtCore.Signal(int)
@@ -33,7 +39,8 @@ class EditingControls(QtWidgets.QWidget):
         self.val_sharpen_value = 0.0
         self.val_sharpen_radius = 0.5
         self.val_sharpen_percent = 0.0
-        self.val_de_noise = 0
+        self.val_denoise_luma = 0
+        self.val_denoise_chroma = 0
         self.val_de_haze = 0.0
         self.val_denoise_method = "NLMeans (Numba Fast+)"
         self.val_flip_h = False
@@ -306,21 +313,31 @@ class EditingControls(QtWidgets.QWidget):
         )
 
         self._add_slider(
-            "De-noise",
-            0,
-            50,
-            self.val_de_noise,
-            "val_de_noise",
-            1,
-            self.details_section,
-        )
-
-        self._add_slider(
             "De-haze",
             0,
             50,
             self.val_de_haze,
             "val_de_haze",
+            1,
+            self.details_section,
+        )
+
+        self._add_slider(
+            "Luma Denoise",
+            0,
+            50,
+            self.val_denoise_luma,
+            "val_denoise_luma",
+            1,
+            self.details_section,
+        )
+
+        self._add_slider(
+            "Chroma Denoise",
+            0,
+            50,
+            self.val_denoise_chroma,
+            "val_denoise_chroma",
             1,
             self.details_section,
         )
@@ -797,7 +814,8 @@ class EditingControls(QtWidgets.QWidget):
         elif section_name == "details":
             params_to_reset = [
                 ("val_sharpen_value", 0.0, "sharpen_value"),
-                ("val_de_noise", 0.0, "de_noise"),
+                ("val_denoise_luma", 0.0, "denoise_luma"),
+                ("val_denoise_chroma", 0.0, "denoise_chroma"),
                 ("val_de_haze", 0.0, "de_haze"),
             ]
         elif section_name == "geometry":
@@ -817,6 +835,18 @@ class EditingControls(QtWidgets.QWidget):
         for var_name, default, setting_name in params_to_reset:
             self.set_slider_value(var_name, default)
             self.settingChanged.emit(setting_name, default)
+
+    def cycle_denoise_method(self):
+        """Cycle through the available denoise methods."""
+        try:
+            current_idx = self.DENOISE_METHODS.index(self.val_denoise_method)
+        except ValueError:
+            current_idx = 0
+
+        next_idx = (current_idx + 1) % len(self.DENOISE_METHODS)
+        self.val_denoise_method = self.DENOISE_METHODS[next_idx]
+        self.settingChanged.emit("denoise_method", self.val_denoise_method)
+        return self.val_denoise_method
 
     def set_rating(self, rating):
         """Set the star rating."""
@@ -867,13 +897,22 @@ class EditingControls(QtWidgets.QWidget):
         """Apply preset values for sharpening and denoising."""
         if preset_type == "low":
             self.set_slider_value("val_sharpen_value", 15.0)
-            self.set_slider_value("val_de_noise", 2.0)
+            self.set_slider_value("val_denoise_luma", 2.0)
+            self.set_slider_value("val_denoise_chroma", 2.0)
+            self.settingChanged.emit("denoise_luma", 2.0)
+            self.settingChanged.emit("denoise_chroma", 2.0)
         elif preset_type == "medium":
             self.set_slider_value("val_sharpen_value", 30.0)
-            self.set_slider_value("val_de_noise", 7.0)
+            self.set_slider_value("val_denoise_luma", 7.0)
+            self.set_slider_value("val_denoise_chroma", 7.0)
+            self.settingChanged.emit("denoise_luma", 7.0)
+            self.settingChanged.emit("denoise_chroma", 7.0)
         elif preset_type == "high":
             self.set_slider_value("val_sharpen_value", 50.0)
-            self.set_slider_value("val_de_noise", 12.0)
+            self.set_slider_value("val_denoise_luma", 12.0)
+            self.set_slider_value("val_denoise_chroma", 12.0)
+            self.settingChanged.emit("denoise_luma", 12.0)
+            self.settingChanged.emit("denoise_chroma", 12.0)
 
         self.presetApplied.emit(preset_type)
 
@@ -895,7 +934,8 @@ class EditingControls(QtWidgets.QWidget):
             "sharpen_percent": self.val_sharpen_percent,
             "sharpen_value": self.val_sharpen_value,
             "denoise_method": self.val_denoise_method,
-            "de_noise": self.val_de_noise,
+            "denoise_luma": self.val_denoise_luma,
+            "denoise_chroma": self.val_denoise_chroma,
             "de_haze": self.val_de_haze,
             "rotation": getattr(self, "rotation", 0.0),
             "flip_h": self.val_flip_h,
@@ -942,7 +982,8 @@ class EditingControls(QtWidgets.QWidget):
             "val_shadows",
             "val_saturation",
             "val_sharpen_value",
-            "val_de_noise",
+            "val_denoise_luma",
+            "val_denoise_chroma",
             "val_de_haze",
             "rotation",
         ]
@@ -981,7 +1022,9 @@ class EditingControls(QtWidgets.QWidget):
                 # Apply clamping and logical-to-slider conversion
                 if var == "val_sharpen_value":
                     val = min(50.0, val)
-                if var == "val_de_noise":
+                if var in ["val_denoise_luma", "val_denoise_chroma"]:
+                    # Try to load split value, or fallback to legacy de_noise
+                    val = settings.get(key, settings.get("de_noise", 0.0))
                     val = min(50.0, val)
                 if var == "val_de_haze":
                     val = min(50.0, val)

@@ -340,7 +340,7 @@ class EditorWidget(QtWidgets.QWidget):
         QtGui.QShortcut(
             QtGui.QKeySequence("F12"), self, self._toggle_performance_overlay
         )
-        QtGui.QShortcut(QtGui.QKeySequence("F11"), self, self._toggle_gpu_mode)
+        QtGui.QShortcut(QtGui.QKeySequence("F10"), self, self._cycle_denoise_mode)
 
         # Comparison overlay shortcut
         QtGui.QShortcut(QtGui.QKeySequence("U"), self, self.comparison_btn.animateClick)
@@ -723,7 +723,8 @@ class EditorWidget(QtWidgets.QWidget):
             sharpen_value=self.editing_controls.val_sharpen_value,
             sharpen_radius=self.editing_controls.val_sharpen_radius,
             sharpen_percent=self.editing_controls.val_sharpen_percent,
-            de_noise=self.editing_controls.val_de_noise,
+            denoise_luma=self.editing_controls.val_denoise_luma,
+            denoise_chroma=self.editing_controls.val_denoise_chroma,
         )
         self._request_update_from_view()
 
@@ -731,6 +732,13 @@ class EditorWidget(QtWidgets.QWidget):
         self.settings_manager.push_immediate_undo_state(
             f"Apply {preset_type} preset", self.image_processor.get_current_settings()
         )
+
+    def _cycle_denoise_mode(self):
+        """Cycle denoise mode and show toast."""
+        new_method = self.editing_controls.cycle_denoise_method()
+        self.show_toast(f"Denoise: {new_method}")
+        # Core debug log will already show this because settingChanged triggers a re-render
+        # and de_noise_image has a logger.debug call.
 
     def _on_raw_loaded(self, path, img_arr, settings):
         """Handle raw image loading completion."""
@@ -997,24 +1005,6 @@ class EditorWidget(QtWidgets.QWidget):
         is_visible = not self.perf_label.isVisible()
         self.perf_label.setVisible(is_visible)
         self.show_toast(f"Performance Overlay {'On' if is_visible else 'Off'}")
-
-    def _toggle_gpu_mode(self):
-        """Toggle GPU/OpenCL acceleration on/off for benchmarking."""
-        try:
-            import cv2
-
-            if not hasattr(cv2, "ocl") or not cv2.ocl.haveOpenCL():
-                self.show_toast("GPU Mode: OpenCL not available")
-                return
-
-            current_state = cv2.ocl.useOpenCL()
-            new_state = not current_state
-            cv2.ocl.setUseOpenCL(new_state)
-
-            mode_name = "GPU (OpenCL)" if new_state else "CPU Only"
-            self.show_toast(f"Rendering Mode: {mode_name}")
-        except Exception as e:
-            self.show_toast(f"GPU Mode Error: {e}")
 
     def _set_rating_shortcut(self, key):
         """Set rating from keyboard shortcut (1-5, 0)."""
