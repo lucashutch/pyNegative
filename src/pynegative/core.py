@@ -139,7 +139,7 @@ def apply_tone_map(
     start_time = time.perf_counter()
     # Create a single copy at the start to protect the input array
     img = img.copy()
-    total_pixels = img.size
+    total_pixels = img.shape[0] * img.shape[1]
 
     # --- NUMBA OPTIMIZATION START ---
     if NUMBA_AVAILABLE and img.dtype == np.float32 and img.flags["C_CONTIGUOUS"]:
@@ -175,7 +175,7 @@ def apply_tone_map(
                     "pct_shadows_clipped": clipped_shadows / total_pixels * 100,
                     "pct_highlights_clipped": clipped_highlights / total_pixels * 100,
                     "mean": pixel_sum
-                    / (total_pixels * 3),  # img.mean() is average of all channels
+                    / total_pixels,  # pixel_sum is already averaged per channel in kernel
                 }
             else:
                 stats = {}
