@@ -14,33 +14,21 @@ import numpy as np
 import rawpy
 from PIL import Image, ImageFilter, ImageOps
 
-try:
-    import cv2
-
-    # Note: OpenCV cache env var should be set in pynegative/__init__.py
-    # before this module is imported
-except ImportError:
-    cv2 = None
+import cv2
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
 
-# Try importing Numba kernels
-try:
-    from .utils.numba_kernels import (
-        tone_map_kernel,
-        sharpen_kernel,
-        bilateral_kernel_yuv,
-        dehaze_recovery_kernel,
-        dark_channel_kernel,
-        nl_means_numba,
-        nl_means_numba_multichannel,
-    )
-
-    NUMBA_AVAILABLE = True
-except ImportError:
-    NUMBA_AVAILABLE = False
-    logger.debug("Numba kernels not available, falling back to NumPy")
+# Import Numba kernels (required)
+from .utils.numba_kernels import (
+    tone_map_kernel,
+    sharpen_kernel,
+    bilateral_kernel_yuv,
+    dehaze_recovery_kernel,
+    dark_channel_kernel,
+    nl_means_numba,
+    nl_means_numba_multichannel,
+)
 
 RAW_EXTS = {
     ".cr2",
@@ -120,8 +108,8 @@ def apply_tone_map(
     img = img.copy()
     total_pixels = img.shape[0] * img.shape[1]
 
-    # --- NUMBA OPTIMIZATION START ---
-    if NUMBA_AVAILABLE and img.dtype == np.float32 and img.flags["C_CONTIGUOUS"]:
+    # --- NUMBA OPTIMIZATION ---
+    if img.dtype == np.float32 and img.flags["C_CONTIGUOUS"]:
         try:
             # Prepare WB multipliers
             t_scale = 0.4
@@ -576,9 +564,6 @@ def sharpen_image(img, radius, percent, method="High Quality"):
 
     if method == "High Quality":
         try:
-            if cv2 is None:
-                raise ImportError("OpenCV not available")
-
             # Setup: Blur and Edges (CPU)
             blur = cv2.GaussianBlur(img_float, (0, 0), radius)
             gray = cv2.cvtColor((img_float * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
@@ -586,20 +571,15 @@ def sharpen_image(img, radius, percent, method="High Quality"):
             kernel = np.ones((3, 3), np.uint8)
             edges = cv2.dilate(edges, kernel, iterations=1)
 
-            # 1. Try Numba JIT
-            if NUMBA_AVAILABLE:
-                try:
-                    # Numba kernel is in-place, so we copy for the 'sharpened' version
-                    sharpened = img_float.copy()
-                    sharpen_kernel(sharpened, blur, percent)
-                    result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
-                    backend = "Numba JIT"
-                except Exception as e:
-                    logger.warning(f"Numba Sharpen failed: {e}")
-                    sharpened = img_float + (img_float - blur) * (percent / 100.0)
-                    result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
-                    backend = "NumPy"
-            else:
+            # 1. Numba JIT (Primary)
+            try:
+                # Numba kernel is in-place, so we copy for the 'sharpened' version
+                sharpened = img_float.copy()
+                sharpen_kernel(sharpened, blur, percent)
+                result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
+                backend = "Numba JIT"
+            except Exception as e:
+                logger.warning(f"Numba Sharpen failed: {e}")
                 sharpened = img_float + (img_float - blur) * (percent / 100.0)
                 result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
                 backend = "NumPy"
@@ -626,8 +606,6 @@ def sharpen_image(img, radius, percent, method="High Quality"):
 
     # Fallback for Numpy (Basic Unsharp Mask)
     try:
-        if cv2 is None:
-            raise ImportError("OpenCV not available")
 
         # Convert radius to kernel size (must be odd)
         k_size = int(2 * math.ceil(radius * 2) + 1)
@@ -753,8 +731,6 @@ def de_noise_image(
     method_name = method
 
     try:
-        if cv2 is None:
-            raise ImportError("OpenCV not available")
 
         if method.startswith("NLMeans (Numba"):
             backend = "Numba JIT"
@@ -838,10 +814,7 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
             atmospheric_light = fixed_atmospheric_light
         else:
             # 1. Dark Channel estimation
-            if NUMBA_AVAILABLE:
-                dark_channel = dark_channel_kernel(img_array)
-            else:
-                dark_channel = np.min(img_array, axis=2)
+            dark_channel = dark_channel_kernel(img_array)
 
             # Morphology (Erode) - OpenCV CPU is very fast for this
             kernel = cv2.getStructuringElement(
@@ -868,12 +841,8 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
         # Avoid division by zero in A
         a_safe = np.maximum(atmospheric_light, 0.001)
 
-        if NUMBA_AVAILABLE:
-            normalized_img = img_array / a_safe
-            dark_normalized = dark_channel_kernel(normalized_img)
-        else:
-            normalized_img = img_array / a_safe
-            dark_normalized = np.min(normalized_img, axis=2)
+        normalized_img = img_array / a_safe
+        dark_normalized = dark_channel_kernel(normalized_img)
 
         # Morphology (Erode) - OpenCV CPU is very fast for this
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
@@ -889,26 +858,19 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
 
         # 4. Recover radiance
         # J(x) = (I(x) - A) / max(t(x), t0) + A
-        backend_rec = "NumPy"
-        if NUMBA_AVAILABLE:
-            try:
-                result = dehaze_recovery_kernel(
-                    img_array, transmission, atmospheric_light
-                )
-                backend_rec = "Numba JIT"
-            except Exception as e:
-                logger.warning(f"Numba Dehaze recovery failed: {e}")
-                transmission_3d = transmission[:, :, np.newaxis]
-                result = (
-                    img_array - atmospheric_light
-                ) / transmission_3d + atmospheric_light
-                result = np.clip(result, 0, 1)
-        else:
+        backend_rec = "Numba JIT"
+        try:
+            result = dehaze_recovery_kernel(
+                img_array, transmission, atmospheric_light
+            )
+        except Exception as e:
+            logger.warning(f"Numba Dehaze recovery failed: {e}")
             transmission_3d = transmission[:, :, np.newaxis]
             result = (
                 img_array - atmospheric_light
             ) / transmission_3d + atmospheric_light
             result = np.clip(result, 0, 1)
+            backend_rec = "NumPy"
 
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.debug(
