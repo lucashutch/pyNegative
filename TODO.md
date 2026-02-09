@@ -13,9 +13,11 @@ This document tracks planned features, project goals, and areas for technical im
 
 - **Persistent Thumbnail Cache**: Store thumbnails on disk to speed up gallery loading.
 - **GPU Acceleration**: Explore OpenCL/CuPy for faster tone-mapping calculations.
+- **GPU acceleration**: Investigate writing a custom gpu acceleration for opencv/opencl that perforam all of the requrired translations ins a single step to reduce time spent transferring photo data between cpu and gpu.
 - **improve gpu acceleration startup time** - it takes a few seconds for the gpu acceleration to kick in. investigate if this can be improved.
 - **General Code Cleanup**: Analyse the codebase for redundant, duplicate or unused code.
 - **investigate vulkan acceleration** - it may be possible to use vulkan for faster cross platform image processing.
+- **deep dive on program startup time**: Perform a deep dive on the time different parts of this program take to startup and contribute to the overall system start up time.
 
 ## Bugs
 

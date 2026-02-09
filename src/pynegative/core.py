@@ -25,6 +25,20 @@ except ImportError:
 # Configure logger for this module
 logger = logging.getLogger(__name__)
 
+# Try importing Numba kernels
+try:
+    from .utils.numba_kernels import (
+        tone_map_kernel,
+        sharpen_kernel,
+        bilateral_kernel_yuv,
+        dehaze_recovery_kernel,
+    )
+
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    logger.debug("Numba kernels not available, falling back to NumPy")
+
 RAW_EXTS = {
     ".cr2",
     ".cr3",
@@ -125,7 +139,58 @@ def apply_tone_map(
     start_time = time.perf_counter()
     # Create a single copy at the start to protect the input array
     img = img.copy()
-    total_pixels = img.size
+    total_pixels = img.shape[0] * img.shape[1]
+
+    # --- NUMBA OPTIMIZATION START ---
+    if NUMBA_AVAILABLE and img.dtype == np.float32 and img.flags["C_CONTIGUOUS"]:
+        try:
+            # Prepare WB multipliers
+            t_scale = 0.4
+            tint_scale = 0.2
+            r_mult = np.exp(temperature * t_scale - tint * (tint_scale / 2))
+            g_mult = np.exp(tint * tint_scale)
+            b_mult = np.exp(-temperature * t_scale - tint * (tint_scale / 2))
+
+            # Exposure multiplier
+            exp_mult = 2.0**exposure
+
+            # Call kernel (in-place)
+            clipped_shadows, clipped_highlights, pixel_sum = tone_map_kernel(
+                img,
+                exp_mult,
+                contrast,
+                blacks,
+                whites,
+                shadows,
+                highlights,
+                saturation,
+                r_mult,
+                g_mult,
+                b_mult,
+            )
+
+            # Skip NumPy Implementation
+            if calculate_stats:
+                stats = {
+                    "pct_shadows_clipped": clipped_shadows / total_pixels * 100,
+                    "pct_highlights_clipped": clipped_highlights / total_pixels * 100,
+                    "mean": pixel_sum
+                    / total_pixels,  # pixel_sum is already averaged per channel in kernel
+                }
+            else:
+                stats = {}
+
+            elapsed = (time.perf_counter() - start_time) * 1000
+            logger.debug(
+                f"Tone Map (Numba): Size: {img.shape[1]}x{img.shape[0]} | Time: {elapsed:.2f}ms"
+            )
+            return img, stats
+
+        except Exception as e:
+            logger.warning(f"Numba kernel failed, falling back to NumPy: {e}")
+            # Fall through to NumPy implementation
+
+    # --- NUMPY FALLBACK (Original Implementation) ---
 
     # 0. White Balance (Relative Scaling)
     if temperature != 0.0 or tint != 0.0:
@@ -514,6 +579,9 @@ def sharpen_image(img, radius, percent, method="High Quality"):
             img_float = img_float.astype(np.float32) / 255.0
         was_pil = False
 
+    h, w = img_float.shape[:2]
+    size_str = f" | Size: {w}x{h}"
+
     if method == "High Quality":
         try:
             if cv2 is None:
@@ -521,38 +589,56 @@ def sharpen_image(img, radius, percent, method="High Quality"):
 
             backend = "CPU"
             try:
-                # Attempt OpenCL acceleration
-                u_img = cv2.UMat((img_float * 255).astype(np.uint8))
-                u_blur = cv2.GaussianBlur(u_img, (0, 0), radius)
-                blur = u_blur.get().astype(np.float32) / 255.0
-                sharpened = img_float + (img_float - blur) * (percent / 100.0)
+                # Setup: Blur and Edges (shared across backends)
+                # We use UMat for setup if possible
+                try:
+                    u_img = cv2.UMat((img_float * 255).astype(np.uint8))
+                    u_blur = cv2.GaussianBlur(u_img, (0, 0), radius)
+                    blur = u_blur.get().astype(np.float32) / 255.0
+                    u_gray = cv2.cvtColor(u_img, cv2.COLOR_RGB2GRAY)
+                    u_edges = cv2.Canny(u_gray, 50, 150)
+                    kernel = np.ones((3, 3), np.uint8)
+                    u_edges = cv2.dilate(u_edges, kernel, iterations=1)
+                    edges = u_edges.get()
+                    setup_backend = "UMat"
+                except Exception:
+                    blur = cv2.GaussianBlur(img_float, (0, 0), radius)
+                    gray = cv2.cvtColor(
+                        (img_float * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY
+                    )
+                    edges = cv2.Canny(gray, 50, 150)
+                    kernel = np.ones((3, 3), np.uint8)
+                    edges = cv2.dilate(edges, kernel, iterations=1)
+                    setup_backend = "CPU"
 
-                # Edge detection
-                u_gray = cv2.cvtColor(u_img, cv2.COLOR_RGB2GRAY)
-                u_edges = cv2.Canny(u_gray, 50, 150)
+                # 1. Try Numba JIT
+                if NUMBA_AVAILABLE:
+                    try:
+                        # Numba kernel is in-place, so we copy for the 'sharpened' version
+                        sharpened = img_float.copy()
+                        sharpen_kernel(sharpened, blur, percent)
+                        result = np.where(
+                            edges[:, :, np.newaxis] > 0, sharpened, img_float
+                        )
+                        backend = f"Numba JIT (Setup: {setup_backend})"
+                    except Exception as e:
+                        logger.warning(f"Numba Sharpen failed: {e}")
+                        sharpened = img_float + (img_float - blur) * (percent / 100.0)
+                        result = np.where(
+                            edges[:, :, np.newaxis] > 0, sharpened, img_float
+                        )
+                        backend = f"NumPy (Setup: {setup_backend})"
+                else:
+                    sharpened = img_float + (img_float - blur) * (percent / 100.0)
+                    result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
+                    backend = f"NumPy (Setup: {setup_backend})"
 
-                # Dilate edges
-                kernel = np.ones((3, 3), np.uint8)
-                u_edges = cv2.dilate(u_edges, kernel, iterations=1)
-                edges = u_edges.get()
-
-                result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
-                # Check actual OpenCL state, not just if UMat succeeded
-                backend = "UMat (OpenCL)" if cv2.ocl.useOpenCL() else "UMat (CPU)"
-            except Exception:
-                # Fallback to CPU
-                blur = cv2.GaussianBlur(img_float, (0, 0), radius)
-                sharpened = img_float + (img_float - blur) * (percent / 100.0)
-
-                gray = cv2.cvtColor(
-                    (img_float * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY
-                )
-                edges = cv2.Canny(gray, 50, 150)
-
-                kernel = np.ones((3, 3), np.uint8)
-                edges = cv2.dilate(edges, kernel, iterations=1)
-
-                result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img_float)
+            except Exception as e:
+                logger.error(f"High Quality Sharpen logic failed: {e}")
+                # Ultimate fallback
+                blur = cv2.GaussianBlur(img_float, (3, 3), radius)
+                result = img_float + (img_float - blur) * (percent / 100.0)
+                backend = "CPU Fallback"
 
             if was_pil:
                 result_array = np.clip(result * 255, 0, 255).astype(np.uint8)
@@ -562,7 +648,7 @@ def sharpen_image(img, radius, percent, method="High Quality"):
 
             elapsed = (time.perf_counter() - start_time) * 1000
             logger.debug(
-                f"Sharpen: High Quality ({backend}) | Radius: {radius:.2f} | Percent: {percent:.1f}% | Time: {elapsed:.2f}ms"
+                f"Sharpen: High Quality ({backend}) | Radius: {radius:.2f} | Percent: {percent:.1f}%{size_str} | Time: {elapsed:.2f}ms"
             )
             return res
         except Exception as e:
@@ -585,6 +671,11 @@ def sharpen_image(img, radius, percent, method="High Quality"):
             k_size += 1
         blur = cv2.GaussianBlur(img_float, (k_size, k_size), radius)
         result = img_float + (img_float - blur) * (percent / 100.0)
+
+        elapsed = (time.perf_counter() - start_time) * 1000
+        logger.debug(
+            f"Sharpen: Basic CPU Fallback | Radius: {radius:.2f} | Percent: {percent:.1f}%{size_str} | Time: {elapsed:.2f}ms"
+        )
         return np.clip(result, 0, 1.0)
     except Exception:
         return img_float
@@ -656,57 +747,81 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
             )
 
         else:  # Default to High Quality (YUV Bilateral)
-            backend = "CPU"
-            try:
-                # Attempt OpenCL acceleration
-                u_img = cv2.UMat((img_array * 255).astype(np.uint8))
-                u_yuv = cv2.cvtColor(u_img, cv2.COLOR_RGB2YUV)
-                y, u, v = cv2.split(u_yuv)
+            backend = "Numba JIT"
+            if NUMBA_AVAILABLE:
+                try:
+                    # Prepare YUV for Numba
+                    yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
+                    sigma_color_y = float(strength) * 0.4 * s_scale
+                    sigma_space_y = 0.5 + (float(strength) / 100.0)
+                    sigma_color_uv = float(strength) * 4.5 * s_scale
+                    sigma_space_uv = 2.0 + (float(strength) / 10.0)
 
-                # Chroma: Very aggressive to remove color blotches
-                chroma_sigma_color = float(strength) * 4.5 * s_scale
-                chroma_sigma_space = 2.0 + (float(strength) / 10.0)
-                u_denoised = cv2.bilateralFilter(
-                    u, 11, chroma_sigma_color, chroma_sigma_space
-                )
-                v_denoised = cv2.bilateralFilter(
-                    v, 11, chroma_sigma_color, chroma_sigma_space
-                )
+                    img_yuv_denoised = bilateral_kernel_yuv(
+                        yuv,
+                        strength,
+                        sigma_color_y,
+                        sigma_space_y,
+                        sigma_color_uv,
+                        sigma_space_uv,
+                    )
+                    denoised = cv2.cvtColor(img_yuv_denoised, cv2.COLOR_YUV2RGB)
+                except Exception as e:
+                    logger.warning(f"Numba Bilateral failed: {e}")
+                    # denoised is still None, fall through
 
-                # Luma: Conservative to preserve fine texture/grain
-                luma_sigma_color = float(strength) * 0.4 * s_scale
-                luma_sigma_space = 0.5 + (float(strength) / 100.0)
-                y_denoised = cv2.bilateralFilter(
-                    y, 3, luma_sigma_color, luma_sigma_space
-                )
+            if denoised is None:
+                backend = "CPU"
+                try:
+                    # Attempt OpenCL acceleration
+                    u_img = cv2.UMat((img_array * 255).astype(np.uint8))
+                    u_yuv = cv2.cvtColor(u_img, cv2.COLOR_RGB2YUV)
+                    y, u, v = cv2.split(u_yuv)
 
-                denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
-                u_denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
-                denoised = u_denoised.get().astype(np.float32) / 255.0
-                # Check actual OpenCL state, not just if UMat succeeded
-                backend = "UMat (OpenCL)" if cv2.ocl.useOpenCL() else "UMat (CPU)"
-            except Exception:
-                # Fallback to CPU
-                yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
-                y, u, v = cv2.split(yuv)
+                    # Chroma: Very aggressive to remove color blotches
+                    chroma_sigma_color = float(strength) * 4.5 * s_scale
+                    chroma_sigma_space = 2.0 + (float(strength) / 10.0)
+                    u_denoised = cv2.bilateralFilter(
+                        u, 11, chroma_sigma_color, chroma_sigma_space
+                    )
+                    v_denoised = cv2.bilateralFilter(
+                        v, 11, chroma_sigma_color, chroma_sigma_space
+                    )
 
-                chroma_sigma_color = float(strength) * 4.5 * s_scale
-                chroma_sigma_space = 2.0 + (float(strength) / 10.0)
-                u_denoised = cv2.bilateralFilter(
-                    u, 11, chroma_sigma_color, chroma_sigma_space
-                )
-                v_denoised = cv2.bilateralFilter(
-                    v, 11, chroma_sigma_color, chroma_sigma_space
-                )
+                    # Luma: Conservative to preserve fine texture/grain
+                    luma_sigma_color = float(strength) * 0.4 * s_scale
+                    luma_sigma_space = 0.5 + (float(strength) / 100.0)
+                    y_denoised = cv2.bilateralFilter(
+                        y, 3, luma_sigma_color, luma_sigma_space
+                    )
 
-                luma_sigma_color = float(strength) * 0.4 * s_scale
-                luma_sigma_space = 0.5 + (float(strength) / 100.0)
-                y_denoised = cv2.bilateralFilter(
-                    y, 3, luma_sigma_color, luma_sigma_space
-                )
+                    denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
+                    u_denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
+                    denoised = u_denoised.get().astype(np.float32) / 255.0
+                    # Check actual OpenCL state, not just if UMat succeeded
+                    backend = "UMat (OpenCL)" if cv2.ocl.useOpenCL() else "UMat (CPU)"
+                except Exception:
+                    # Fallback to CPU
+                    yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
+                    y, u, v = cv2.split(yuv)
 
-                denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
-                denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
+                    chroma_sigma_color = float(strength) * 4.5 * s_scale
+                    chroma_sigma_space = 2.0 + (float(strength) / 10.0)
+                    u_denoised = cv2.bilateralFilter(
+                        u, 11, chroma_sigma_color, chroma_sigma_space
+                    )
+                    v_denoised = cv2.bilateralFilter(
+                        v, 11, chroma_sigma_color, chroma_sigma_space
+                    )
+
+                    luma_sigma_color = float(strength) * 0.4 * s_scale
+                    luma_sigma_space = 0.5 + (float(strength) / 100.0)
+                    y_denoised = cv2.bilateralFilter(
+                        y, 3, luma_sigma_color, luma_sigma_space
+                    )
+
+                    denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
+                    denoised = cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
 
             elapsed = (time.perf_counter() - start_time) * 1000
             logger.debug(
@@ -888,15 +1003,30 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
 
         # 4. Recover radiance
         # J(x) = (I(x) - A) / max(t(x), t0) + A
-        transmission_3d = transmission[:, :, np.newaxis]
-        result = (img_array - atmospheric_light) / transmission_3d + atmospheric_light
-
-        # Final clip
-        result = np.clip(result, 0, 1)
+        backend_rec = "NumPy"
+        if NUMBA_AVAILABLE:
+            try:
+                result = dehaze_recovery_kernel(
+                    img_array, transmission, atmospheric_light
+                )
+                backend_rec = "Numba JIT"
+            except Exception as e:
+                logger.warning(f"Numba Dehaze recovery failed: {e}")
+                transmission_3d = transmission[:, :, np.newaxis]
+                result = (
+                    img_array - atmospheric_light
+                ) / transmission_3d + atmospheric_light
+                result = np.clip(result, 0, 1)
+        else:
+            transmission_3d = transmission[:, :, np.newaxis]
+            result = (
+                img_array - atmospheric_light
+            ) / transmission_3d + atmospheric_light
+            result = np.clip(result, 0, 1)
 
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.debug(
-            f"Dehaze: (Atmos: {backend}, Trans: {transmission_backend}, Blur: {blur_backend}) | "
+            f"Dehaze: (Atmos: {backend}, Trans: {transmission_backend}, Blur: {blur_backend}, Rec: {backend_rec}) | "
             f"Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
         )
 
