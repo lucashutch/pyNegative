@@ -695,59 +695,27 @@ def _apply_nl_means_path(img_array, l_str, c_str, method):
 
 
 def _apply_bilateral_path(img_array, l_str, c_str):
-    """Internal helper to apply Bilateral denoising path (Numba or OpenCV)."""
+    """Internal helper to apply Numba Bilateral denoising path."""
     s_scale = 1.0 / 255.0
     yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
 
-    if NUMBA_AVAILABLE:
-        sigma_color_y = max(1e-6, l_str * 0.4 * s_scale)
-        sigma_space_y = 0.5 + (l_str / 100.0)
-        sigma_color_uv = max(1e-6, c_str * 4.5 * s_scale)
-        sigma_space_uv = 2.0 + (c_str / 10.0)
+    sigma_color_y = max(1e-6, l_str * 0.4 * s_scale)
+    sigma_space_y = 0.5 + (l_str / 100.0)
+    sigma_color_uv = max(1e-6, c_str * 4.5 * s_scale)
+    sigma_space_uv = 2.0 + (c_str / 10.0)
 
-        img_yuv_denoised = bilateral_kernel_yuv(
-            yuv,
-            l_str,
-            sigma_color_y,
-            sigma_space_y,
-            sigma_color_uv,
-            sigma_space_uv,
-        )
-        return cv2.cvtColor(img_yuv_denoised, cv2.COLOR_YUV2RGB)
-
-    # OpenCV CPU Fallback
-    y, u, v = cv2.split(yuv)
-    if c_str > 0:
-        chroma_sigma_color = c_str * 4.5 * s_scale
-        chroma_sigma_space = 2.0 + (c_str / 10.0)
-        u = cv2.bilateralFilter(u, 11, chroma_sigma_color, chroma_sigma_space)
-        v = cv2.bilateralFilter(v, 11, chroma_sigma_color, chroma_sigma_space)
-
-    if l_str > 0:
-        luma_sigma_color = l_str * 0.4 * s_scale
-        luma_sigma_space = 0.5 + (l_str / 100.0)
-        y = cv2.bilateralFilter(y, 3, luma_sigma_color, luma_sigma_space)
-
-    return cv2.cvtColor(cv2.merge([y, u, v]), cv2.COLOR_YUV2RGB)
+    img_yuv_denoised = bilateral_kernel_yuv(
+        yuv,
+        l_str,
+        sigma_color_y,
+        sigma_space_y,
+        sigma_color_uv,
+        sigma_space_uv,
+    )
+    return cv2.cvtColor(img_yuv_denoised, cv2.COLOR_YUV2RGB)
 
 
-def _apply_median_fallback(img_array, l_str, c_str):
-    """Internal helper for PIL Median filter fallback."""
-    # Use the max of both strengths as a base for size
-    base_strength = max(l_str, c_str)
-    size = int(base_strength / 5.0)
-    if size < 3:
-        size = 3 if base_strength > 0 else 0
-    if size == 0:
-        return img_array
 
-    if size % 2 == 0:
-        size += 1
-
-    # Convert to PIL for the filter
-    pil_img = Image.fromarray((np.clip(img_array, 0, 1) * 255).astype(np.uint8))
-    result = pil_img.filter(ImageFilter.MedianFilter(size=size))
-    return np.array(result).astype(np.float32) / 255.0
 
 
 def de_noise_image(
@@ -788,7 +756,7 @@ def de_noise_image(
         if cv2 is None:
             raise ImportError("OpenCV not available")
 
-        if method.startswith("NLMeans (Numba") and NUMBA_AVAILABLE:
+        if method.startswith("NLMeans (Numba"):
             backend = "Numba JIT"
             # Get clean variant name for logging
             parts = method.split(" ")
@@ -797,7 +765,7 @@ def de_noise_image(
 
             denoised = _apply_nl_means_path(img_array, l_str, c_str, method)
         else:
-            backend = "Numba JIT" if NUMBA_AVAILABLE else "OpenCV CPU"
+            backend = "Numba JIT"
             method_name = "Bilateral"
             denoised = _apply_bilateral_path(img_array, l_str, c_str)
 
@@ -807,11 +775,7 @@ def de_noise_image(
         )
 
     except Exception as e:
-        logger.warning(f"Core Denoise failed, falling back to Median: {e}")
-        start_fallback = time.perf_counter()
-        denoised = _apply_median_fallback(img_array, l_str, c_str)
-        elapsed = (time.perf_counter() - start_fallback) * 1000
-        logger.debug(f"Denoise: Median Fallback | Time: {elapsed:.2f}ms")
+        logger.error(f"Core Denoise failed: {e}")
 
     if denoised is not None:
         if was_pil:
