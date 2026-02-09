@@ -215,10 +215,12 @@ class ImageProcessorWorker(QtCore.QRunnable):
             return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0
 
         fit_scale = min(vw / full_w, vh / full_h) if vw > 0 and vh > 0 else 1.0
+        preview_scale = 2048 / max(full_w, full_h)
         is_fitting = getattr(self._view_ref, "_is_fitting", False)
-        is_zoomed_in = not is_fitting and (
-            zoom_scale > fit_scale * 1.01 or zoom_scale > 0.99
-        )
+
+        # Only trigger ROI processing if we are actually zoomed in MORE than what the
+        # background preview (2048px) can already provide with good quality.
+        is_zoomed_in = not is_fitting and (zoom_scale > preview_scale * 1.1)
 
         # --- Part 1: Global Background ---
         # Resolution key for caching
@@ -357,20 +359,40 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     res_key_roi = "half"
                     base_roi_img = self.base_img_half
 
-                # Use helper to get/calculate cached heavy image for this TIER
-                processed_full_tier = self._process_heavy_stage(
-                    base_roi_img, res_key_roi, heavy_params, zoom_scale
-                )
-
-                # Now crop the ROI from the CACHED heavy tier
-                # Coordinates must be scaled to the tier's resolution
+                # Resolution-scaled coordinates for the ROI tier
                 h_tier, w_tier = base_roi_img.shape[:2]
                 s_x = int(src_x * (w_tier / full_w))
                 s_y = int(src_y * (h_tier / full_h))
                 s_x2 = int(src_x2 * (w_tier / full_w))
                 s_y2 = int(src_y2 * (h_tier / full_h))
 
-                crop_chunk = processed_full_tier[s_y:s_y2, s_x:s_x2]
+                # COMPUTE ROI CHUNK ONLY
+                # We crop the raw data first to avoid processing the whole large image.
+                # We add some padding to the crop so that local filters (like bilateral)
+                # don't have artifacts at the edges of the visible ROI.
+                pad = 16
+                p_x1 = max(0, s_x - pad)
+                p_y1 = max(0, s_y - pad)
+                p_x2 = min(w_tier, s_x2 + pad)
+                p_y2 = min(h_tier, s_y2 + pad)
+
+                raw_chunk = base_roi_img[p_y1:p_y2, p_x1:p_x2]
+
+                # We use a unique resolution key for this ROI position to enable caching
+                # of intermediate stages while panning.
+                roi_res_key = (res_key_roi, s_x, s_y, s_x2, s_y2)
+
+                processed_chunk_padded = self._process_heavy_stage(
+                    raw_chunk, roi_res_key, heavy_params, zoom_scale
+                )
+
+                # Remove the padding we added earlier
+                c_y1 = s_y - p_y1
+                c_x1 = s_x - p_x1
+                c_y2 = c_y1 + (s_y2 - s_y)
+                c_x2 = c_x1 + (s_x2 - s_x)
+
+                crop_chunk = processed_chunk_padded[c_y1:c_y2, c_x1:c_x2]
 
                 if flip_h or flip_v:
                     flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
@@ -388,10 +410,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 pix_roi = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_roi))
                 roi_x, roi_y = src_x - offset_x, src_y - offset_y
                 roi_w, roi_h = req_w, req_h
-
-        return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
-
-        return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
 
         return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
 
