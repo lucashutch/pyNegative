@@ -9,6 +9,7 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from pynegative.utils.numba_kernels import nl_means_numba, nl_means_numba_multichannel
 
+
 def benchmark(name, func, args, iters=3):
     print(f"Benchmarking {name}...")
     # Warmup
@@ -20,10 +21,11 @@ def benchmark(name, func, args, iters=3):
         _ = func(*args)
         elapsed = (time.perf_counter() - start) * 1000
         times.append(elapsed)
-        print(f"  Iter {i+1}: {elapsed:.2f}ms")
+        print(f"  Iter {i + 1}: {elapsed:.2f}ms")
 
     avg = np.mean(times)
     return avg
+
 
 def main():
     # Use 720p for testing
@@ -46,10 +48,12 @@ def main():
     uv_stack = np.ascontiguousarray(img[:, :, 1:])
     yuv_stack = np.ascontiguousarray(img)
 
-    p_size, s_size = 3, 5 # Fast+ settings
+    p_size, s_size = 3, 5  # Fast+ settings
     h_val = 1.0
 
-    print(f"Testing on {w}x{h} image (Fast+ settings: patch={p_size}, search={s_size})\n")
+    print(
+        f"Testing on {w}x{h} image (Fast+ settings: patch={p_size}, search={s_size})\n"
+    )
 
     # --- UV TEST ---
     def separate_uv(u, v, h_val, p, s):
@@ -63,7 +67,7 @@ def main():
     t_sep_uv = benchmark("Separate U and V", separate_uv, (u, v, h_val, p_size, s_size))
     t_com_uv = benchmark("Combined UV", combined_uv, (uv_stack, h_val, p_size, s_size))
 
-    print(f"\nUV Results:")
+    print("\nUV Results:")
     print(f"  Separate: {t_sep_uv:.2f}ms")
     print(f"  Combined: {t_com_uv:.2f}ms")
     print(f"  Improvement: {(t_sep_uv / t_com_uv - 1) * 100:.1f}%")
@@ -78,13 +82,18 @@ def main():
     def combined_yuv(yuv, h_val, p, s):
         return nl_means_numba_multichannel(yuv, (h_val, h_val, h_val), p, s)
 
-    t_sep_yuv = benchmark("Separate Y, U, and V", separate_yuv, (y, u, v, h_val, p_size, s_size))
-    t_com_yuv = benchmark("Combined YUV", combined_yuv, (yuv_stack, h_val, p_size, s_size))
+    t_sep_yuv = benchmark(
+        "Separate Y, U, and V", separate_yuv, (y, u, v, h_val, p_size, s_size)
+    )
+    t_com_yuv = benchmark(
+        "Combined YUV", combined_yuv, (yuv_stack, h_val, p_size, s_size)
+    )
 
-    print(f"\nYUV Results:")
+    print("\nYUV Results:")
     print(f"  Separate: {t_sep_yuv:.2f}ms")
     print(f"  Combined: {t_com_yuv:.2f}ms")
     print(f"  Improvement: {(t_sep_yuv / t_com_yuv - 1) * 100:.1f}%")
+
 
 if __name__ == "__main__":
     main()
