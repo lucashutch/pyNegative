@@ -181,7 +181,9 @@ def apply_tone_map(
                 stats = {}
 
             elapsed = (time.perf_counter() - start_time) * 1000
-            logger.debug(f"Tone Map (Numba): Time: {elapsed:.2f}ms")
+            logger.debug(
+                f"Tone Map (Numba): Size: {img.shape[1]}x{img.shape[0]} | Time: {elapsed:.2f}ms"
+            )
             return img, stats
 
         except Exception as e:
@@ -577,6 +579,9 @@ def sharpen_image(img, radius, percent, method="High Quality"):
             img_float = img_float.astype(np.float32) / 255.0
         was_pil = False
 
+    h, w = img_float.shape[:2]
+    size_str = f" | Size: {w}x{h}"
+
     if method == "High Quality":
         try:
             if cv2 is None:
@@ -643,7 +648,7 @@ def sharpen_image(img, radius, percent, method="High Quality"):
 
             elapsed = (time.perf_counter() - start_time) * 1000
             logger.debug(
-                f"Sharpen: High Quality ({backend}) | Radius: {radius:.2f} | Percent: {percent:.1f}% | Time: {elapsed:.2f}ms"
+                f"Sharpen: High Quality ({backend}) | Radius: {radius:.2f} | Percent: {percent:.1f}%{size_str} | Time: {elapsed:.2f}ms"
             )
             return res
         except Exception as e:
@@ -666,6 +671,11 @@ def sharpen_image(img, radius, percent, method="High Quality"):
             k_size += 1
         blur = cv2.GaussianBlur(img_float, (k_size, k_size), radius)
         result = img_float + (img_float - blur) * (percent / 100.0)
+
+        elapsed = (time.perf_counter() - start_time) * 1000
+        logger.debug(
+            f"Sharpen: Basic CPU Fallback | Radius: {radius:.2f} | Percent: {percent:.1f}%{size_str} | Time: {elapsed:.2f}ms"
+        )
         return np.clip(result, 0, 1.0)
     except Exception:
         return img_float
