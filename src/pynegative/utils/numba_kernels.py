@@ -1,11 +1,13 @@
+import logging
 import numpy as np
+
+# Use 'pynegative.core' logger so messages appear alongside other core processing logs
+_logger = logging.getLogger("pynegative.core")
 
 try:
     from numba import njit, prange
-
-    print("Numba imported successfully")
 except ImportError:
-    print("Numba not found, using pure python fallback decorators")
+    _logger.warning("Numba not found, using pure python fallback decorators")
 
     def njit(*args, **kwargs):
         def decorator(f):
@@ -16,7 +18,7 @@ except ImportError:
     prange = range
 
 
-@njit(fastmath=True, cache=True)
+@njit(fastmath=True, cache=True, parallel=True)
 def tone_map_kernel(
     img,  # float32 array (H, W, 3) - MODIFIED IN PLACE
     exposure,  # float
@@ -44,15 +46,13 @@ def tone_map_kernel(
     # Pre-calculate constants
     inv_denom = 1.0 / (whites - blacks) if abs(whites - blacks) > 1e-6 else 1000000.0
 
-    # Statistics tracking
+    # Statistics tracking (will be reduced across threads)
     clipped_shadows = 0
     clipped_highlights = 0
     pixel_sum = 0.0
 
-    # Parallelize over pixels (flattened view would be faster but let's do rows for readability)
-    # Actually, we can just iterate flatly if we reshape, but multidimensional iteration is fine in Numba
-
-    for r in range(rows):
+    # Parallelize over pixels
+    for r in prange(rows):
         for c in range(cols):
             # Load pixel
             # Ptr access might be faster, but Numba optimizes array access well
@@ -309,6 +309,103 @@ def bilateral_kernel_yuv(
                 out[r, c, ch] = sum_ch / w_sum_ch if w_sum_ch > 0 else val
 
     return out
+
+
+@njit(parallel=True, fastmath=True, cache=True)
+def nl_means_numba(image, h=10.0, patch_size=7, search_size=21):
+    """
+    Optimized Numba implementation of Non-Local Means Denoising.
+    Includes early exit for patch distance calculation.
+    """
+    rows, cols = image.shape
+    output = np.zeros_like(image)
+
+    # Calculate offsets
+    pad_p = patch_size // 2
+    pad_s = search_size // 2
+    patch_area_inv = 1.0 / (patch_size * patch_size)
+
+    # Safety check: if image is too small for these windows, return original
+    if rows < 2*(pad_s + pad_p) + 1 or cols < 2*(pad_s + pad_p) + 1:
+        return image
+
+    # Pre-calculate h squared for the weight formula
+    # Add a tiny epsilon to avoid division by zero if h is extremely small
+    h2 = max(h * h, 1e-10)
+    # Weight threshold for early exit (e.g. weight < 0.0001)
+    # -log(0.0001) * h2 + 2*h2 = distance threshold
+    dist_threshold = 9.21 * h2 + 2.0 * h2
+
+    # Iterate over every pixel in the image (Parallelized)
+    # Bounds must account for BOTH search radius and patch radius to avoid OOB access
+    for i in prange(pad_s + pad_p, rows - (pad_s + pad_p)):
+        for j in range(pad_s + pad_p, cols - (pad_s + pad_p)):
+
+            total_weight = 0.0
+            weighted_sum = 0.0
+
+            # Iterate over the search window
+            for r in range(i - pad_s, i + pad_s + 1):
+                for c in range(j - pad_s, j + pad_s + 1):
+
+                    # Calculate Euclidean distance between patch(i,j) and patch(r,c)
+                    dist = 0.0
+                    skip_patch = False
+
+                    # Inner loop: Compare the two patches
+                    for pr in range(-pad_p, pad_p + 1):
+                        for pc in range(-pad_p, pad_p + 1):
+                            diff = image[i + pr, j + pc] - image[r + pr, c + pc]
+                            dist += diff * diff * patch_area_inv
+
+                            # Early exit if distance is already too high to contribute significant weight
+                            if dist > dist_threshold:
+                                skip_patch = True
+                                break
+                        if skip_patch:
+                            break
+
+                    if skip_patch:
+                        continue
+
+                    # Calculate weight using Gaussian kernel
+                    weight = np.exp(-max(dist - (2.0 * h2), 0.0) / h2)
+
+                    weighted_sum += image[r, c] * weight
+                    total_weight += weight
+
+            # Normalize and assign
+            if total_weight > 0:
+                output[i, j] = weighted_sum / total_weight
+            else:
+                output[i, j] = image[i, j]
+
+    return output
+
+
+@njit(fastmath=True, cache=True, parallel=True)
+def dark_channel_kernel(img):
+    """
+    Calculates the dark channel of an image: min(R, G, B) for each pixel.
+    """
+    rows, cols, _ = img.shape
+    dark = np.empty((rows, cols), dtype=np.float32)
+
+    for r in prange(rows):
+        for c in range(cols):
+            r_val = img[r, c, 0]
+            g_val = img[r, c, 1]
+            b_val = img[r, c, 2]
+
+            # min(R, G, B)
+            m = r_val
+            if g_val < m:
+                m = g_val
+            if b_val < m:
+                m = b_val
+            dark[r, c] = m
+
+    return dark
 
 
 @njit(fastmath=True, cache=True, parallel=True)
