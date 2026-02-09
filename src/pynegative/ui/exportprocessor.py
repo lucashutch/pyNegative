@@ -131,7 +131,7 @@ class ExportProcessor(QtCore.QRunnable):
             pil_img = pynegative.de_noise_image(
                 pil_img,
                 denoise_val,
-                method=sidecar_settings.get("denoise_method", "High Quality"),
+                method=sidecar_settings.get("denoise_method", "NLMeans (Numba Fast+)"),
                 zoom=1.0,
             )
 

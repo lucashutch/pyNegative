@@ -247,7 +247,7 @@ class CropRectItem(QtWidgets.QGraphicsObject):
         }
 
     def hoverMoveEvent(self, event):
-        pos = event.position()
+        pos = event.pos()
 
         # Check rotation zone first (handle + far outside)
         rotation_handle = self._hit_test_rotation(pos)

@@ -3,12 +3,27 @@ import logging
 import argparse
 from pathlib import Path
 
-from PySide6 import QtWidgets, QtGui, QtCore
-from .main_window import MainWindow
-from .. import __version__, core as pynegative
+# Configure logging EARLY before importing internal modules
+# to capture debug logs during the import phase.
+log_level = logging.DEBUG if "--debug" in sys.argv else logging.ERROR
+logging.basicConfig(
+    level=log_level,
+    format="%(asctime)s.%(msecs)03d [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+
+# Suppress verbose third-party logs
+logging.getLogger("PIL").setLevel(logging.INFO)
+logging.getLogger("numba").setLevel(logging.WARNING)
+logging.getLogger("llvmlite").setLevel(logging.WARNING)
+
+from PySide6 import QtWidgets, QtGui, QtCore  # noqa: E402
+from .main_window import MainWindow  # noqa: E402
+from .. import __version__  # noqa: E402
 
 
 logger = logging.getLogger(__name__)
+logger.debug(f"pyNegative v{__version__} starting up...")
 
 
 def main():
@@ -20,17 +35,6 @@ def main():
         "path", nargs="?", help="Path to an image file or directory to open"
     )
     args, unknown = parser.parse_known_args()
-
-    # Configure logging
-    log_level = logging.DEBUG if args.debug else logging.ERROR
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s.%(msecs)03d [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
-
-    # Suppress verbose third-party logs
-    logging.getLogger("PIL").setLevel(logging.INFO)
 
     # Note: We pass unknown args to QApplication so it can handle standard Qt flags
     app = QtWidgets.QApplication([sys.argv[0]] + unknown)
@@ -102,31 +106,9 @@ def main():
     update_splash_status("Initializing...")
 
     # Force initial events processing to make sure splash is visible
-    for _ in range(50):
+    for _ in range(30):
         app.processEvents()
         QtCore.QThread.msleep(10)
-
-    # Use QThread and QEventLoop for robust non-blocking wait
-    class WarmupThread(QtCore.QThread):
-        def run(self):
-            pynegative.warmup_hardware_acceleration()
-
-    warmup_thread = WarmupThread()
-    loop = QtCore.QEventLoop()
-    warmup_thread.finished.connect(loop.quit)
-
-    # Start warmup
-    warmup_thread.start()
-
-    # Timer to keep processing events and repainting to satisfy the OS "responsiveness" check
-    heartbeat = QtCore.QTimer()
-    heartbeat.timeout.connect(lambda: (app.processEvents(), splash.repaint()))
-    heartbeat.start(50)
-
-    # Execute local event loop - this is the most "Qt" way to wait without hanging
-    loop.exec()
-    heartbeat.stop()
-    warmup_thread.wait()
 
     update_splash_status("Loading UI...")
     app.processEvents()
