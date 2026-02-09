@@ -654,13 +654,8 @@ def de_noise_image(
     if img is None:
         return None
 
-    # Handle legacy single-setting calls if any
-    try:
-        l_str = float(luma_strength)
-        c_str = float(chroma_strength)
-    except (TypeError, ValueError):
-        l_str = 0.0
-        c_str = 0.0
+    l_str = float(luma_strength)
+    c_str = float(chroma_strength)
 
     if l_str <= 0 and c_str <= 0:
         return img
@@ -762,9 +757,9 @@ def de_noise_image(
                 try:
                     # Prepare YUV for Numba
                     yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
-                    sigma_color_y = l_str * 0.4 * s_scale
+                    sigma_color_y = max(1e-6, l_str * 0.4 * s_scale)
                     sigma_space_y = 0.5 + (l_str / 100.0)
-                    sigma_color_uv = c_str * 4.5 * s_scale
+                    sigma_color_uv = max(1e-6, c_str * 4.5 * s_scale)
                     sigma_space_uv = 2.0 + (c_str / 10.0)
 
                     img_yuv_denoised = bilateral_kernel_yuv(
