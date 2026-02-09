@@ -305,45 +305,17 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 processed_bg, **tone_map_settings, calculate_stats=False
             )
 
-            # Prepare image for geometry (convert to uint8 for OpenCV)
-            if isinstance(bg_output, Image.Image):
-                img_uint8 = np.array(bg_output)
-            else:
-                img_uint8 = (bg_output * 255).astype(np.uint8)
+            # Apply Geometry (optimized OpenCV implementation)
+            bg_output = pynegative.apply_geometry(
+                bg_output,
+                rotate=rotate_val,
+                crop=crop_val,
+                flip_h=flip_h,
+                flip_v=flip_v,
+            )
 
-            # Geometry operations...
-            if flip_h or flip_v:
-                flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
-                img_uint8 = cv2.flip(img_uint8, flip_code)
-
-            if abs(rotate_val) > 0.01:
-                h, w = img_uint8.shape[:2]
-                center = (w / 2, h / 2)
-                img_uint8 = cv2.cvtColor(img_uint8, cv2.COLOR_RGB2RGBA)
-                M = cv2.getRotationMatrix2D(center, rotate_val, 1.0)
-                cos_val = np.abs(M[0, 0])
-                sin_val = np.abs(M[0, 1])
-                new_w = int((h * sin_val) + (w * cos_val))
-                new_h = int((h * cos_val) + (w * sin_val))
-                M[0, 2] += (new_w / 2) - center[0]
-                M[1, 2] += (new_h / 2) - center[1]
-                img_uint8 = cv2.warpAffine(
-                    img_uint8,
-                    M,
-                    (new_w, new_h),
-                    flags=cv2.INTER_NEAREST,
-                    borderMode=cv2.BORDER_CONSTANT,
-                    borderValue=(0, 0, 0, 0),
-                )
-
-            if crop_val is not None:
-                h, w = img_uint8.shape[:2]
-                c_left, c_top, c_right, c_bottom = crop_val
-                x1, y1 = int(c_left * w), int(c_top * h)
-                x2, y2 = int(c_right * w), int(c_bottom * h)
-                x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
-                if x2 > x1 and y2 > y1:
-                    img_uint8 = img_uint8[y1:y2, x1:x2]
+            # Convert to uint8 for display and histograms
+            img_uint8 = (np.clip(bg_output, 0, 1) * 255).astype(np.uint8)
 
             pil_bg = Image.fromarray(img_uint8)
             preview_h, preview_w = self.base_img_preview.shape[:2]
@@ -489,10 +461,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     crop_chunk, **tone_map_settings, calculate_stats=False
                 )
 
-                if isinstance(processed_roi, Image.Image):
-                    pil_roi = processed_roi
-                else:
-                    pil_roi = Image.fromarray((processed_roi * 255).astype(np.uint8))
+                pil_roi = Image.fromarray((np.clip(processed_roi, 0, 1) * 255).astype(np.uint8))
                 pix_roi = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_roi))
                 roi_x, roi_y = src_x - offset_x, src_y - offset_y
                 roi_w, roi_h = req_w, req_h

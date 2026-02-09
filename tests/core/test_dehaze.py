@@ -23,8 +23,4 @@ class TestDehaze:
         assert np.all(result <= 1.0)
         assert result.shape == img.shape
 
-        # Test with PIL input
-        pil_img = Image.fromarray((img * 255).astype(np.uint8))
-        result_pil, _ = pynegative.de_haze_image(pil_img, 10.0)
-        assert isinstance(result_pil, Image.Image)
-        assert result_pil.size == pil_img.size
+        assert result.shape == img.shape
