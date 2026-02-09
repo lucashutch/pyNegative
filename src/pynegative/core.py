@@ -87,7 +87,8 @@ def apply_tone_map(
         # Sanitize all inputs to floats with safe defaults
         def safe_float(val, default):
             try:
-                if val is None: return default
+                if val is None:
+                    return default
                 return float(val)
             except (ValueError, TypeError):
                 return default
@@ -108,7 +109,7 @@ def apply_tone_map(
     except Exception as e:
         logger.error(f"Error sanitizing apply_tone_map parameters: {e}")
         # Re-raise or return default if parameters are critical
-        return img, {} # Or raise e, depending on desired error handling
+        return img, {}  # Or raise e, depending on desired error handling
 
     """
     Applies White Balance -> Exposure -> Levels -> Tone EQ -> Saturation -> Base Curve
@@ -695,8 +696,8 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
         if method.startswith("NLMeans (Numba") and NUMBA_AVAILABLE:
             backend = "Numba JIT"
             # Safe split for method name
-            parts = method.split(' ')
-            variant = parts[-1].replace(')', '') if len(parts) > 1 else "Full"
+            parts = method.split(" ")
+            variant = parts[-1].replace(")", "") if len(parts) > 1 else "Full"
             method_name = f"NL-Means ({variant})"
             yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
             y, u, v = cv2.split(yuv)
@@ -713,13 +714,19 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
 
             if "Y)" in method:
                 # Luminance only
-                y_denoised = nl_means_numba(y, h=h_y, patch_size=p_size, search_size=s_size)
+                y_denoised = nl_means_numba(
+                    y, h=h_y, patch_size=p_size, search_size=s_size
+                )
                 denoised_yuv = cv2.merge([y_denoised, u, v])
             elif "UV)" in method:
                 # Chroma only
                 uv_stack = np.ascontiguousarray(yuv[:, :, 1:])
-                uv_denoised = nl_means_numba_multichannel(uv_stack, h=(h_uv, h_uv), patch_size=p_size, search_size=s_size)
-                denoised_yuv = cv2.merge([y, uv_denoised[:, :, 0], uv_denoised[:, :, 1]])
+                uv_denoised = nl_means_numba_multichannel(
+                    uv_stack, h=(h_uv, h_uv), patch_size=p_size, search_size=s_size
+                )
+                denoised_yuv = cv2.merge(
+                    [y, uv_denoised[:, :, 0], uv_denoised[:, :, 1]]
+                )
             else:
                 # Default (no suffix): Full YUV using multichannel
                 # (But user asked for UV-only default previously, so I'll keep the 'UV only' label in the log if needed,
@@ -727,8 +734,12 @@ def de_noise_image(img, strength, method="High Quality", zoom=None):
                 # To satisfy "I just want to see what it looks like (UV only)", I will keep it UV-only for now.
                 method_name += " (UV only)"
                 uv_stack = np.ascontiguousarray(yuv[:, :, 1:])
-                uv_denoised = nl_means_numba_multichannel(uv_stack, h=(h_uv, h_uv), patch_size=p_size, search_size=s_size)
-                denoised_yuv = cv2.merge([y, uv_denoised[:, :, 0], uv_denoised[:, :, 1]])
+                uv_denoised = nl_means_numba_multichannel(
+                    uv_stack, h=(h_uv, h_uv), patch_size=p_size, search_size=s_size
+                )
+                denoised_yuv = cv2.merge(
+                    [y, uv_denoised[:, :, 0], uv_denoised[:, :, 1]]
+                )
 
                 # OPTION: If we wanted to switch back to full YUV:
                 # denoised_yuv = nl_means_numba_multichannel(yuv, h=(h_y, h_uv, h_uv), patch_size=p_size, search_size=s_size)
@@ -891,15 +902,12 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
         # Atmospheric light estimation
         if fixed_atmospheric_light is not None:
             atmospheric_light = fixed_atmospheric_light
-            backend = "Fixed"
         else:
             # 1. Dark Channel estimation
             if NUMBA_AVAILABLE:
                 dark_channel = dark_channel_kernel(img_array)
-                backend = "Numba"
             else:
                 dark_channel = np.min(img_array, axis=2)
-                backend = "NumPy"
 
             # Morphology (Erode) - OpenCV CPU is very fast for this
             kernel = cv2.getStructuringElement(
@@ -929,11 +937,9 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
         if NUMBA_AVAILABLE:
             normalized_img = img_array / a_safe
             dark_normalized = dark_channel_kernel(normalized_img)
-            transmission_backend = "Numba"
         else:
             normalized_img = img_array / a_safe
             dark_normalized = np.min(normalized_img, axis=2)
-            transmission_backend = "NumPy"
 
         # Morphology (Erode) - OpenCV CPU is very fast for this
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
