@@ -12,12 +12,9 @@ from io import BytesIO
 
 import numpy as np
 import rawpy
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageOps
 
 import cv2
-
-# Configure logger for this module
-logger = logging.getLogger(__name__)
 
 # Import Numba kernels (required)
 from .utils.numba_kernels import (
@@ -29,6 +26,9 @@ from .utils.numba_kernels import (
     nl_means_numba,
     nl_means_numba_multichannel,
 )
+
+# Configure logger for this module
+logger = logging.getLogger(__name__)
 
 RAW_EXTS = {
     ".cr2",
@@ -552,9 +552,6 @@ def _apply_bilateral_path(img_array, l_str, c_str):
     return cv2.cvtColor(img_yuv_denoised, cv2.COLOR_YUV2RGB)
 
 
-
-
-
 def de_noise_image(
     img, luma_strength=0, chroma_strength=0, method="High Quality", zoom=None
 ):
@@ -609,8 +606,6 @@ def de_noise_image(
         return np.clip(denoised, 0, 1)
 
     return img
-
-
 
 
 def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
@@ -706,9 +701,7 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
         # 4. Recover radiance
         # J(x) = (I(x) - A) / max(t(x), t0) + A
         backend_rec = "Numba JIT"
-        result = dehaze_recovery_kernel(
-            img_array, transmission, atmospheric_light
-        )
+        result = dehaze_recovery_kernel(img_array, transmission, atmospheric_light)
 
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.debug(

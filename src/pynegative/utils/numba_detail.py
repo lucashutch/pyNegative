@@ -1,5 +1,6 @@
 from ._numba_base import njit, prange
 
+
 @njit(fastmath=True, cache=True, parallel=True)
 def sharpen_kernel(img, blurred, percent):
     """

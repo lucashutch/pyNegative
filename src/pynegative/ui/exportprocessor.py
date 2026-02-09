@@ -1,5 +1,6 @@
 from pathlib import Path
 from PIL import Image
+import numpy as np
 from PySide6 import QtCore
 import pillow_heif
 from .. import core as pynegative
@@ -147,7 +148,9 @@ class ExportProcessor(QtCore.QRunnable):
 
         # Convert to PIL Image for final steps
         if output_bps == 16:
-            pil_img = Image.fromarray((np.clip(img, 0, 1) * 65535).astype("uint16"), "RGB")
+            pil_img = Image.fromarray(
+                (np.clip(img, 0, 1) * 65535).astype("uint16"), "RGB"
+            )
         else:
             pil_img = Image.fromarray((np.clip(img, 0, 1) * 255).astype("uint8"))
 

@@ -461,7 +461,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     crop_chunk, **tone_map_settings, calculate_stats=False
                 )
 
-                pil_roi = Image.fromarray((np.clip(processed_roi, 0, 1) * 255).astype(np.uint8))
+                pil_roi = Image.fromarray(
+                    (np.clip(processed_roi, 0, 1) * 255).astype(np.uint8)
+                )
                 pix_roi = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_roi))
                 roi_x, roi_y = src_x - offset_x, src_y - offset_y
                 roi_w, roi_h = req_w, req_h

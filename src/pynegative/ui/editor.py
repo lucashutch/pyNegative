@@ -1006,7 +1006,6 @@ class EditorWidget(QtWidgets.QWidget):
         self.perf_label.setVisible(is_visible)
         self.show_toast(f"Performance Overlay {'On' if is_visible else 'Off'}")
 
-
     def _set_rating_shortcut(self, key):
         """Set rating from keyboard shortcut (1-5, 0)."""
         if key == Qt.Key_0:

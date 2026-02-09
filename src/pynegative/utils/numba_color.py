@@ -1,5 +1,5 @@
-import numpy as np
 from ._numba_base import njit, prange
+
 
 @njit(fastmath=True, cache=True, parallel=True)
 def tone_map_kernel(
@@ -90,12 +90,18 @@ def tone_map_kernel(
                     b_val = c_lum + (b_val - c_lum) * saturation
 
             # Clipping & Stats
-            if r_val < 0.0: clipped_shadows += 1
-            elif r_val > 1.0: clipped_highlights += 1
-            if g_val < 0.0: clipped_shadows += 1
-            elif g_val > 1.0: clipped_highlights += 1
-            if b_val < 0.0: clipped_shadows += 1
-            elif b_val > 1.0: clipped_highlights += 1
+            if r_val < 0.0:
+                clipped_shadows += 1
+            elif r_val > 1.0:
+                clipped_highlights += 1
+            if g_val < 0.0:
+                clipped_shadows += 1
+            elif g_val > 1.0:
+                clipped_highlights += 1
+            if b_val < 0.0:
+                clipped_shadows += 1
+            elif b_val > 1.0:
+                clipped_highlights += 1
 
             r_val = max(0.0, min(1.0, r_val))
             g_val = max(0.0, min(1.0, g_val))
