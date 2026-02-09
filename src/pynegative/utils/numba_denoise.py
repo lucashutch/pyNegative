@@ -1,6 +1,7 @@
 import numpy as np
 from ._numba_base import njit, prange
 
+
 @njit(fastmath=True, cache=True, parallel=True)
 def bilateral_kernel_yuv(
     img_yuv, strength, sigma_color_y, sigma_space_y, sigma_color_uv, sigma_space_uv
@@ -390,9 +391,7 @@ def nl_means_numba_multichannel(
                                 else:
                                     channels_bad_count += 1
 
-                                if (
-                                    channels_bad_count == channels
-                                ):
+                                if channels_bad_count == channels:
                                     skip_patch = True
                                     break
                             if skip_patch:

@@ -1,6 +1,7 @@
 import numpy as np
 from ._numba_base import njit, prange
 
+
 @njit(fastmath=True, cache=True, parallel=True)
 def dark_channel_kernel(img):
     """
