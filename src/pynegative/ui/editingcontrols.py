@@ -325,7 +325,6 @@ class EditingControls(QtWidgets.QWidget):
             self.details_section,
         )
 
-
         # 6. Geometry
         self.geometry_section = CollapsibleSection("Geometry")
         self.geometry_section.resetClicked.connect(
@@ -842,7 +841,6 @@ class EditingControls(QtWidgets.QWidget):
         self.histogram_widget.set_mode(mode)
         self.histogramModeChanged.emit(mode)
 
-
     def _on_aspect_ratio_changed(self, index):
         """Handle aspect ratio selection change."""
         text = self.aspect_ratio_combo.currentText()
@@ -934,10 +932,19 @@ class EditingControls(QtWidgets.QWidget):
         # 2. Main Processing Sliders
         # We look for 'raw_' prefixed absolute slider values first if version >= 2
         slider_vars = [
-            "val_temperature", "val_tint", "val_exposure", "val_contrast",
-            "val_whites", "val_blacks", "val_highlights", "val_shadows",
-            "val_saturation", "val_sharpen_value", "val_de_noise", "val_de_haze",
-            "rotation"
+            "val_temperature",
+            "val_tint",
+            "val_exposure",
+            "val_contrast",
+            "val_whites",
+            "val_blacks",
+            "val_highlights",
+            "val_shadows",
+            "val_saturation",
+            "val_sharpen_value",
+            "val_de_noise",
+            "val_de_haze",
+            "rotation",
         ]
 
         for var in slider_vars:
@@ -967,12 +974,17 @@ class EditingControls(QtWidgets.QWidget):
             else:
                 # Version 1 or missing raw value: Load logical value
                 key = var.replace("val_", "")
-                default_val = 1.0 if key in ["contrast", "saturation", "whites"] else 0.0
+                default_val = (
+                    1.0 if key in ["contrast", "saturation", "whites"] else 0.0
+                )
                 val = settings.get(key, default_val)
                 # Apply clamping and logical-to-slider conversion
-                if var == "val_sharpen_value": val = min(50.0, val)
-                if var == "val_de_noise": val = min(50.0, val)
-                if var == "val_de_haze": val = min(50.0, val)
+                if var == "val_sharpen_value":
+                    val = min(50.0, val)
+                if var == "val_de_noise":
+                    val = min(50.0, val)
+                if var == "val_de_haze":
+                    val = min(50.0, val)
                 self.set_slider_value(var, val, silent=True)
 
         # 3. Special derived parameters
@@ -982,4 +994,6 @@ class EditingControls(QtWidgets.QWidget):
         self.val_sharpen_percent = (s_val / 100.0) * 300.0
 
         # Method strings
-        self.val_denoise_method = settings.get("denoise_method", "NLMeans (Numba Fast+)")
+        self.val_denoise_method = settings.get(
+            "denoise_method", "NLMeans (Numba Fast+)"
+        )

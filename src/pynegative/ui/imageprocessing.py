@@ -125,7 +125,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
         dehaze_p = {"de_haze": heavy_params["de_haze"]}
         denoise_p = {
             "de_noise": heavy_params["de_noise"],
-            "denoise_method": heavy_params.get("denoise_method", "NLMeans (Numba Fast+)"),
+            "denoise_method": heavy_params.get(
+                "denoise_method", "NLMeans (Numba Fast+)"
+            ),
         }
         sharpen_p = {
             "sharpen_value": heavy_params["sharpen_value"],
@@ -230,12 +232,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         try:
             zoom_scale = self._view_ref.transform().m11()
-            viewport = self._view_ref.viewport()
-            vw, vh = viewport.width(), viewport.height()
         except (AttributeError, RuntimeError):
             return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0
 
-        fit_scale = min(vw / full_w, vh / full_h) if vw > 0 and vh > 0 else 1.0
         preview_scale = 2048 / max(full_w, full_h)
         is_fitting = getattr(self._view_ref, "_is_fitting", False)
         rotate_val = self.settings.get("rotation", 0.0)
@@ -258,7 +257,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
         heavy_params = {
             "de_haze": self.settings.get("de_haze", 0),
             "de_noise": self.settings.get("de_noise", 0),
-            "denoise_method": self.settings.get("denoise_method", "NLMeans (Numba Fast+)"),
+            "denoise_method": self.settings.get(
+                "denoise_method", "NLMeans (Numba Fast+)"
+            ),
             "sharpen_value": self.settings.get("sharpen_value", 0),
             "sharpen_radius": self.settings.get("sharpen_radius", 0.5),
             "sharpen_percent": self.settings.get("sharpen_percent", 0.0),
@@ -393,7 +394,16 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 roi_area = req_w * req_h
                 full_area = full_w * full_h
                 if roi_area / full_area > 0.85:
-                    return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
+                    return (
+                        pix_bg,
+                        new_full_w,
+                        new_full_h,
+                        pix_roi,
+                        roi_x,
+                        roi_y,
+                        roi_w,
+                        roi_h,
+                    )
 
                 # ROI Resolution Selection
                 # We only want to use an ROI tier if it offers MORE detail than
@@ -421,7 +431,16 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 # Final safety: If the best tier we found isn't actually better than
                 # the preview, skip ROI entirely.
                 if base_roi_img.shape[1] <= preview_w_res:
-                    return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
+                    return (
+                        pix_bg,
+                        new_full_w,
+                        new_full_h,
+                        pix_roi,
+                        roi_x,
+                        roi_y,
+                        roi_w,
+                        roi_h,
+                    )
 
                 # Resolution-scaled coordinates for the ROI tier
                 h_tier, w_tier = base_roi_img.shape[:2]

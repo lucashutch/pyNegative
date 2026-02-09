@@ -17,9 +17,9 @@ logging.getLogger("PIL").setLevel(logging.INFO)
 logging.getLogger("numba").setLevel(logging.WARNING)
 logging.getLogger("llvmlite").setLevel(logging.WARNING)
 
-from PySide6 import QtWidgets, QtGui, QtCore
-from .main_window import MainWindow
-from .. import __version__, core as pynegative
+from PySide6 import QtWidgets, QtGui, QtCore  # noqa: E402
+from .main_window import MainWindow  # noqa: E402
+from .. import __version__  # noqa: E402
 
 
 logger = logging.getLogger(__name__)
