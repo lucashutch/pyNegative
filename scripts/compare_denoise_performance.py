@@ -62,10 +62,9 @@ def main():
     # --- Benchmarking Suite ---
     methods = [
         ("High Quality", 3),
+        ("NLMeans (Numba Hybrid YUV)", 3),
         ("NLMeans (Numba Fast YUV)", 3),
-        ("NLMeans (Numba Fast UV)", 3),
         ("NLMeans (Numba Fast+ YUV)", 5),
-        ("NLMeans (Numba Fast+ UV)", 5),
     ]
 
     results = {}
@@ -88,9 +87,9 @@ def main():
 
     # We'll save the "Full" and "Fast" versions for comparison
     res_bilateral = de_noise_image(noisy_img, strength, method="High Quality")
+    res_hybrid = de_noise_image(noisy_img, strength, method="NLMeans (Numba Hybrid)")
     res_fast = de_noise_image(noisy_img, strength, method="NLMeans (Numba Fast)")
     res_fast_plus = de_noise_image(noisy_img, strength, method="NLMeans (Numba Fast+)")
-    res_full = de_noise_image(noisy_img, strength, method="NLMeans (Numba)")
 
     # Convert to uint8 for saving
     def to_u8(img):
@@ -100,9 +99,9 @@ def main():
         [
             to_u8(noisy_img),
             to_u8(res_bilateral),
+            to_u8(res_hybrid),
             to_u8(res_fast),
             to_u8(res_fast_plus),
-            to_u8(res_full),
         ]
     )
 
@@ -110,14 +109,12 @@ def main():
     font = cv2.FONT_HERSHEY_SIMPLEX
     cv2.putText(h_stack, "Noisy", (10, 30), font, 1, (255, 255, 255), 2)
     cv2.putText(h_stack, "Bilateral", (size[1] + 10, 30), font, 1, (255, 255, 255), 2)
+    cv2.putText(h_stack, "NLM Hybrid", (size[1] * 2 + 10, 30), font, 1, (255, 255, 255), 2)
     cv2.putText(
-        h_stack, "NLM Fast", (size[1] * 2 + 10, 30), font, 1, (255, 255, 255), 2
+        h_stack, "NLM Fast", (size[1] * 3 + 10, 30), font, 1, (255, 255, 255), 2
     )
     cv2.putText(
-        h_stack, "NLM Fast+", (size[1] * 3 + 10, 30), font, 1, (255, 255, 255), 2
-    )
-    cv2.putText(
-        h_stack, "NLM Full", (size[1] * 4 + 10, 30), font, 1, (255, 255, 255), 2
+        h_stack, "NLM Fast+", (size[1] * 4 + 10, 30), font, 1, (255, 255, 255), 2
     )
 
     cv2.imwrite("denoise_comparison.png", cv2.cvtColor(h_stack, cv2.COLOR_RGB2BGR))

@@ -709,11 +709,30 @@ def de_noise_image(
             if "Fast+" in method:
                 p_size, s_size = 3, 5
             elif "Fast" in method:
-                p_size, s_size = 3, 7
+                p_size, s_size = 5, 9
 
             # Even if method says "Y" or "UV", we now respect individual strengths.
             # However, if both > 0, we can use multichannel for speed.
-            if l_str > 0 and c_str > 0:
+            if "Hybrid" in method:
+                # Hybrid: Fast+ for Luma (3, 5), Fast for Chroma (5, 9)
+                y_denoised = y
+                if l_str > 0:
+                    y_denoised = nl_means_numba(
+                        y, h=h_y, patch_size=3, search_size=5
+                    )
+
+                u_denoised, v_denoised = u, v
+                if c_str > 0:
+                    uv_stack = np.ascontiguousarray(yuv[:, :, 1:])
+                    uv_denoised = nl_means_numba_multichannel(
+                        uv_stack, h=(h_uv, h_uv), patch_size=5, search_size=9
+                    )
+                    u_denoised = uv_denoised[:, :, 0]
+                    v_denoised = uv_denoised[:, :, 1]
+
+                denoised_yuv = cv2.merge([y_denoised, u_denoised, v_denoised])
+
+            elif l_str > 0 and c_str > 0:
                 denoised_yuv = nl_means_numba_multichannel(
                     yuv, h=(h_y, h_uv, h_uv), patch_size=p_size, search_size=s_size
                 )
