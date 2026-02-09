@@ -124,7 +124,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
         # 1. Group parameters by effect
         dehaze_p = {"de_haze": heavy_params["de_haze"]}
         denoise_p = {
-            "de_noise": heavy_params["de_noise"],
+            "denoise_luma": heavy_params.get("denoise_luma", 0),
+            "denoise_chroma": heavy_params.get("denoise_chroma", 0),
             "denoise_method": heavy_params.get(
                 "denoise_method", "NLMeans (Numba Fast+)"
             ),
@@ -157,11 +158,12 @@ class ImageProcessorWorker(QtCore.QRunnable):
             return processed
 
         def apply_denoise(image):
-            if denoise_p["de_noise"] <= 0:
+            if denoise_p["denoise_luma"] <= 0 and denoise_p["denoise_chroma"] <= 0:
                 return image
             return pynegative.de_noise_image(
                 image,
-                denoise_p["de_noise"],
+                luma_strength=denoise_p["denoise_luma"],
+                chroma_strength=denoise_p["denoise_chroma"],
                 method=denoise_p["denoise_method"],
                 zoom=zoom_scale,
             )
@@ -187,7 +189,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 ("sharpen", sharpen_p, apply_sharpen),
                 ("dehaze", dehaze_p, apply_dehaze),
             ]
-        elif active == "de_noise":
+        elif active in ["denoise_luma", "denoise_chroma"]:
             # Adjusting Denoise -> Dehaze and Sharpen come first
             pipeline = [
                 ("dehaze", dehaze_p, apply_dehaze),
@@ -256,7 +258,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
         # Stage 1: Heavy Effects (Dehaze, Denoise, Sharpen)
         heavy_params = {
             "de_haze": self.settings.get("de_haze", 0),
-            "de_noise": self.settings.get("de_noise", 0),
+            "denoise_luma": self.settings.get("denoise_luma", 0),
+            "denoise_chroma": self.settings.get("denoise_chroma", 0),
             "denoise_method": self.settings.get(
                 "denoise_method", "NLMeans (Numba Fast+)"
             ),
@@ -661,7 +664,7 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     def set_processing_params(self, **kwargs):
         # Track which heavy effect was last adjusted to optimize pipeline order
-        heavy_keys = {"de_haze", "de_noise", "sharpen_value"}
+        heavy_keys = {"de_haze", "denoise_luma", "denoise_chroma", "sharpen_value"}
         for k in kwargs:
             if k in heavy_keys:
                 self._last_heavy_adjusted = k

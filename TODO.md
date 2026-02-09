@@ -14,6 +14,7 @@ This document tracks planned features, project goals, and areas for technical im
 
 - **Persistent Thumbnail Cache**: Store thumbnails on disk to speed up gallery loading.
 - **General Code Cleanup**: Analyse the codebase for redundant, duplicate or unused code.
+- **compile numba kernels on startup** - this should speed up the initialisation of the application. the kernels are cached but only compile jit whent hey are needed. should recompute them on startup if they are needed.
 
 ## Bugs
 
