@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+from importlib.metadata import version, PackageNotFoundError
 
 
 logger = logging.getLogger(__name__)
@@ -49,4 +50,7 @@ __all__ = [
     "HEIF_SUPPORTED",
 ]
 
-__version__ = "0.1.3"
+try:
+    __version__ = version("pynegative")
+except PackageNotFoundError:
+    __version__ = "unknown"

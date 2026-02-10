@@ -244,6 +244,13 @@ EOF
 create_macos_app() {
 	print_info "\nCreating macOS app bundle..."
 
+	# Extract version from pyproject.toml
+	VERSION="0.1.4"
+	if [ -f "$INSTALL_DIR/pyproject.toml" ]; then
+		# Simple grep/sed extraction assuming standard formatting: version = "x.y.z"
+		VERSION=$(grep '^version' "$INSTALL_DIR/pyproject.toml" | sed -E 's/version[[:space:]]*=[[:space:]]*"(.*)"/\1/')
+	fi
+
 	APP_BUNDLE="$HOME/Applications/pyNegative.app"
 
 	# Create app bundle structure
@@ -267,9 +274,9 @@ create_macos_app() {
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
-    <string>0.1.3</string>
+    <string>${VERSION}</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.3</string>
+    <string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key>
     <string>10.12</string>
     <key>LSApplicationCategoryType</key>
