@@ -116,8 +116,17 @@ class ImageProcessorWorker(QtCore.QRunnable):
             is_roi = isinstance(res_key, tuple)
 
             if is_roi:
-                # True Quality for ROI (Zoomed-in Detail)
-                effective_method = requested_method
+                # ROI Logic:
+                # If zoom < 1.0 (zoomed out from 1:1), cap at Hybrid to maintain speed
+                if zoom_scale < 0.95:
+                    if (
+                        "High Quality" in requested_method
+                        or "Hybrid" in requested_method
+                    ):
+                        effective_method = "NLMeans (Numba Hybrid YUV)"
+                else:
+                    # True Quality for ROI (Zoomed-in Detail >= 100%)
+                    effective_method = requested_method
             elif res_key in ["preview", "quarter"]:
                 effective_method = "NLMeans (Numba Ultra Fast YUV)"
             elif res_key == "half":
@@ -251,7 +260,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
         flip_v = self.settings.get("flip_v", False)
         crop_val = self.settings.get("crop", None)
 
-        is_zoomed_in = not is_fitting and (zoom_scale > preview_scale * 1.1)
+        # ROI logic: Only trigger if zoom needs more than the 2048px preview can provide.
+        # We use a 1.5x buffer to avoid frequent re-renders at low zoom.
+        is_zoomed_in = not is_fitting and (zoom_scale > preview_scale * 1.5)
 
         # --- Part 1: Global Background ---
         res_key = "preview"
@@ -406,22 +417,28 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     if self.base_img_preview is not None
                     else 2048
                 )
+
+                # Requested width in pixels for the current zoom
+                req_view_w = v_w * zoom_scale
+
+                # Tier selection: Find the smallest tier that covers req_view_w
                 res_key_roi = "full"
                 base_roi_img = self.base_img_full
 
-                if self.base_img_half is not None:
-                    h_w = self.base_img_half.shape[1]
-                    if h_w > preview_w_res and zoom_scale < 1.5:
-                        res_key_roi = "half"
-                        base_roi_img = self.base_img_half
-
                 if self.base_img_quarter is not None:
                     q_w = self.base_img_quarter.shape[1]
-                    if q_w > preview_w_res and zoom_scale < 0.5:
+                    if q_w >= req_view_w:
                         res_key_roi = "quarter"
                         base_roi_img = self.base_img_quarter
 
-                if base_roi_img.shape[1] <= preview_w_res:
+                if res_key_roi == "full" and self.base_img_half is not None:
+                    h_w = self.base_img_half.shape[1]
+                    if h_w >= req_view_w:
+                        res_key_roi = "half"
+                        base_roi_img = self.base_img_half
+
+                # If the chosen tier is still smaller than or equal to preview, just use preview tier
+                if base_roi_img.shape[1] <= preview_w_res and not self.expand_roi:
                     return (
                         pix_bg,
                         new_full_w,
@@ -439,19 +456,43 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 s_x2 = int(src_x2 * (w_tier / full_w))
                 s_y2 = int(src_y2 * (h_tier / full_h))
 
-                pad = 16
-                p_x1, p_y1 = max(0, s_x - pad), max(0, s_y - pad)
-                p_x2, p_y2 = min(w_tier, s_x2 + pad), min(h_tier, s_y2 + pad)
+                # Attempt Spatial Cache Hit
+                requested_tier_rect = (s_x, s_y, s_x2, s_y2)
+                crop_chunk = None
 
-                raw_chunk = base_roi_img[p_y1:p_y2, p_x1:p_x2]
-                roi_res_key = (res_key_roi, s_x, s_y, s_x2, s_y2)
-                processed_chunk_padded = self._process_heavy_stage(
-                    raw_chunk, roi_res_key, heavy_params, zoom_scale
-                )
+                if self.cache:
+                    crop_chunk = self.cache.get_spatial_roi(
+                        res_key_roi, requested_tier_rect, heavy_params
+                    )
+                    if crop_chunk is not None:
+                        logger.debug(f"Spatial ROI Cache HIT for tier {res_key_roi}")
 
-                c_y1, c_x1 = s_y - p_y1, s_x - p_x1
-                c_y2, c_x2 = c_y1 + (s_y2 - s_y), c_x1 + (s_x2 - s_x)
-                crop_chunk = processed_chunk_padded[c_y1:c_y2, c_x1:c_x2]
+                if crop_chunk is None:
+                    # Cache Miss: Process the larger chunk (includes safety pad)
+                    pad = 16
+                    p_x1, p_y1 = max(0, s_x - pad), max(0, s_y - pad)
+                    p_x2, p_y2 = min(w_tier, s_x2 + pad), min(h_tier, s_y2 + pad)
+
+                    raw_chunk = base_roi_img[p_y1:p_y2, p_x1:p_x2]
+                    # Note: We use the actual padded coords as the cache key
+                    roi_res_key = (res_key_roi, p_x1, p_y1, p_x2, p_y2)
+                    processed_chunk_padded = self._process_heavy_stage(
+                        raw_chunk, roi_res_key, heavy_params, zoom_scale
+                    )
+
+                    # Store in Spatial Cache for future crops/zooms
+                    if self.cache:
+                        self.cache.put_spatial_roi(
+                            res_key_roi,
+                            (p_x1, p_y1, p_x2, p_y2),
+                            heavy_params,
+                            processed_chunk_padded,
+                        )
+
+                    # Extract the exact crop we wanted (removing the 16px pad)
+                    c_y1, c_x1 = s_y - p_y1, s_x - p_x1
+                    c_y2, c_x2 = c_y1 + (s_y2 - s_y), c_x1 + (s_x2 - s_x)
+                    crop_chunk = processed_chunk_padded[c_y1:c_y2, c_x1:c_x2]
 
                 if flip_h or flip_v:
                     flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
