@@ -15,7 +15,7 @@ class ImageProcessorSignals(QtCore.QObject):
         QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int, int
     )
     histogramUpdated = QtCore.Signal(dict, int)
-    tiersGenerated = QtCore.Signal(np.ndarray, np.ndarray, np.ndarray)
+    tierGenerated = QtCore.Signal(float, np.ndarray)  # scale, array
     uneditedPixmapGenerated = QtCore.Signal(QtGui.QPixmap)
     error = QtCore.Signal(str, int)
 
@@ -35,15 +35,16 @@ class TierGeneratorWorker(QtCore.QRunnable):
         try:
             h, w = self.img_array.shape[:2]
 
-            # 1. Preview (High Priority for UI)
-            scale = 2048 / max(h, w)
-            target_h, target_w = int(h * scale), int(w * scale)
-            preview = cv2.resize(
-                self.img_array, (target_w, target_h), interpolation=cv2.INTER_LINEAR
+            # 1. Immediate Fast Feedback (1:16)
+            # This is roughly 300-600px, perfect for instant pixels
+            scale_fast = 0.0625
+            fast_w, fast_h = int(w * scale_fast), int(h * scale_fast)
+            preview_fast = cv2.resize(
+                self.img_array, (fast_w, fast_h), interpolation=cv2.INTER_LINEAR
             )
 
-            # Generate unedited pixmap from preview for fast initial display
-            img_uint8 = (np.clip(preview, 0, 1) * 255).astype(np.uint8)
+            # Generate unedited pixmap from fast preview for near-instant display
+            img_uint8 = (np.clip(preview_fast, 0, 1) * 255).astype(np.uint8)
             h_p, w_p, c_p = img_uint8.shape
             qimage = QtGui.QImage(
                 img_uint8.data, w_p, h_p, c_p * w_p, QtGui.QImage.Format_RGB888
@@ -51,15 +52,22 @@ class TierGeneratorWorker(QtCore.QRunnable):
             pixmap = QtGui.QPixmap.fromImage(qimage)
             self.signals.uneditedPixmapGenerated.emit(pixmap)
 
-            # 2. Half
-            half = cv2.resize(
-                self.img_array, (w // 2, h // 2), interpolation=cv2.INTER_LINEAR
-            )
+            # Emit fast tier
+            self.signals.tierGenerated.emit(scale_fast, preview_fast)
 
-            # 3. Quarter
-            quarter = cv2.resize(half, (w // 4, h // 4), interpolation=cv2.INTER_LINEAR)
+            # 2. High Quality Pyramid HQ Chain (INTER_AREA)
+            # 1:2 -> 1:4 -> 1:8 -> 1:16
+            scales = [0.5, 0.25, 0.125, 0.0625]
+            current_img = self.img_array
 
-            self.signals.tiersGenerated.emit(half, quarter, preview)
+            for scale in scales:
+                tw, th = int(w * scale), int(h * scale)
+                # Chain from previous for speed and cache locality
+                next_img = cv2.resize(
+                    current_img, (tw, th), interpolation=cv2.INTER_AREA
+                )
+                self.signals.tierGenerated.emit(scale, next_img)
+                current_img = next_img
 
         except Exception as e:
             print(f"Tier generation error: {e}")
@@ -73,9 +81,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         signals,
         view_ref,
         base_img_full,
-        base_img_half,
-        base_img_quarter,
-        base_img_preview,
+        tiers,
         settings,
         request_id,
         calculate_histogram=False,
@@ -87,9 +93,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.signals = signals
         self._view_ref = view_ref
         self.base_img_full = base_img_full
-        self.base_img_half = base_img_half
-        self.base_img_quarter = base_img_quarter
-        self.base_img_preview = base_img_preview
+        self.tiers = tiers  # Dictionary of scales (0.5, 0.25, etc.)
         self.settings = settings
         self.request_id = request_id
         self.calculate_histogram = calculate_histogram
@@ -116,8 +120,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
             is_roi = isinstance(res_key, tuple)
 
             if is_roi:
-                # ROI Logic:
-                # If zoom < 1.0 (zoomed out from 1:1), cap at Hybrid to maintain speed
+                # True Quality for ROI (Zoomed-in Detail >= 100%)
                 if zoom_scale < 0.95:
                     if (
                         "High Quality" in requested_method
@@ -125,13 +128,18 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     ):
                         effective_method = "NLMeans (Numba Hybrid YUV)"
                 else:
-                    # True Quality for ROI (Zoomed-in Detail >= 100%)
                     effective_method = requested_method
-            elif res_key in ["preview", "quarter"]:
+            elif res_key in [
+                "tier_0.0625",
+                "tier_0.125",
+                "tier_0.25",
+                "preview",
+                "quarter",
+            ]:
                 effective_method = "NLMeans (Numba Ultra Fast YUV)"
-            elif res_key == "half":
+            elif res_key in ["tier_0.5", "half"]:
                 effective_method = "NLMeans (Numba Fast+ YUV)"
-            elif res_key == "full":
+            elif res_key in ["tier_1.0", "full"]:
                 # Cap Background at Hybrid
                 if "High Quality" in requested_method or "Hybrid" in requested_method:
                     effective_method = "NLMeans (Numba Hybrid YUV)"
@@ -223,7 +231,40 @@ class ImageProcessorWorker(QtCore.QRunnable):
         # 4. Execute pipeline with multi-stage caching
         processed = img
         accumulated_params = {}
-        for i, (name, params, func) in enumerate(pipeline):
+
+        # Scale radius-based parameters if processing on a sub-resolution tier
+        # scale_factor is current_tier_width / full_width
+        img_w = img.shape[1]
+        full_w = self.base_img_full.shape[1]
+        scale_factor = img_w / full_w
+
+        # Adjust sharpen radius: a 1.0 radius on 0.5 tier should be 0.5 physical pixels
+        # relative to the full image.
+        adj_sharpen_p = sharpen_p.copy()
+        adj_sharpen_p["sharpen_radius"] *= scale_factor
+
+        # Adjust Dehaze kernel size if it were resolution dependent (it is in our core.py)
+
+        # Override the pipeline functions with scaled versions
+        def apply_sharpen_scaled(image):
+            if adj_sharpen_p["sharpen_value"] <= 0:
+                return image
+            return pynegative.sharpen_image(
+                image,
+                adj_sharpen_p["sharpen_radius"],
+                adj_sharpen_p["sharpen_percent"],
+                "High Quality",
+            )
+
+        # Re-build pipeline with scaled functions
+        pipeline_scaled = []
+        for name, p, func in pipeline:
+            if name == "sharpen":
+                pipeline_scaled.append((name, adj_sharpen_p, apply_sharpen_scaled))
+            else:
+                pipeline_scaled.append((name, p, func))
+
+        for i, (name, params, func) in enumerate(pipeline_scaled):
             accumulated_params.update(params)
             stage_id = f"heavy_stage_{i + 1}_{name}"
 
@@ -250,36 +291,17 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         try:
             zoom_scale = self._view_ref.transform().m11()
+            # Viewport dimensions in screen pixels
+            view_rect = self._view_ref.viewport().rect()
+            v_w = view_rect.width()
         except (AttributeError, RuntimeError):
             return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0
 
-        preview_scale = 2048 / max(full_w, full_h)
-        is_fitting = getattr(self._view_ref, "_is_fitting", False)
+        # --- STEP 0: SETTINGS EXTRACTION ---
         rotate_val = self.settings.get("rotation", 0.0)
         flip_h = self.settings.get("flip_h", False)
         flip_v = self.settings.get("flip_v", False)
         crop_val = self.settings.get("crop", None)
-
-        # ROI logic: Only trigger if zoom needs more than the 2048px preview can provide.
-        # We use a 1.5x buffer to avoid frequent re-renders at low zoom.
-        is_zoomed_in = not is_fitting and (zoom_scale > preview_scale * 1.5)
-
-        # --- Part 1: Global Background ---
-        res_key = "preview"
-        img_render_base = self.base_img_preview
-
-        # If tiers aren't ready, we MUST NOT process the full image for a "preview"
-        # as it will take seconds to denoise/dehaze.
-        if img_render_base is None:
-            # Quick downsample for immediate responsiveness
-            h_f, w_f = self.base_img_full.shape[:2]
-            scale = 2048 / max(h_f, w_f)
-            img_render_base = cv2.resize(
-                self.base_img_full,
-                (int(w_f * scale), int(h_f * scale)),
-                interpolation=cv2.INTER_LINEAR,
-            )
-            # res_key is "preview" anyway
 
         heavy_params = {
             "de_haze": self.settings.get("de_haze", 0) / 50.0,
@@ -305,6 +327,45 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "saturation": self.settings.get("saturation", 1.0),
         }
 
+        # --- STEP 1: RESOLUTION SELECTION ---
+        is_fitting = getattr(self._view_ref, "_is_fitting", False)
+
+        # Physical width (in screen pixels) the image occupies at current zoom
+        if is_fitting:
+            # If fitting, we only need a resolution that matches the viewport
+            target_on_screen_width = v_w
+        else:
+            target_on_screen_width = full_w * zoom_scale
+
+        # Threshold: if zoom is low enough that 1:16 is sufficient, stay zoomed out.
+        # Otherwise, pick smallest tier that covers target_on_screen_width.
+
+        selected_scale = 1.0
+        selected_img = self.base_img_full
+
+        # Power-of-two scales in ascending order
+        available_scales = sorted(self.tiers.keys()) + [1.0]
+
+        for scale in available_scales:
+            tier_img = self.tiers.get(scale) if scale < 1.0 else self.base_img_full
+            if tier_img is not None:
+                # If this tier's resolution is enough to cover the screen width, pick it
+                if tier_img.shape[1] >= target_on_screen_width:
+                    selected_scale = scale
+                    selected_img = tier_img
+                    break
+
+        # Optimization: if we are zoomed out enough that we aren't even
+        # using the Full resolution, we don't necessarily need a high-res ROI.
+        # ROI is only needed if the viewport is a subset of the image at the selected resolution
+        # or if the user is zoomed in past a "comfort" point.
+        is_zoomed_in = not is_fitting and (selected_scale > 0.125 or zoom_scale > 0.5)
+
+        # --- Part 1: Global Background ---
+        # Res key for caching
+        res_key = f"tier_{selected_scale}"
+        img_render_base = selected_img
+
         cached_bg, cached_w, cached_h = (None, 0, 0)
         if self.cache:
             cached_bg, cached_w, cached_h = self.cache.get_cached_bg_pixmap()
@@ -329,14 +390,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
             )
             img_uint8 = (np.clip(bg_output, 0, 1) * 255).astype(np.uint8)
 
-            if self.base_img_preview is not None:
-                preview_h_orig, preview_w_orig = self.base_img_preview.shape[:2]
-            else:
-                # Fallback if tiers not ready yet
-                preview_h_orig, preview_w_orig = img_uint8.shape[:2]
-
-            scale_x = full_w / preview_w_orig
-            scale_y = full_h / preview_h_orig
+            # Map coordinates: selected_scale tells us the relationship to full
+            scale_x = 1.0 / selected_scale
+            scale_y = 1.0 / selected_scale
 
             # Using uint8 shape directly
             h_bg, w_bg, c_bg = img_uint8.shape
@@ -362,17 +418,23 @@ class ImageProcessorWorker(QtCore.QRunnable):
         pix_roi, roi_x, roi_y, roi_w, roi_h = QtGui.QPixmap(), 0, 0, 0, 0
 
         if is_zoomed_in:
-            roi = self._view_ref.mapToScene(
+            roi_scene = self._view_ref.mapToScene(
                 self._view_ref.viewport().rect()
             ).boundingRect()
-            v_x, v_y, v_w, v_h = roi.x(), roi.y(), roi.width(), roi.height()
+            v_x, v_y, v_w_roi, v_h_roi = (
+                roi_scene.x(),
+                roi_scene.y(),
+                roi_scene.width(),
+                roi_scene.height(),
+            )
+
             offset_x, offset_y = 0, 0
             if crop_val:
                 offset_x = int(crop_val[0] * full_w)
                 offset_y = int(crop_val[1] * full_h)
 
             src_x, src_y = int(v_x + offset_x), int(v_y + offset_y)
-            src_w, src_h = int(v_w), int(v_h)
+            src_w, src_h = int(v_w_roi), int(v_h_roi)
 
             if flip_h:
                 src_x = full_w - (src_x + src_w)
@@ -383,78 +445,47 @@ class ImageProcessorWorker(QtCore.QRunnable):
             src_x2, src_y2 = min(full_w, src_x + src_w), min(full_h, src_y + src_h)
 
             # --- ROI PADDING LOGIC ---
-            # If idle (expand_roi=True), we request a much larger area to allow smooth panning
             pad_ratio = 0.5 if self.expand_roi else 0.05
             p_w, p_h = src_x2 - src_x, src_y2 - src_y
             pad_w, pad_h = int(p_w * pad_ratio), int(p_h * pad_ratio)
 
-            # Apply padding but stay within image bounds
             src_x = max(0, src_x - pad_w)
             src_y = max(0, src_y - pad_h)
             src_x2 = min(full_w, src_x2 + pad_w)
             src_y2 = min(full_h, src_y2 + pad_h)
-            # Re-calculate required width/height after padding
             req_w, req_h = src_x2 - src_x, src_y2 - src_y
 
             if req_w > 10 and req_h > 10:
                 roi_area = req_w * req_h
                 full_area = full_w * full_h
-                # If we're rendering almost the whole image, just stop
+
                 if roi_area / full_area > 0.95 and not self.expand_roi:
-                    return (
-                        pix_bg,
-                        new_full_w,
-                        new_full_h,
-                        pix_roi,
-                        roi_x,
-                        roi_y,
-                        roi_w,
-                        roi_h,
-                    )
+                    return (pix_bg, new_full_w, new_full_h, pix_roi, 0, 0, 0, 0)
 
-                preview_w_res = (
-                    self.base_img_preview.shape[1]
-                    if self.base_img_preview is not None
-                    else 2048
-                )
+                # ROI resolution selection: always use smallest tier that covers display requirement.
+                # Display requirement is ALWAYS full_w * zoom_scale to maintain 1:1 pixel density.
+                req_roi_display_w = full_w * zoom_scale
 
-                # Requested width in pixels for the current zoom
-                req_view_w = v_w * zoom_scale
-
-                # Tier selection: Find the smallest tier that covers req_view_w
                 res_key_roi = "full"
                 base_roi_img = self.base_img_full
+                tier_scale_roi = 1.0
 
-                if self.base_img_quarter is not None:
-                    q_w = self.base_img_quarter.shape[1]
-                    if q_w >= req_view_w:
-                        res_key_roi = "quarter"
-                        base_roi_img = self.base_img_quarter
-
-                if res_key_roi == "full" and self.base_img_half is not None:
-                    h_w = self.base_img_half.shape[1]
-                    if h_w >= req_view_w:
-                        res_key_roi = "half"
-                        base_roi_img = self.base_img_half
-
-                # If the chosen tier is still smaller than or equal to preview, just use preview tier
-                if base_roi_img.shape[1] <= preview_w_res and not self.expand_roi:
-                    return (
-                        pix_bg,
-                        new_full_w,
-                        new_full_h,
-                        pix_roi,
-                        roi_x,
-                        roi_y,
-                        roi_w,
-                        roi_h,
+                for scale in available_scales:
+                    tier_img = (
+                        self.tiers.get(scale) if scale < 1.0 else self.base_img_full
                     )
+                    if tier_img is not None:
+                        if tier_img.shape[1] >= req_roi_display_w:
+                            res_key_roi = f"tier_{scale}"
+                            base_roi_img = tier_img
+                            tier_scale_roi = scale
+                            break
 
                 h_tier, w_tier = base_roi_img.shape[:2]
-                s_x = int(src_x * (w_tier / full_w))
-                s_y = int(src_y * (h_tier / full_h))
-                s_x2 = int(src_x2 * (w_tier / full_w))
-                s_y2 = int(src_y2 * (h_tier / full_h))
+                s_x = int(src_x * tier_scale_roi)
+                s_y = int(src_y * tier_scale_roi)
+                s_x2 = int(src_x2 * tier_scale_roi)
+                s_y2 = int(src_y2 * tier_scale_roi)
 
                 # Attempt Spatial Cache Hit
                 requested_tier_rect = (s_x, s_y, s_x2, s_y2)
@@ -468,19 +499,16 @@ class ImageProcessorWorker(QtCore.QRunnable):
                         logger.debug(f"Spatial ROI Cache HIT for tier {res_key_roi}")
 
                 if crop_chunk is None:
-                    # Cache Miss: Process the larger chunk (includes safety pad)
                     pad = 16
                     p_x1, p_y1 = max(0, s_x - pad), max(0, s_y - pad)
                     p_x2, p_y2 = min(w_tier, s_x2 + pad), min(h_tier, s_y2 + pad)
 
                     raw_chunk = base_roi_img[p_y1:p_y2, p_x1:p_x2]
-                    # Note: We use the actual padded coords as the cache key
-                    roi_res_key = (res_key_roi, p_x1, p_y1, p_x2, p_y2)
+                    roi_res_id = (res_key_roi, p_x1, p_y1, p_x2, p_y2)
                     processed_chunk_padded = self._process_heavy_stage(
-                        raw_chunk, roi_res_key, heavy_params, zoom_scale
+                        raw_chunk, roi_res_id, heavy_params, zoom_scale
                     )
 
-                    # Store in Spatial Cache for future crops/zooms
                     if self.cache:
                         self.cache.put_spatial_roi(
                             res_key_roi,
@@ -489,7 +517,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
                             processed_chunk_padded,
                         )
 
-                    # Extract the exact crop we wanted (removing the 16px pad)
                     c_y1, c_x1 = s_y - p_y1, s_x - p_x1
                     c_y2, c_x2 = c_y1 + (s_y2 - s_y), c_x1 + (s_x2 - s_x)
                     crop_chunk = processed_chunk_padded[c_y1:c_y2, c_x1:c_x2]

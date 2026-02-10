@@ -1,4 +1,4 @@
-from ._numba_base import njit, prange
+from ._numba_base import njit
 import numpy as np
 
 
