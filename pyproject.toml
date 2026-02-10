@@ -20,6 +20,7 @@ dependencies = [
     "opencv-python",
     "opencv-contrib-python>=4.13.0.90",
     "platformdirs",
+    "exifread>=3.5.1",
 ]
 
 [dependency-groups]
