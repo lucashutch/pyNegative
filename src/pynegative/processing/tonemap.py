@@ -61,11 +61,7 @@ def apply_tone_map(
     total_pixels = img.shape[0] * img.shape[1]
 
     # --- NUMBA OPTIMIZATION ---
-    # Ensure float32 and C-contiguous for Numba
-    if img.dtype != np.float32:
-        img = img.astype(np.float32)
-    if not img.flags["C_CONTIGUOUS"]:
-        img = np.ascontiguousarray(img)
+    # float32 and C-contiguous are guaranteed by the pipeline contract
 
     # Prepare WB multipliers
     t_scale = 0.4
