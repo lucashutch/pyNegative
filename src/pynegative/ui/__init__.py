@@ -16,6 +16,7 @@ logging.basicConfig(
 logging.getLogger("PIL").setLevel(logging.INFO)
 logging.getLogger("numba").setLevel(logging.WARNING)
 logging.getLogger("llvmlite").setLevel(logging.WARNING)
+logging.getLogger("exifread").setLevel(logging.WARNING)
 
 from PySide6 import QtWidgets, QtGui, QtCore  # noqa: E402
 from .main_window import MainWindow  # noqa: E402

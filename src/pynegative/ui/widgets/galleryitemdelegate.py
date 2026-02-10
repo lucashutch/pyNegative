@@ -61,7 +61,13 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
         painter = QtGui.QPainter(pixmap)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         font = painter.font()
-        font.setPointSize(12)
+        if font.pointSize() <= 0:
+            # If current font has invalid size (e.g. pixel size based), default to 12
+            pass
+        try:
+            font.setPointSize(12)
+        except Exception:
+            pass
         painter.setFont(font)
         if filled:
             painter.setPen(QtGui.QColor("#f0c419"))
@@ -155,7 +161,10 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
             elif self._item_size > 300:
                 font_size = 12
 
-            font.setPointSize(font_size)
+            try:
+                font.setPointSize(font_size)
+            except Exception:
+                pass
             painter.setFont(font)
 
             # Skip expensive elision during active resize for 60fps

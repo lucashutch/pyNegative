@@ -21,7 +21,10 @@ class StarRatingWidget(QtWidgets.QWidget):
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
 
         font = self.font()
-        font.setPointSize(20)
+        try:
+            font.setPointSize(20)
+        except Exception:
+            pass
         painter.setFont(font)
 
         if filled:
