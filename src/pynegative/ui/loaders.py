@@ -71,7 +71,9 @@ class ThumbnailLoader(QtCore.QRunnable):
                 _THUMBNAIL_CACHE[cache_key] = (pixmap, metadata)
 
                 # Store on Disk Cache
-                pynegative.save_cached_thumbnail(self.path, pil_img, metadata, self.size)
+                pynegative.save_cached_thumbnail(
+                    self.path, pil_img, metadata, self.size
+                )
 
                 self.signals.finished.emit(path_str, pixmap, metadata)
             else:
