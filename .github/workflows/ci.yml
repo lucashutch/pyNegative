@@ -1,4 +1,4 @@
-name: Tests
+name: CI
 on:
   push:
     branches: [ main ]
@@ -49,9 +49,23 @@ jobs:
           file: .github/docker/ci-test.Dockerfile
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/pynegative-ci-test:latest
-          # Use GitHub Actions cache for faster builds
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    container:
+      image: ghcr.io/astral-sh/ruff:alpine
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Run ruff check
+      run: ruff check .
+
+    - name: Run ruff format check
+      run: ruff format . --check
 
   test:
     name: Run Tests (Python ${{ matrix.python-version }})
@@ -84,3 +98,21 @@ jobs:
       timeout-minutes: 5
       env:
         QT_QPA_PLATFORM: offscreen
+
+  check-success:
+    name: Check Success
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check overall status
+        run: |
+          if [[ "${{ needs.test.result }}" != "success" ]]; then
+            echo "Test job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.lint.result }}" != "success" ]]; then
+            echo "Lint job failed"
+            exit 1
+          fi
+          echo "All checks passed"
