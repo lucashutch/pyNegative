@@ -1,7 +1,11 @@
 import numpy as np
 from PySide6 import QtCore, QtGui
 import cv2
+import time
+import logging
 from ... import core as pynegative
+
+logger = logging.getLogger(__name__)
 
 
 class ImageProcessorSignals(QtCore.QObject):
@@ -225,11 +229,20 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         # --- Part 1: Global Background ---
         res_key = "preview"
-        img_render_base = (
-            self.base_img_preview
-            if self.base_img_preview is not None
-            else self.base_img_full
-        )
+        img_render_base = self.base_img_preview
+
+        # If tiers aren't ready, we MUST NOT process the full image for a "preview"
+        # as it will take seconds to denoise/dehaze.
+        if img_render_base is None:
+            # Quick downsample for immediate responsiveness
+            h_f, w_f = self.base_img_full.shape[:2]
+            scale = 2048 / max(h_f, w_f)
+            img_render_base = cv2.resize(
+                self.base_img_full,
+                (int(w_f * scale), int(h_f * scale)),
+                interpolation=cv2.INTER_LINEAR,
+            )
+            # res_key is "preview" anyway
 
         heavy_params = {
             "de_haze": self.settings.get("de_haze", 0) / 50.0,
@@ -278,7 +291,13 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 flip_v=flip_v,
             )
             img_uint8 = (np.clip(bg_output, 0, 1) * 255).astype(np.uint8)
-            preview_h_orig, preview_w_orig = self.base_img_preview.shape[:2]
+
+            if self.base_img_preview is not None:
+                preview_h_orig, preview_w_orig = self.base_img_preview.shape[:2]
+            else:
+                # Fallback if tiers not ready yet
+                preview_h_orig, preview_w_orig = img_uint8.shape[:2]
+
             scale_x = full_w / preview_w_orig
             scale_y = full_h / preview_h_orig
 
@@ -356,7 +375,11 @@ class ImageProcessorWorker(QtCore.QRunnable):
                         roi_h,
                     )
 
-                preview_w_res = self.base_img_preview.shape[1]
+                preview_w_res = (
+                    self.base_img_preview.shape[1]
+                    if self.base_img_preview is not None
+                    else 2048
+                )
                 res_key_roi = "full"
                 base_roi_img = self.base_img_full
 
@@ -425,6 +448,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
     def _calculate_histograms(self, img_array):
         # Use strided Numba kernel for maximum speed
         # Stride based on image size to keep samples roughly constant (~65k samples)
+        start_time = time.perf_counter()
         h, w = img_array.shape[:2]
         area = h * w
         stride = max(1, int(np.sqrt(area / 65536)))
@@ -440,7 +464,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         def smooth(h):
             return cv2.GaussianBlur(h.reshape(-1, 1), (5, 5), 0).flatten()
 
-        return {
+        result = {
             "R": smooth(hr),
             "G": smooth(hg),
             "B": smooth(hb),
@@ -448,3 +472,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "U": smooth(hu),
             "V": smooth(hv),
         }
+
+        elapsed = (time.perf_counter() - start_time) * 1000
+        logger.debug(
+            f"Histogram calculation: {elapsed:.2f}ms (stride: {stride}, size: {w}x{h})"
+        )
+        return result

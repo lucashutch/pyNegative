@@ -11,11 +11,12 @@ This document tracks planned features, project goals, and areas for technical im
 ## Performance Optimisation
 
 - **General Code Cleanup**: [DONE] Analyzed the codebase and removed redundant, duplicate, or unused code.
+- **use faster nlmeans denoise on zoomed out images**: when zoomed out the image is much smaller and the nlmeans denoise should run using smaller/faster config since the noise is less visible anyway
 
 ## Bugs
 
 - **Add Maximum CI Test Time of 2 mins**: [DONE] Added `timeout-minutes: 2` to CI jobs. Added `--verbose` and step-level timeouts to investigate Python 3.14 hangs.
-- **windows ui launches with a terminal window**: When launching the installed windows app, it opens a terminal window inthe background which launches the app, if the window is closed the app also closes. To be considered a more polished app we need to not show the terminal window. 
+- **windows ui launches with a terminal window**: When launching the installed windows app, it opens a terminal window inthe background which launches the app, if the window is closed the app also closes. To be considered a more polished app we need to not show the terminal window.
 
 ## Testing Improvement Areas
 
@@ -47,4 +48,3 @@ This document tracks planned features, project goals, and areas for technical im
 - **Metadata Editor**: User-editable fields for Copyright, Creator, Title, and Description.
 - **Compare View (Side-by-Side)**: Select two different images to view side-by-side (Reference vs Active) to choose the best one.
 - **Focus Peaking**: Highlight sharp edges in the viewer (e.g. with green contours) to quickly identify which shots are in focus without zooming.
-
