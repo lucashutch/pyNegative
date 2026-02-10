@@ -10,11 +10,12 @@ This document tracks planned features, project goals, and areas for technical im
 
 ## Performance Optimisation
 
-- **General Code Cleanup**: Analyse the codebase for redundant, duplicate or unused code.
+- **General Code Cleanup**: [DONE] Analyzed the codebase and removed redundant, duplicate, or unused code.
 
 ## Bugs
 
 - **Add Maximum CI Test Time of 2 mins**: The CI tests occasionally hang. Add a timeout, and investigate why the CI (especially for py3.14) sometimes hangs or takes a very long time at the `uv sync` step.
+- **windows ui launches with a terminal window**: When launching the installed windows app, it opens a terminal window inthe background which launches the app, if the window is closed the app also closes. To be considered a more polished app we need to not show the terminal window. 
 
 ## Testing Improvement Areas
 

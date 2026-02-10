@@ -852,9 +852,6 @@ class EditingControls(QtWidgets.QWidget):
         """Set the star rating."""
         self.star_rating_widget.set_rating(rating)
 
-    def set_save_enabled(self, enabled):
-        """No-op as save button is removed."""
-        pass
 
     def _on_rating_changed(self, rating):
         """Handle rating change."""
