@@ -45,10 +45,8 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     def set_image(self, img_array):
         self.base_img_full = img_array
-        if img_array is not None:
-            self._unedited_img_full = img_array.copy()
-        else:
-            self._unedited_img_full = None
+        # Use the same array reference, open_raw returns a fresh array anyway
+        self._unedited_img_full = img_array
         self.cache.clear()
         self._processing_params = {}
         if img_array is not None:
@@ -56,13 +54,16 @@ class ImageProcessingPipeline(QtCore.QObject):
             self.base_img_half = cv2.resize(
                 img_array, (w // 2, h // 2), interpolation=cv2.INTER_LINEAR
             )
+            # Chain resizes: Quarter from Half is much faster
             self.base_img_quarter = cv2.resize(
-                img_array, (w // 4, h // 4), interpolation=cv2.INTER_LINEAR
+                self.base_img_half, (w // 4, h // 4), interpolation=cv2.INTER_LINEAR
             )
             scale = 2048 / max(h, w)
             target_h, target_w = int(h * scale), int(w * scale)
+            # Preview from whichever is closest and larger
+            src_for_preview = img_array if scale > 0.5 else self.base_img_half
             self.base_img_preview = cv2.resize(
-                img_array, (target_w, target_h), interpolation=cv2.INTER_LINEAR
+                src_for_preview, (target_w, target_h), interpolation=cv2.INTER_LINEAR
             )
             self.uneditedPixmapUpdated.emit(self.get_unedited_pixmap())
         else:
@@ -77,11 +78,8 @@ class ImageProcessingPipeline(QtCore.QObject):
         if self._unedited_img_full is None:
             return QtGui.QPixmap()
         try:
-            img = self._unedited_img_full.astype(np.float32)
-            if img.max() > 1.0:
-                img = img / 255.0
-            img = np.clip(img, 0.0, 1.0)
-            img_uint8 = (img * 255).astype(np.uint8)
+            # We know the pipeline uses float32 0-1 range by convention
+            img_uint8 = (np.clip(self._unedited_img_full, 0, 1) * 255).astype(np.uint8)
             if img_uint8.shape[2] == 4:
                 img_rgb = cv2.cvtColor(img_uint8, cv2.COLOR_RGBA2RGB)
             else:
@@ -91,6 +89,8 @@ class ImageProcessingPipeline(QtCore.QObject):
             qimage = QtGui.QImage(
                 img_rgb.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888
             )
+            # Must return a copy if we want to ensure the underlying buffer stays alive,
+            # but QPixmap.fromImage already handles this.
             return QtGui.QPixmap.fromImage(qimage)
         except Exception:
             return QtGui.QPixmap()

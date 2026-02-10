@@ -1,5 +1,4 @@
 import numpy as np
-from PIL import Image, ImageQt
 from PySide6 import QtCore, QtGui
 import cv2
 from ... import core as pynegative
@@ -226,12 +225,14 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 flip_v=flip_v,
             )
             img_uint8 = (np.clip(bg_output, 0, 1) * 255).astype(np.uint8)
-            pil_bg = Image.fromarray(img_uint8)
-            preview_h, preview_w = self.base_img_preview.shape[:2]
-            scale_x = full_w / preview_w
-            scale_y = full_h / preview_h
-            new_full_w = int(pil_bg.width * scale_x)
-            new_full_h = int(pil_bg.height * scale_y)
+            preview_h_orig, preview_w_orig = self.base_img_preview.shape[:2]
+            scale_x = full_w / preview_w_orig
+            scale_y = full_h / preview_h_orig
+
+            # Using uint8 shape directly
+            h_bg, w_bg, c_bg = img_uint8.shape
+            new_full_w = int(w_bg * scale_x)
+            new_full_h = int(h_bg * scale_y)
 
             if self.calculate_histogram:
                 try:
@@ -240,7 +241,11 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 except Exception as e:
                     print(f"Histogram calculation error: {e}")
 
-            pix_bg = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_bg))
+            # Direct NumPy to QImage conversion
+            qimg_bg = QtGui.QImage(
+                img_uint8.data, w_bg, h_bg, c_bg * w_bg, QtGui.QImage.Format_RGB888
+            )
+            pix_bg = QtGui.QPixmap.fromImage(qimg_bg)
             if self.cache:
                 self.cache.set_cached_bg_pixmap(pix_bg, new_full_w, new_full_h)
 
@@ -338,10 +343,12 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 processed_roi, _ = pynegative.apply_tone_map(
                     crop_chunk, **tone_map_settings, calculate_stats=False
                 )
-                pil_roi = Image.fromarray(
-                    (np.clip(processed_roi, 0, 1) * 255).astype(np.uint8)
+                roi_uint8 = (np.clip(processed_roi, 0, 1) * 255).astype(np.uint8)
+                h_r, w_r, c_r = roi_uint8.shape
+                qimg_roi = QtGui.QImage(
+                    roi_uint8.data, w_r, h_r, c_r * w_r, QtGui.QImage.Format_RGB888
                 )
-                pix_roi = QtGui.QPixmap.fromImage(ImageQt.ImageQt(pil_roi))
+                pix_roi = QtGui.QPixmap.fromImage(qimg_roi)
                 roi_x, roi_y = src_x - offset_x, src_y - offset_y
                 roi_w, roi_h = req_w, req_h
 
