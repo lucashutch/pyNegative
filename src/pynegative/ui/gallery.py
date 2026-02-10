@@ -1,8 +1,9 @@
 from pathlib import Path
 from PySide6 import QtWidgets, QtGui, QtCore
+from PySide6.QtCore import Qt
 from .. import core as pynegative
 from .loaders import ThumbnailLoader
-from .widgets import GalleryItemDelegate, GalleryListWidget, ComboBox
+from .widgets import GalleryItemDelegate, GalleryListWidget, ComboBox, MetadataPanel
 from .editor import EditorWidget
 
 
@@ -77,6 +78,10 @@ class GalleryWidget(QtWidgets.QWidget):
 
         top_bar.addStretch()  # Push controls to left
 
+        # Splitter for Grid + Metadata Panel
+        self.grid_splitter = QtWidgets.QSplitter(Qt.Horizontal)
+        grid_layout.addWidget(self.grid_splitter)
+
         # Grid View
         self.list_widget = GalleryListWidget()
         self.list_widget.setObjectName("GalleryGrid")
@@ -93,6 +98,9 @@ class GalleryWidget(QtWidgets.QWidget):
         delegate.set_item_size(self._grid_size)
         self.list_widget.setItemDelegate(delegate)
         self.list_widget.model().dataChanged.connect(self._on_rating_changed)
+        self.list_widget.itemSelectionChanged.connect(
+            self._on_gallery_selection_changed
+        )
 
         # Set initial values from settings
         index = self.sort_combo.findText(self._sort_by)
@@ -101,7 +109,16 @@ class GalleryWidget(QtWidgets.QWidget):
         self.sort_order_btn.setChecked(not self._sort_ascending)
         self._update_sort_order_button()
 
-        grid_layout.addWidget(self.list_widget)
+        self.grid_splitter.addWidget(self.list_widget)
+
+        # Gallery Metadata Panel (right side of grid)
+        self.gallery_metadata_panel = MetadataPanel()
+        self._gallery_metadata_visible = self.settings.value(
+            "gallery_metadata_visible", False, type=bool
+        )
+        self.gallery_metadata_panel.setVisible(self._gallery_metadata_visible)
+        self.grid_splitter.addWidget(self.gallery_metadata_panel)
+        self.grid_splitter.setSizes([1000, 280])
 
         # Bottom Bar for Grid Size Slider
         bottom_bar = QtWidgets.QHBoxLayout()
@@ -335,6 +352,20 @@ class GalleryWidget(QtWidgets.QWidget):
                 if "date" in metadata:
                     item.setData(QtCore.Qt.UserRole + 2, metadata["date"])
                 break
+
+    def _on_gallery_selection_changed(self):
+        """Update gallery metadata panel when selection changes in grid view."""
+        if not self._gallery_metadata_visible:
+            return
+
+        selected_items = self.list_widget.selectedItems()
+        if selected_items:
+            # Show metadata for the last selected item
+            item = selected_items[-1]
+            path = item.data(QtCore.Qt.UserRole)
+            self.gallery_metadata_panel.load_for_path(path)
+        else:
+            self.gallery_metadata_panel.show_empty()
 
     def _on_item_double_clicked(self, item):
         path = item.data(QtCore.Qt.UserRole)
