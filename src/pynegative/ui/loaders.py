@@ -1,7 +1,11 @@
+import time
+import logging
 from pathlib import Path
 from PIL import ImageQt
 from PySide6 import QtGui, QtCore
 from .. import core as pynegative
+
+logger = logging.getLogger(__name__)
 
 
 # ----------------- Async Thumbnail Loader -----------------
@@ -94,8 +98,13 @@ class RawLoader(QtCore.QRunnable):
 
     def run(self):
         try:
+            start_time = time.perf_counter()
             # 1. Load Full-Res image for editing
             img = pynegative.open_raw(self.path, half_size=False)
+            load_time = (time.perf_counter() - start_time) * 1000
+            logger.info(
+                f"RAW Load: {self.path.name} | Resolution: {img.shape[1]}x{img.shape[0]} | Time: {load_time:.2f}ms"
+            )
 
             # 2. Check for Sidecar Settings
             settings = pynegative.load_sidecar(self.path)

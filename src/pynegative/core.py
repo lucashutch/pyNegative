@@ -27,6 +27,7 @@ from .processing.tonemap import (
 )
 from .processing.geometry import apply_geometry, calculate_max_safe_crop
 from .processing.effects import sharpen_image, de_noise_image, de_haze_image
+from .utils.numba_kernels import numba_histogram_kernel
 
 __all__ = [
     "RAW_EXTS",
@@ -56,4 +57,5 @@ __all__ = [
     "sharpen_image",
     "de_noise_image",
     "de_haze_image",
+    "numba_histogram_kernel",
 ]

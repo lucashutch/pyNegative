@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from PySide6 import QtWidgets, QtGui, QtCore
 
@@ -6,6 +7,8 @@ from .gallery import GalleryWidget
 from .editor import EditorWidget
 from .export_tab import ExportWidget
 from .widgets import StarRatingWidget
+
+logger = logging.getLogger(__name__)
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -223,6 +226,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.metadata_btn.setChecked(False)
 
     def switch_to_gallery(self):
+        logger.info("Mode switch: GALLERY")
         self.stack.setCurrentWidget(self.gallery)
         self.btn_gallery.setChecked(True)
         self.btn_edit.setChecked(False)
@@ -230,6 +234,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_metadata_btn_state()
 
     def switch_to_export(self):
+        logger.info("Mode switch: EXPORT")
         self.stack.setCurrentWidget(self.export_tab)
         self.btn_gallery.setChecked(False)
         self.btn_edit.setChecked(False)
@@ -237,6 +242,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_metadata_btn_state()
 
     def switch_to_edit(self):
+        logger.info("Mode switch: EDIT")
         # If editor already has an image, just switch
         if self.editor.raw_path:
             self.stack.setCurrentWidget(self.editor)

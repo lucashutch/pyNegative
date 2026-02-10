@@ -1,6 +1,9 @@
+import logging
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, Signal, QRectF
 from .crop_item import CropRectItem
+
+logger = logging.getLogger(__name__)
 
 
 class ZoomableGraphicsView(QtWidgets.QGraphicsView):
@@ -92,6 +95,9 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         roi_h=0,
     ):
         """Unified update for both layers to ensure alignment."""
+        logger.info(
+            f"Rendered frame displayed (ROI: {'yes' if roi_pix and not roi_pix.isNull() else 'no'})"
+        )
         if bg_pix is None:
             bg_pix = QtGui.QPixmap()
         if roi_pix is None:

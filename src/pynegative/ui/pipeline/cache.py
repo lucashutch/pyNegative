@@ -11,6 +11,52 @@ class PipelineCache:
         self._cached_bg_full_w = 0
         self._cached_bg_full_h = 0
 
+        # Spatial ROI cache: most recent processed large ROI per tier
+        # spatial_roi_cache[tier_name] = {rect: (x1, y1, x2, y2), params: {...}, array: np.ndarray}
+        self.spatial_roi_cache = {}
+
+    def get_spatial_roi(self, tier, requested_rect, current_heavy_params):
+        """
+        Attempts to find a cached processed chunk that contains the requested_rect.
+        requested_rect: (x1, y1, x2, y2)
+        """
+        cached = self.spatial_roi_cache.get(tier)
+        if not cached:
+            return None
+
+        cached_rect = cached["rect"]
+        cached_params = cached["params"]
+        cached_array = cached["array"]
+
+        # 1. Check if heavy parameters match exactly
+        if not all(
+            current_heavy_params.get(k) == cached_params.get(k) for k in cached_params
+        ):
+            return None
+
+        # 2. Check if requested_rect is entirely within cached_rect
+        # requested_rect is (x1, y1, x2, y2)
+        cx1, cy1, cx2, cy2 = cached_rect
+        rx1, ry1, rx2, ry2 = requested_rect
+
+        if rx1 >= cx1 and ry1 >= cy1 and rx2 <= cx2 and ry2 <= cy2:
+            # ROI is within cache. Extract crop from cached_array.
+            # Convert global coordinates to local cache coordinates
+            lx1, ly1 = rx1 - cx1, ry1 - cy1
+            lx2, ly2 = lx1 + (rx2 - rx1), ly1 + (ry2 - ry1)
+
+            return cached_array[ly1:ly2, lx1:lx2].copy()
+
+        return None
+
+    def put_spatial_roi(self, tier, rect, params, array):
+        """Stores the most recent processed ROI for a tier."""
+        self.spatial_roi_cache[tier] = {
+            "rect": rect,
+            "params": params.copy(),
+            "array": array.copy(),
+        }
+
     def get(self, resolution, stage_id, current_params):
         """Returns the cached array if parameters match exactly."""
         res_cache = self.caches.get(resolution, {})
@@ -35,11 +81,13 @@ class PipelineCache:
         """Invalidates stages. If stage_id is None, invalidates everything."""
         if stage_id is None:
             self.caches = {}
+            self.spatial_roi_cache = {}
             self.estimated_params = {}
             self._cached_bg_pixmap = None
 
     def clear(self):
         self.caches = {}
+        self.spatial_roi_cache = {}
         self.estimated_params = {}
         self._cached_bg_pixmap = None
 
