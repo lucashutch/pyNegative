@@ -640,66 +640,97 @@ class EditorWidget(QtWidgets.QWidget):
             self.metadata_content_layout.addRow(error_label)
 
     def _extract_exif_data(self, raw_path):
-        """Extract EXIF data from RAW file."""
+        """Extract EXIF data from RAW file using rawpy (supports CR3, ARW, NEF, etc)."""
         exif = {}
+        raw_path_obj = Path(raw_path)
+
         try:
-            with open(raw_path, "rb") as f:
-                tags = exifread.process_file(f, details=False)
+            # Use rawpy for RAW files (CR3, ARW, NEF, etc.)
+            import rawpy
 
-                # Debug: log total tags found
-                print(f"DEBUG: Found {len(tags)} EXIF tags in {Path(raw_path).name}")
+            with rawpy.imread(str(raw_path)) as raw:
+                # Get metadata from rawpy
+                # rawpy exposes some metadata directly
+                if hasattr(raw, "camera_whitebalance"):
+                    wb = raw.camera_whitebalance
+                    if wb is not None and len(wb) > 0:
+                        exif["_raw_wb"] = wb  # Store for potential future use
 
-                # Debug: print all available tags (first 50)
-                print("DEBUG: Available tags:")
-                for i, (tag_name, tag_value) in enumerate(sorted(tags.items())):
-                    if i < 50:  # Limit output
-                        print(f"  {tag_name}: {tag_value}")
-                    else:
-                        print(f"  ... and {len(tags) - 50} more tags")
-                        break
+                # Get EXIF data from the embedded thumbnail/metadata
+                # rawpy doesn't directly expose all EXIF, but we can get some basics
+                if hasattr(raw, "sizes"):
+                    sizes = raw.sizes
+                    if hasattr(sizes, "raw_width") and hasattr(sizes, "raw_height"):
+                        exif["width"] = sizes.raw_width
+                        exif["height"] = sizes.raw_height
 
-                # Primary fields
-                exif["iso"] = tags.get("EXIF ISOSpeedRatings", None)
-                exif["shutter_speed"] = tags.get("EXIF ExposureTime", None)
-                exif["aperture"] = tags.get("EXIF FNumber", None)
-                exif["focal_length"] = tags.get("EXIF FocalLength", None)
+                # For more complete EXIF, use exiftool via subprocess or exifread on embedded JPEG
+                # Let's try extracting the embedded JPEG thumbnail and reading its EXIF
+                try:
+                    thumb = raw.extract_thumb()
+                    if thumb.format == rawpy.ThumbFormat.JPEG:
+                        # Parse EXIF from the embedded JPEG thumbnail
+                        from io import BytesIO
 
-                # Secondary fields (with fallbacks for different manufacturers)
-                exif["camera_make"] = tags.get("Image Make", None)
-                exif["camera_model"] = tags.get("Image Model", None)
+                        thumb_io = BytesIO(thumb.data)
+                        tags = exifread.process_file(thumb_io, details=False)
 
-                # Lens model - try multiple tag names
-                exif["lens_model"] = (
-                    tags.get("EXIF LensModel", None) or
-                    tags.get("MakerNote LensModel", None) or
-                    tags.get("EXIF Lens", None) or
-                    tags.get("MakerNote Lens", None) or
-                    tags.get("EXIF LensInfo", None)
-                )
+                        print(
+                            f"DEBUG: Found {len(tags)} EXIF tags from embedded thumbnail in {raw_path_obj.name}"
+                        )
 
-                exif["date_taken"] = tags.get("EXIF DateTimeOriginal", None) or tags.get("Image DateTime", None)
-                exif["exposure_compensation"] = tags.get("EXIF ExposureBiasValue", None)
+                        # Primary fields
+                        exif["iso"] = tags.get("EXIF ISOSpeedRatings", None)
+                        exif["shutter_speed"] = tags.get("EXIF ExposureTime", None)
+                        exif["aperture"] = tags.get("EXIF FNumber", None)
+                        exif["focal_length"] = tags.get("EXIF FocalLength", None)
 
-                # White balance - try multiple formats
-                exif["white_balance"] = (
-                    tags.get("EXIF WhiteBalance", None) or
-                    tags.get("MakerNote WhiteBalance", None)
-                )
+                        # Secondary fields
+                        exif["camera_make"] = tags.get("Image Make", None)
+                        exif["camera_model"] = tags.get("Image Model", None)
 
-                exif["flash"] = tags.get("EXIF Flash", None)
+                        # Lens model - try multiple tag names
+                        exif["lens_model"] = (
+                            tags.get("EXIF LensModel", None)
+                            or tags.get("MakerNote LensModel", None)
+                            or tags.get("EXIF Lens", None)
+                            or tags.get("MakerNote Lens", None)
+                            or tags.get("EXIF LensInfo", None)
+                        )
 
-                # Image dimensions
-                exif["width"] = tags.get("EXIF ExifImageWidth", None)
-                exif["height"] = tags.get("EXIF ExifImageLength", None)
+                        exif["date_taken"] = tags.get(
+                            "EXIF DateTimeOriginal", None
+                        ) or tags.get("Image DateTime", None)
+                        exif["exposure_compensation"] = tags.get(
+                            "EXIF ExposureBiasValue", None
+                        )
 
-                # Debug: print what we extracted
-                print(f"DEBUG: Extracted EXIF data:")
-                for key, value in exif.items():
-                    print(f"  {key}: {value}")
+                        # White balance
+                        exif["white_balance"] = tags.get(
+                            "EXIF WhiteBalance", None
+                        ) or tags.get("MakerNote WhiteBalance", None)
+
+                        exif["flash"] = tags.get("EXIF Flash", None)
+
+                        # Override dimensions if we got them from thumbnail EXIF
+                        if not exif.get("width"):
+                            exif["width"] = tags.get("EXIF ExifImageWidth", None)
+                        if not exif.get("height"):
+                            exif["height"] = tags.get("EXIF ExifImageLength", None)
+
+                        print("DEBUG: Extracted EXIF data:")
+                        for key, value in exif.items():
+                            if not key.startswith("_"):  # Skip internal fields
+                                print(f"  {key}: {value}")
+
+                except Exception as thumb_error:
+                    print(f"DEBUG: Could not extract thumbnail EXIF: {thumb_error}")
 
         except Exception as e:
-            print(f"DEBUG: Exception during EXIF extraction: {e}")
-            pass
+            print(f"DEBUG: Exception during RAW EXIF extraction: {e}")
+            import traceback
+
+            traceback.print_exc()
 
         # Fallback for date
         if not exif.get("date_taken"):
