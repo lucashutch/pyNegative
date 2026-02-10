@@ -8,18 +8,20 @@ version = "0.1.3"
  authors = [
    { name="Lucas Hutchinson" },
  ]
-description = "A simple RAW image processor using rawpy and Pillow"
+description = "A powerful RAW image processor and editor featuring advanced denoising, dehazing, and batch processing capabilities."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "numpy",
-    "Pillow",
-    "pillow-heif",
-    "rawpy",
-    "PySide6",
-    "opencv-python",
-    "opencv-contrib-python>=4.13.0.90",
-    "platformdirs",
+    "numpy>=2.2.0",
+    "Pillow>=11.0.0",
+    "pillow-heif>=0.20.0",
+    "rawpy>=0.23.0",
+    "PySide6>=6.8.0",
+    "opencv-python>=4.11.0",
+    "opencv-contrib-python>=4.11.0",
+    "platformdirs>=4.3.0",
+    "numba>=0.61.0",
+    "llvmlite>=0.44.0",
     "exifread>=3.5.1",
 ]
 
@@ -33,10 +35,8 @@ test = [
     "pytest-qt",
 ]
 
-performance = [
-    "numba>=0.58.0",
-    "llvmlite>=0.41.0",
-]
+[project.scripts]
+pynegative-debug = "pynegative.ui:main"
 
 [project.gui-scripts]
 pynegative = "pynegative.ui:main"
