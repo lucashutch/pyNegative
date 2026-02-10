@@ -11,11 +11,14 @@ This document tracks planned features, project goals, and areas for technical im
 ## Performance Optimisation
 
 - **General Code Cleanup**: [DONE] Analyzed the codebase and removed redundant, duplicate, or unused code.
+- **use faster nlmeans denoise on zoomed out images**: [DONE] Implemented tier-aware dynamic quality scaling (Ultra Fast for previews, True Quality for 1:1 view).
+- **Zoom Controls**: Implement "Fit to Screen" button and "+" / "-" manual zoom buttons for the editor and gallery preview viewports.
+- **High-DPI Awareness**: Detect system screen scale factor (e.g. 200% for Retina) and adjust the Smart Resolution selection to provide appropriate pixel density.
 
 ## Bugs
 
 - **Add Maximum CI Test Time of 2 mins**: [DONE] Added `timeout-minutes: 2` to CI jobs. Added `--verbose` and step-level timeouts to investigate Python 3.14 hangs.
-- **windows ui launches with a terminal window**: When launching the installed windows app, it opens a terminal window inthe background which launches the app, if the window is closed the app also closes. To be considered a more polished app we need to not show the terminal window. 
+- **windows ui launches with a terminal window**: When launching the installed windows app, it opens a terminal window inthe background which launches the app, if the window is closed the app also closes. To be considered a more polished app we need to not show the terminal window.
 
 ## Testing Improvement Areas
 
@@ -47,4 +50,3 @@ This document tracks planned features, project goals, and areas for technical im
 - **Metadata Editor**: User-editable fields for Copyright, Creator, Title, and Description.
 - **Compare View (Side-by-Side)**: Select two different images to view side-by-side (Reference vs Active) to choose the best one.
 - **Focus Peaking**: Highlight sharp edges in the viewer (e.g. with green contours) to quickly identify which shots are in focus without zooming.
-

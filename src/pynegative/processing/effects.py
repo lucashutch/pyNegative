@@ -31,9 +31,7 @@ def sharpen_image(img, radius, percent, method="High Quality"):
 
     start_time = time.perf_counter()
 
-    # Ensure float32
-    if img.dtype != np.float32:
-        img = img.astype(np.float32) / 255.0
+    # Pipeline ensures float32 and C-contiguous
 
     h, w = img.shape[:2]
     size_str = f" | Size: {w}x{h}"
@@ -73,7 +71,9 @@ def _apply_nl_means_path(img_array, l_str, c_str, method):
     h_uv = (c_str / 50.0) * 50.0
 
     p_size, s_size = 5, 13
-    if "Fast+" in method:
+    if "Ultra Fast" in method:
+        p_size, s_size = 3, 3
+    elif "Fast+" in method:
         p_size, s_size = 3, 5
     elif "Fast" in method:
         p_size, s_size = 5, 9
@@ -148,9 +148,7 @@ def de_noise_image(
     if l_str <= 0 and c_str <= 0:
         return img
 
-    # Ensure float32
-    if img.dtype != np.float32:
-        img = img.astype(np.float32) / 255.0
+    # Pipeline ensures float32 and C-contiguous
 
     h, w = img.shape[:2]
     zoom_str = f" | Zoom: {zoom * 100:.0f}%" if zoom is not None else ""
@@ -214,9 +212,7 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
     except (ValueError, TypeError):
         return img, fixed_atmospheric_light
 
-    # Ensure float32
-    if img.dtype != np.float32:
-        img = img.astype(np.float32) / 255.0
+    # Pipeline ensures float32 and C-contiguous
 
     img_array = img
 

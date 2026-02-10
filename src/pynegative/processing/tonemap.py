@@ -61,11 +61,7 @@ def apply_tone_map(
     total_pixels = img.shape[0] * img.shape[1]
 
     # --- NUMBA OPTIMIZATION ---
-    # Ensure float32 and C-contiguous for Numba
-    if img.dtype != np.float32:
-        img = img.astype(np.float32)
-    if not img.flags["C_CONTIGUOUS"]:
-        img = np.ascontiguousarray(img)
+    # float32 and C-contiguous are guaranteed by the pipeline contract
 
     # Prepare WB multipliers
     t_scale = 0.4
@@ -113,8 +109,17 @@ def calculate_auto_exposure(img):
     Analyzes image histogram to determine auto-exposure and contrast settings.
     Returns a dict with recommended {exposure, blacks, whites}.
     """
+    # Use a downsampled version for performance
+    h, w = img.shape[:2]
+    stride = max(1, int(np.sqrt(h * w / (1000 * 1000))))  # Target ~1MP for analysis
+    img_small = img[::stride, ::stride]
+
     # 1. Calculate luminance
-    lum = 0.2126 * img[:, :, 0] + 0.7152 * img[:, :, 1] + 0.0722 * img[:, :, 2]
+    lum = (
+        0.2126 * img_small[:, :, 0]
+        + 0.7152 * img_small[:, :, 1]
+        + 0.0722 * img_small[:, :, 2]
+    )
 
     # Target: 98th percentile should be at ~0.85 (bright but not clipped)
     # This works well for linear RAW data.
