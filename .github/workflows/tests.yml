@@ -1,0 +1,86 @@
+name: Tests
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  check-changes:
+    name: Check for Dockerfile Changes
+    runs-on: ubuntu-latest
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docker:
+              - '.github/docker/ci-test.Dockerfile'
+
+  build-image:
+    name: Build CI Container
+    needs: check-changes
+    if: needs.check-changes.outputs.docker == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: .github/docker/ci-test.Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/pynegative-ci-test:latest
+          # Use GitHub Actions cache for faster builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  test:
+    name: Run Tests (Python ${{ matrix.python-version }})
+    needs: [check-changes, build-image]
+    if: always() && (needs.build-image.result == 'success' || needs.build-image.result == 'skipped')
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/pynegative-ci-test:latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12", "3.14"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: uv sync --all-groups --verbose
+      timeout-minutes: 5
+
+    - name: Run tests
+      run: uv run xvfb-run -a pytest -v
+      timeout-minutes: 5
+      env:
+        QT_QPA_PLATFORM: offscreen
