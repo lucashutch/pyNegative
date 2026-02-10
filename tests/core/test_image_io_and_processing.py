@@ -57,8 +57,8 @@ class TestSaveImage:
             pil_img = Image.new("RGB", (10, 10), color=(255, 0, 0))
             output_path = tmpdir / "test.heic"
 
-            # Mock HEIF_SUPPORTED to False
-            with patch.object(pynegative.core, "HEIF_SUPPORTED", False):
+            # Mock HEIF_SUPPORTED to False in the module where save_image is defined
+            with patch("pynegative.io.raw.HEIF_SUPPORTED", False):
                 with pytest.raises(
                     RuntimeError, match="HEIF requested but pillow-heif not installed"
                 ):
