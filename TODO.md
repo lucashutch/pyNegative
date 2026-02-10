@@ -14,7 +14,7 @@ This document tracks planned features, project goals, and areas for technical im
 
 ## Bugs
 
-- **Add Maximum CI Test Time of 2 mins**: The CI tests occasionally hang. Add a timeout, and investigate why the CI (especially for py3.14) sometimes hangs or takes a very long time at the `uv sync` step.
+- **Add Maximum CI Test Time of 2 mins**: [DONE] Added `timeout-minutes: 2` to CI jobs. Added `--verbose` and step-level timeouts to investigate Python 3.14 hangs.
 - **windows ui launches with a terminal window**: When launching the installed windows app, it opens a terminal window inthe background which launches the app, if the window is closed the app also closes. To be considered a more polished app we need to not show the terminal window. 
 
 ## Testing Improvement Areas
