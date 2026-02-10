@@ -139,6 +139,11 @@ QToolButton:disabled {
 }
 
 /* ========== Collapsible Sections ========== */
+QToolButton#MetadataButton {
+    font-size: 20px;
+    padding: 4px 10px;
+}
+
 QPushButton#SectionHeader {
     background-color: #2b2b2b;
     border: none;

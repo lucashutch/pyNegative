@@ -50,6 +50,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.gallery.imageListChanged.connect(self._on_gallery_list_changed)
         self.gallery.viewModeChanged.connect(self._on_gallery_view_mode_changed)
 
+        # Sync metadata button state when folder loads
+        self.gallery.folderLoaded.connect(self._sync_metadata_btn_state)
+
         # Setup Menu (File operations only)
         self._create_menu()
 
@@ -142,8 +145,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Metadata Panel Toggle
         self.metadata_btn = QtWidgets.QToolButton()
-        self.metadata_btn.setText("ℹ️ Metadata")
-        self.metadata_btn.setToolTip("Show/Hide Metadata Panel")
+        self.metadata_btn.setText("ⓘ")
+        self.metadata_btn.setObjectName("MetadataButton")
+        self.metadata_btn.setToolTip("Metadata")
         self.metadata_btn.setCheckable(True)
         self.metadata_btn.setEnabled(False)
         self.metadata_btn.clicked.connect(self._on_metadata_toggle)
@@ -196,7 +200,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     # Trigger a selection update to populate metadata
                     self.gallery._on_gallery_selection_changed()
 
-    def _sync_metadata_btn_state(self):
+    def _sync_metadata_btn_state(self, *args):
         """Sync the metadata button state with the active view."""
         current = self.stack.currentWidget()
         if current == self.editor:
