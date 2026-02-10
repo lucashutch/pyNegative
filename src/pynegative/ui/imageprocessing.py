@@ -257,7 +257,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         # Stage 1: Heavy Effects (Dehaze, Denoise, Sharpen)
         heavy_params = {
-            "de_haze": self.settings.get("de_haze", 0),
+            # Normalize dehaze to 0-1 range (UI slider is 0-50)
+            "de_haze": self.settings.get("de_haze", 0) / 50.0,
             "denoise_luma": self.settings.get("denoise_luma", 0),
             "denoise_chroma": self.settings.get("denoise_chroma", 0),
             "denoise_method": self.settings.get(
