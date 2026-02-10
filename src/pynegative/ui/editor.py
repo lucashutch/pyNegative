@@ -642,7 +642,6 @@ class EditorWidget(QtWidgets.QWidget):
     def _extract_exif_data(self, raw_path):
         """Extract EXIF data from RAW file using rawpy (supports CR3, ARW, NEF, etc)."""
         exif = {}
-        raw_path_obj = Path(raw_path)
 
         try:
             # Use rawpy for RAW files (CR3, ARW, NEF, etc.)
@@ -674,10 +673,6 @@ class EditorWidget(QtWidgets.QWidget):
 
                         thumb_io = BytesIO(thumb.data)
                         tags = exifread.process_file(thumb_io, details=False)
-
-                        print(
-                            f"DEBUG: Found {len(tags)} EXIF tags from embedded thumbnail in {raw_path_obj.name}"
-                        )
 
                         # Primary fields
                         exif["iso"] = tags.get("EXIF ISOSpeedRatings", None)
@@ -717,19 +712,11 @@ class EditorWidget(QtWidgets.QWidget):
                         # Don't override dimensions from rawpy - they're more accurate
                         # Thumbnail EXIF often has thumbnail dimensions, not RAW dimensions
 
-                        print("DEBUG: Extracted EXIF data:")
-                        for key, value in exif.items():
-                            if not key.startswith("_"):  # Skip internal fields
-                                print(f"  {key}: {value}")
+                except Exception:
+                    pass  # Silently fail if thumbnail extraction doesn't work
 
-                except Exception as thumb_error:
-                    print(f"DEBUG: Could not extract thumbnail EXIF: {thumb_error}")
-
-        except Exception as e:
-            print(f"DEBUG: Exception during RAW EXIF extraction: {e}")
-            import traceback
-
-            traceback.print_exc()
+        except Exception:
+            pass  # Silently fail if RAW file can't be opened
 
         # Fallback for date
         if not exif.get("date_taken"):
