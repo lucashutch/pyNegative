@@ -110,6 +110,17 @@ def main():
         app.processEvents()
         QtCore.QThread.msleep(10)
 
+    # Pre-compile Numba kernels (first launch may take 15-30s)
+    update_splash_status("Preparing image engine...")
+    app.processEvents()
+    from ..utils.numba_warmup import warmup_kernels
+
+    is_first_run, warmup_ms = warmup_kernels()
+    if is_first_run:
+        logger.info(f"First-launch kernel compilation took {warmup_ms:.0f}ms")
+    else:
+        logger.debug(f"Kernel cache warm ({warmup_ms:.0f}ms)")
+
     update_splash_status("Loading UI...")
     app.processEvents()
 
