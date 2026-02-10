@@ -11,6 +11,7 @@ from .carouseldelegate import CarouselDelegate
 from .toast import ToastWidget
 from .histogram import HistogramWidget
 from .comparisonoverlay import ComparisonOverlay, ComparisonHandle
+from .metadata_panel import MetadataPanel
 
 __all__ = [
     "HorizontalListWidget",
@@ -27,4 +28,5 @@ __all__ = [
     "HistogramWidget",
     "ComparisonOverlay",
     "ComparisonHandle",
+    "MetadataPanel",
 ]
