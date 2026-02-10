@@ -9,6 +9,7 @@ jobs:
   test:
     needs: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     strategy:
       matrix:
         python-version: ["3.10", "3.12", "3.14"]
@@ -28,10 +29,12 @@ jobs:
         python-version: ${{ matrix.python-version }}
 
     - name: Install dependencies
-      run: uv sync --all-groups
+      run: uv sync --all-groups --verbose
+      timeout-minutes: 1
 
     - name: Run tests
       run: uv run xvfb-run -a pytest -v
+      timeout-minutes: 1
       env:
         QT_QPA_PLATFORM: offscreen
 
@@ -56,6 +59,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
     - uses: actions/checkout@v4
 
@@ -66,7 +70,8 @@ jobs:
         python-version: "3.12"
 
     - name: Install lint dependencies
-      run: uv sync --only-group lint --no-install-project
+      run: uv sync --only-group lint --no-install-project --verbose
+      timeout-minutes: 1
 
     - name: Run ruff check
       run: uv run ruff check .
