@@ -1,18 +1,19 @@
 # AGENTS.md - AI Agent Instructions
 
 ## CRITICAL: Before You Start
-- **ASK QUESTIONS** - Never make assumptions. Clarify requirements and intent before coding.
-- **NO COMMITS TO MAIN** - Always create a feature branch. Never commit directly to the main branch.
-- **Keep commit messages short and concise** - No need for a long explanation.
-- **Keep PR descriptions short and concise** - No need for a long explanation or lots of sections about testing. Just a brief summary of what was done.
-- **Add tests** - Always add tests for new features. ensure no new warnings are added.
-- **Don't use "fixup" commits.** Instead, amend the relevant commit. Force-pushing to your feature branch is encouraged to keep the history clean.
-- **Ask questions, dont make assumptions** - Always ask questions instead of making assumptions
-- **put plans in `.opencode/plans/`** - Create a new markdown file for each plan. inlcude a task list.
+- **ASK QUESTIONS** — Never make assumptions. Clarify requirements and intent before coding.
+- **NO COMMITS TO MAIN** — Always create a feature branch. Never commit directly to the main branch.
+- **Keep commit messages short and concise** — No need for a long explanation.
+- **Keep PR descriptions short and concise** — Just a brief summary of what was done.
+- **Add tests** — Always add tests for new features. Ensure no new warnings are added.
+- **Don't use "fixup" commits.** Amend the relevant commit instead. Force-pushing to your feature branch is encouraged to keep the history clean.
+- **Ask questions, don't make assumptions** — Always ask questions instead of making assumptions.
+- **Put plans in `.opencode/plans/`** — Create a new markdown file for each plan. Include a task list.
 
 ## Quick Commands (Always use `uv`)
 - **Install**: `uv sync --all-groups`
 - **Run UI**: `uv run pynegative`
+- **Run Debug**: `uv run pynegative-debug`
 - **Run Tests**: `uv run pytest` (or `uv run pytest tests/path/to/test.py::TestClass::test_method`)
 - **Format**: `uv run ruff format .`
 - **Lint**: `uv run ruff check .` (use `--fix` to auto-fix)
@@ -23,36 +24,41 @@
 - **Commits**: Every commit must be buildable and pass tests.
 
 ## Project Architecture
-- **Core**: `src/pynegative/core.py` - Image processing, tone mapping, RAW loading.
-- **Editor**: `src/pynegative/ui/editor.py`, `editingcontrols.py`, `imageprocessing.py` - Main editing workflow.
-- **Gallery**: `src/pynegative/ui/gallery.py` - Grid browsing, rating, and filtering.
-- **Carousel**: `src/pynegative/ui/carouselmanager.py` - Image navigation logic.
-- **Export**: `src/pynegative/ui/export_tab.py`, `exportprocessor.py`, `exportsettingsmanager.py` - Batch export pipeline.
-- **Undo/Redo**: `src/pynegative/ui/undomanager.py` - Command pattern for history.
-- **Widgets**: `src/pynegative/ui/widgets/` - Reusable UI components (sliders, star ratings, etc.).
-- **Tests**: `tests/` - pytest suite mirroring the `src` structure.
+Refer to [CONTRIBUTING.md](CONTRIBUTING.md) for the full project architecture and directory layout.
+
+**Key modules:**
+- **Core**: `src/pynegative/core.py` — Image processing, tone mapping, RAW loading, sidecar/cache I/O.
+- **Editor**: `src/pynegative/ui/editor.py`, `editingcontrols.py`, `imageprocessing.py` — Main editing workflow.
+- **Gallery**: `src/pynegative/ui/gallery.py` — Grid browsing, rating, sorting, and filtering.
+- **Loaders**: `src/pynegative/ui/loaders.py` — Async thumbnail and RAW loading with disk caching.
+- **Carousel**: `src/pynegative/ui/carouselmanager.py` — Image navigation logic.
+- **Export**: `src/pynegative/ui/export_tab.py`, `exportprocessor.py`, `exportsettingsmanager.py` — Batch export pipeline.
+- **Undo/Redo**: `src/pynegative/ui/undomanager.py` — Command pattern for history.
+- **Widgets**: `src/pynegative/ui/widgets/` — Reusable UI components (sliders, star ratings, histogram, etc.).
+- **Numba Kernels**: `src/pynegative/utils/` — JIT-compiled image processing kernels.
+- **Tests**: `tests/` — pytest suite mirroring the `src` structure.
 
 ## Code Standards
-- **Style**: ruff for formatting and linting (PEP 8).
+- **Style**: Ruff for formatting and linting (PEP 8).
 - **Types**: Mandatory type hints for all function signatures.
 - **Naming**: `snake_case` (funcs/vars), `PascalCase` (classes), `UPPER_SNAKE_CASE` (constants), `_private` prefix.
-- **Signals**: camelCase with `Signal` suffix (e.g., `ratingChanged = Signal(int)`).
+- **Signals**: camelCase (e.g., `ratingChanged = Signal(int)`).
 
 ## PySide6 / UI Patterns
 - **Structure**: Inherit from standard QWidgets. Use signals/slots for inter-component communication.
 - **Performance**: Use `QTimer` for throttling expensive UI updates (see `editor.py`).
 - **Memory**: Ensure proper parent-child relationships for Qt object cleanup.
-- **Selection Sync**: When subclassing QListWidget with custom selection tracking, use `itemSelectionChanged` (built-in signal) and sync to custom state. Calling `setCurrentRow()` alone does not trigger selection signals - use `item.setSelected(True)` to ensure proper signal emission.
+- **Selection Sync**: When subclassing QListWidget with custom selection tracking, use `itemSelectionChanged` (built-in signal) and sync to custom state. Calling `setCurrentRow()` alone does not trigger selection signals — use `item.setSelected(True)` to ensure proper signal emission.
 
 ## Documentation Reference
-- `README.md`: User-facing features and installation.
-- `CONTRIBUTING.md`: Developer environment setup and contribution guide.
-- `TODO.md`: Feature roadmap and testing improvement areas. When a feature is complete remove it from this file and update the readme accordingly if the feature is user facing and worth mentioning.
+- `README.md`: User-facing features, installation, and keyboard shortcuts.
+- `CONTRIBUTING.md`: Developer setup, project architecture, code standards, and contribution guide.
+- `TODO.md`: Feature roadmap and testing improvement areas. When a feature is complete, remove it from this file and update the README if the feature is user-facing.
 - `AGENTS.md`: This file (AI agent guidelines).
 - `.opencode/plans/`: Location for technical implementation plans. Create and reference markdown files here for complex tasks.
-- `plan.md`: Legacy technical implementation plans. Use `.opencode/plans/` for new plans.
 
 ## Common Patterns
-- **Image Data**: Work on copies. Use numpy for operations. Validate 0.0-1.0 ranges for normalized data.
-- **File I/O**: Use `pathlib.Path`. Handle missing/corrupt files and metadata sidecars (`.xmp`) gracefully.
+- **Image Data**: Work on copies. Use NumPy for operations. Validate 0.0–1.0 ranges for normalized data.
+- **File I/O**: Use `pathlib.Path`. Handle missing/corrupt files and metadata sidecars gracefully.
+- **Sidecar Storage**: Edits are stored in `.pyNegative/<filename>.json`. Thumbnails are cached in `.pyNegative/thumbnails/`.
 - **Logic/UI Separation**: Keep image processing logic separate from widget state management.
