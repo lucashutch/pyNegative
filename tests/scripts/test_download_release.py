@@ -294,11 +294,9 @@ class TestVersionFileManagement:
         version_file = tmp_path / ".version"
         version_file.write_text("v1.0.0")
 
-        # Make file unreadable (on Unix systems)
-        if sys.platform != "win32":
-            version_file.chmod(0o000)
+        # Mock read_text to raise an error
+        with patch.object(Path, "read_text", side_effect=OSError("Read error")):
             result = load_version(install_dir)
-            version_file.chmod(0o644)  # Restore permissions
             assert result is None
 
 
