@@ -11,7 +11,54 @@ class ImageProcessorSignals(QtCore.QObject):
         QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int, int
     )
     histogramUpdated = QtCore.Signal(dict, int)
+    tiersGenerated = QtCore.Signal(np.ndarray, np.ndarray, np.ndarray)
+    uneditedPixmapGenerated = QtCore.Signal(QtGui.QPixmap)
     error = QtCore.Signal(str, int)
+
+
+class TierGeneratorWorker(QtCore.QRunnable):
+    """Worker to generate scaled image tiers in the background."""
+
+    def __init__(self, signals, img_array):
+        super().__init__()
+        self.signals = signals
+        self.img_array = img_array
+
+    def run(self):
+        if self.img_array is None:
+            return
+
+        try:
+            h, w = self.img_array.shape[:2]
+
+            # 1. Preview (High Priority for UI)
+            scale = 2048 / max(h, w)
+            target_h, target_w = int(h * scale), int(w * scale)
+            preview = cv2.resize(
+                self.img_array, (target_w, target_h), interpolation=cv2.INTER_LINEAR
+            )
+
+            # Generate unedited pixmap from preview for fast initial display
+            img_uint8 = (np.clip(preview, 0, 1) * 255).astype(np.uint8)
+            h_p, w_p, c_p = img_uint8.shape
+            qimage = QtGui.QImage(
+                img_uint8.data, w_p, h_p, c_p * w_p, QtGui.QImage.Format_RGB888
+            )
+            pixmap = QtGui.QPixmap.fromImage(qimage)
+            self.signals.uneditedPixmapGenerated.emit(pixmap)
+
+            # 2. Half
+            half = cv2.resize(
+                self.img_array, (w // 2, h // 2), interpolation=cv2.INTER_LINEAR
+            )
+
+            # 3. Quarter
+            quarter = cv2.resize(half, (w // 4, h // 4), interpolation=cv2.INTER_LINEAR)
+
+            self.signals.tiersGenerated.emit(half, quarter, preview)
+
+        except Exception as e:
+            print(f"Tier generation error: {e}")
 
 
 class ImageProcessorWorker(QtCore.QRunnable):
@@ -30,6 +77,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         calculate_histogram=False,
         cache=None,
         last_heavy_adjusted="de_haze",
+        expand_roi=False,
     ):
         super().__init__()
         self.signals = signals
@@ -43,6 +91,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.calculate_histogram = calculate_histogram
         self.cache = cache
         self.last_heavy_adjusted = last_heavy_adjusted
+        self.expand_roi = expand_roi
 
     def run(self):
         try:
@@ -176,7 +225,11 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         # --- Part 1: Global Background ---
         res_key = "preview"
-        img_render_base = self.base_img_preview
+        img_render_base = (
+            self.base_img_preview
+            if self.base_img_preview is not None
+            else self.base_img_full
+        )
 
         heavy_params = {
             "de_haze": self.settings.get("de_haze", 0) / 50.0,
@@ -273,10 +326,25 @@ class ImageProcessorWorker(QtCore.QRunnable):
             src_x, src_y = max(0, src_x), max(0, src_y)
             src_x2, src_y2 = min(full_w, src_x + src_w), min(full_h, src_y + src_h)
 
-            if (req_w := src_x2 - src_x) > 10 and (req_h := src_y2 - src_y) > 10:
+            # --- ROI PADDING LOGIC ---
+            # If idle (expand_roi=True), we request a much larger area to allow smooth panning
+            pad_ratio = 0.5 if self.expand_roi else 0.05
+            p_w, p_h = src_x2 - src_x, src_y2 - src_y
+            pad_w, pad_h = int(p_w * pad_ratio), int(p_h * pad_ratio)
+
+            # Apply padding but stay within image bounds
+            src_x = max(0, src_x - pad_w)
+            src_y = max(0, src_y - pad_h)
+            src_x2 = min(full_w, src_x2 + pad_w)
+            src_y2 = min(full_h, src_y2 + pad_h)
+            # Re-calculate required width/height after padding
+            req_w, req_h = src_x2 - src_x, src_y2 - src_y
+
+            if req_w > 10 and req_h > 10:
                 roi_area = req_w * req_h
                 full_area = full_w * full_h
-                if roi_area / full_area > 0.85:
+                # If we're rendering almost the whole image, just stop
+                if roi_area / full_area > 0.95 and not self.expand_roi:
                     return (
                         pix_bg,
                         new_full_w,
@@ -355,38 +423,28 @@ class ImageProcessorWorker(QtCore.QRunnable):
         return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
 
     def _calculate_histograms(self, img_array):
-        bins = 256
+        # Use strided Numba kernel for maximum speed
+        # Stride based on image size to keep samples roughly constant (~65k samples)
         h, w = img_array.shape[:2]
-        if max(h, w) > 512:
-            scale = 256 / max(h, w)
-            small_img = cv2.resize(
-                img_array,
-                (int(w * scale), int(h * scale)),
-                interpolation=cv2.INTER_NEAREST,
-            )
+        area = h * w
+        stride = max(1, int(np.sqrt(area / 65536)))
+
+        # Ensure RGB (OpenCV might provide RGBA in some cases, though pipeline uses RGB)
+        if img_array.shape[2] == 4:
+            img_rgb = cv2.cvtColor(img_array, cv2.COLOR_RGBA2RGB)
         else:
-            small_img = img_array
+            img_rgb = img_array
 
-        if small_img.shape[2] == 4:
-            small_img = cv2.cvtColor(small_img, cv2.COLOR_RGBA2RGB)
-
-        hist_r = cv2.calcHist([small_img], [0], None, [bins], [0, 256]).flatten()
-        hist_g = cv2.calcHist([small_img], [1], None, [bins], [0, 256]).flatten()
-        hist_b = cv2.calcHist([small_img], [2], None, [bins], [0, 256]).flatten()
-
-        img_yuv = cv2.cvtColor(small_img, cv2.COLOR_RGB2YUV)
-        hist_y = cv2.calcHist([img_yuv], [0], None, [bins], [0, 256]).flatten()
-        hist_u = cv2.calcHist([img_yuv], [1], None, [bins], [0, 256]).flatten()
-        hist_v = cv2.calcHist([img_yuv], [2], None, [bins], [0, 256]).flatten()
+        hr, hg, hb, hy, hu, hv = pynegative.numba_histogram_kernel(img_rgb, stride)
 
         def smooth(h):
             return cv2.GaussianBlur(h.reshape(-1, 1), (5, 5), 0).flatten()
 
         return {
-            "R": smooth(hist_r),
-            "G": smooth(hist_g),
-            "B": smooth(hist_b),
-            "Y": smooth(hist_y),
-            "U": smooth(hist_u),
-            "V": smooth(hist_v),
+            "R": smooth(hr),
+            "G": smooth(hg),
+            "B": smooth(hb),
+            "Y": smooth(hy),
+            "U": smooth(hu),
+            "V": smooth(hv),
         }
