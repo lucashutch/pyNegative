@@ -698,9 +698,11 @@ class EditorWidget(QtWidgets.QWidget):
                             or tags.get("EXIF LensInfo", None)
                         )
 
-                        exif["date_taken"] = tags.get(
-                            "EXIF DateTimeOriginal", None
-                        ) or tags.get("Image DateTime", None)
+                        exif["date_taken"] = (
+                            tags.get("EXIF DateTimeOriginal", None)
+                            or tags.get("Image DateTime", None)
+                            or tags.get("EXIF DateTimeDigitized", None)
+                        )
                         exif["exposure_compensation"] = tags.get(
                             "EXIF ExposureBiasValue", None
                         )
@@ -712,11 +714,8 @@ class EditorWidget(QtWidgets.QWidget):
 
                         exif["flash"] = tags.get("EXIF Flash", None)
 
-                        # Override dimensions if we got them from thumbnail EXIF
-                        if not exif.get("width"):
-                            exif["width"] = tags.get("EXIF ExifImageWidth", None)
-                        if not exif.get("height"):
-                            exif["height"] = tags.get("EXIF ExifImageLength", None)
+                        # Don't override dimensions from rawpy - they're more accurate
+                        # Thumbnail EXIF often has thumbnail dimensions, not RAW dimensions
 
                         print("DEBUG: Extracted EXIF data:")
                         for key, value in exif.items():

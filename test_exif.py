@@ -24,6 +24,12 @@ try:
         print("RAW file opened successfully with rawpy")
         print(f"Camera: {raw.color_desc if hasattr(raw, 'color_desc') else 'Unknown'}")
 
+        # Get dimensions from rawpy
+        if hasattr(raw, "sizes"):
+            sizes = raw.sizes
+            if hasattr(sizes, "raw_width") and hasattr(sizes, "raw_height"):
+                print(f"RAW Dimensions: {sizes.raw_width} x {sizes.raw_height}\n")
+
         # Try to extract embedded thumbnail
         try:
             thumb = raw.extract_thumb()
@@ -52,17 +58,29 @@ try:
                     "Camera Make": "Image Make",
                     "Camera Model": "Image Model",
                     "Lens Model": "EXIF LensModel",
-                    "Date Taken": "EXIF DateTimeOriginal",
+                    "Date Taken (Original)": "EXIF DateTimeOriginal",
+                    "Date Taken (DateTime)": "Image DateTime",
+                    "Date Taken (Digitized)": "EXIF DateTimeDigitized",
                     "Exposure Comp": "EXIF ExposureBiasValue",
                     "White Balance": "EXIF WhiteBalance",
                     "Flash": "EXIF Flash",
-                    "Width": "EXIF ExifImageWidth",
-                    "Height": "EXIF ExifImageLength",
+                    "Width (Thumbnail)": "EXIF ExifImageWidth",
+                    "Height (Thumbnail)": "EXIF ExifImageLength",
                 }
 
                 for name, tag_key in fields.items():
                     value = tags.get(tag_key, "NOT FOUND")
-                    print(f"{name:20} ({tag_key:30}): {value}")
+                    print(f"{name:30} ({tag_key:30}): {value}")
+
+                # Show final date we'd use
+                print("\n" + "=" * 80)
+                date_taken = (
+                    tags.get("EXIF DateTimeOriginal", None)
+                    or tags.get("Image DateTime", None)
+                    or tags.get("EXIF DateTimeDigitized", None)
+                )
+                print(f"Final Date Taken (with fallbacks): {date_taken}")
+
             else:
                 print(f"Thumbnail format is not JPEG: {thumb.format}")
         except Exception as thumb_error:
