@@ -646,25 +646,59 @@ class EditorWidget(QtWidgets.QWidget):
             with open(raw_path, "rb") as f:
                 tags = exifread.process_file(f, details=False)
 
+                # Debug: log total tags found
+                print(f"DEBUG: Found {len(tags)} EXIF tags in {Path(raw_path).name}")
+
+                # Debug: print all available tags (first 50)
+                print("DEBUG: Available tags:")
+                for i, (tag_name, tag_value) in enumerate(sorted(tags.items())):
+                    if i < 50:  # Limit output
+                        print(f"  {tag_name}: {tag_value}")
+                    else:
+                        print(f"  ... and {len(tags) - 50} more tags")
+                        break
+
                 # Primary fields
                 exif["iso"] = tags.get("EXIF ISOSpeedRatings", None)
                 exif["shutter_speed"] = tags.get("EXIF ExposureTime", None)
                 exif["aperture"] = tags.get("EXIF FNumber", None)
                 exif["focal_length"] = tags.get("EXIF FocalLength", None)
 
-                # Secondary fields
+                # Secondary fields (with fallbacks for different manufacturers)
                 exif["camera_make"] = tags.get("Image Make", None)
                 exif["camera_model"] = tags.get("Image Model", None)
-                exif["lens_model"] = tags.get("EXIF LensModel", None)
-                exif["date_taken"] = tags.get("EXIF DateTimeOriginal", None)
+
+                # Lens model - try multiple tag names
+                exif["lens_model"] = (
+                    tags.get("EXIF LensModel", None) or
+                    tags.get("MakerNote LensModel", None) or
+                    tags.get("EXIF Lens", None) or
+                    tags.get("MakerNote Lens", None) or
+                    tags.get("EXIF LensInfo", None)
+                )
+
+                exif["date_taken"] = tags.get("EXIF DateTimeOriginal", None) or tags.get("Image DateTime", None)
                 exif["exposure_compensation"] = tags.get("EXIF ExposureBiasValue", None)
-                exif["white_balance"] = tags.get("EXIF WhiteBalance", None)
+
+                # White balance - try multiple formats
+                exif["white_balance"] = (
+                    tags.get("EXIF WhiteBalance", None) or
+                    tags.get("MakerNote WhiteBalance", None)
+                )
+
                 exif["flash"] = tags.get("EXIF Flash", None)
 
                 # Image dimensions
                 exif["width"] = tags.get("EXIF ExifImageWidth", None)
                 exif["height"] = tags.get("EXIF ExifImageLength", None)
-        except Exception:
+
+                # Debug: print what we extracted
+                print(f"DEBUG: Extracted EXIF data:")
+                for key, value in exif.items():
+                    print(f"  {key}: {value}")
+
+        except Exception as e:
+            print(f"DEBUG: Exception during EXIF extraction: {e}")
             pass
 
         # Fallback for date
