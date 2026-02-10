@@ -11,7 +11,7 @@ This document tracks planned features, project goals, and areas for technical im
 ## Performance Optimisation
 
 - **General Code Cleanup**: Analyse the codebase for redundant, duplicate or unused code.
-- **Compile Numba Kernels on Startup**: Kernels are cached but only compile JIT when first needed. Pre-compiling on startup would speed up the first edit.
+- **~~Compile Numba Kernels on Startup~~**: ✅ Done — kernels are pre-compiled behind the splash screen on first launch.
 
 ## Bugs
 
