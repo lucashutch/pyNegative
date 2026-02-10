@@ -6,7 +6,6 @@ from .pipeline.cache import PipelineCache
 from .pipeline.worker import (
     ImageProcessorSignals,
     ImageProcessorWorker,
-    TierGeneratorWorker,
 )
 
 
@@ -45,7 +44,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.signals = ImageProcessorSignals()
         self.signals.finished.connect(self._on_worker_finished)
         self.signals.histogramUpdated.connect(self._on_histogram_updated)
-        self.signals.tiersGenerated.connect(self._on_tiers_generated)
+        self.signals.tierGenerated.connect(self._on_tier_generated)
         self.signals.uneditedPixmapGenerated.connect(self.uneditedPixmapUpdated.emit)
         self.signals.error.connect(self._on_worker_error)
 
@@ -62,36 +61,62 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.cache.clear()
         self._processing_params = {}
 
-        # Reset tiers - they will be populated by the background worker
-        self.base_img_half = None
-        self.base_img_quarter = None
-        self.base_img_preview = None
+        # Dictionary of scales (0.5, 0.25, 0.125, 0.0625)
+        self.tiers = {}
 
         if img_array is not None:
-            # Trigger background tier generation
-            worker = TierGeneratorWorker(self.signals, img_array)
-            self.thread_pool.start(worker)
+            # Synchronous HQ Pyramid Generation
+            # Even for 64MP, this takes ~40ms total, which is acceptable for set_image.
+            h, w = img_array.shape[:2]
+
+            # Use area-based downsampling for high quality
+            # 1:2
+            self.tiers[0.5] = cv2.resize(
+                img_array, (w // 2, h // 2), interpolation=cv2.INTER_AREA
+            )
+            # 1:4
+            self.tiers[0.25] = cv2.resize(
+                self.tiers[0.5], (w // 4, h // 4), interpolation=cv2.INTER_AREA
+            )
+            # 1:8
+            self.tiers[0.125] = cv2.resize(
+                self.tiers[0.25], (w // 8, h // 8), interpolation=cv2.INTER_AREA
+            )
+            # 1:16
+            self.tiers[0.0625] = cv2.resize(
+                self.tiers[0.125], (w // 16, h // 16), interpolation=cv2.INTER_AREA
+            )
+
+            # Emit initial unedited pixmap from 1:4 or 1:8 tier for fast display
+            # (get_unedited_pixmap uses _unedited_img_full fallback but we've optimized it)
+            self.uneditedPixmapUpdated.emit(self.get_unedited_pixmap(2048))
         else:
             self.uneditedPixmapUpdated.emit(QtGui.QPixmap())
 
-    @QtCore.Slot(np.ndarray, np.ndarray, np.ndarray)
-    def _on_tiers_generated(self, half, quarter, preview):
-        self.base_img_half = half
-        self.base_img_quarter = quarter
-        self.base_img_preview = preview
-        # Once tiers are ready, trigger a high-quality render if needed
-        if self._render_pending or self._processing_params:
-            self.request_update()
+    @QtCore.Slot(float, np.ndarray)
+    def _on_tier_generated(self, scale, array):
+        # Deprecated: tier generation is now synchronous in set_image
+        pass
 
     def set_view_reference(self, view):
         self._view_ref = view
 
-    def get_unedited_pixmap(self) -> QtGui.QPixmap:
+    def get_unedited_pixmap(self, max_width: int = 0) -> QtGui.QPixmap:
         if self._unedited_img_full is None:
             return QtGui.QPixmap()
         try:
+            # OPTIMIZATION: pick the best tier if max_width is specified
+            source = self._unedited_img_full
+            if max_width > 0:
+                available_scales = sorted(self.tiers.keys())
+                for s in available_scales:
+                    tier = self.tiers[s]
+                    if tier.shape[1] >= max_width:
+                        source = tier
+                        break
+
             # We know the pipeline uses float32 0-1 range by convention
-            img_uint8 = (np.clip(self._unedited_img_full, 0, 1) * 255).astype(np.uint8)
+            img_uint8 = (np.clip(source, 0, 1) * 255).astype(np.uint8)
             if img_uint8.shape[2] == 4:
                 img_rgb = cv2.cvtColor(img_uint8, cv2.COLOR_RGBA2RGB)
             else:
@@ -101,8 +126,6 @@ class ImageProcessingPipeline(QtCore.QObject):
             qimage = QtGui.QImage(
                 img_rgb.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888
             )
-            # Must return a copy if we want to ensure the underlying buffer stays alive,
-            # but QPixmap.fromImage already handles this.
             return QtGui.QPixmap.fromImage(qimage)
         except Exception:
             return QtGui.QPixmap()
@@ -192,9 +215,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             self.signals,
             self._view_ref,
             self.base_img_full,
-            self.base_img_half,
-            self.base_img_quarter,
-            self.base_img_preview,
+            self.tiers,
             self.get_current_settings(),
             self._current_request_id,
             calculate_histogram=self.histogram_enabled,

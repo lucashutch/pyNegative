@@ -1,4 +1,5 @@
 import math
+import logging
 from pathlib import Path
 from functools import partial
 from PySide6 import QtWidgets, QtGui, QtCore
@@ -19,6 +20,8 @@ from .editor_managers.comparison_manager import ComparisonManager
 from .editor_managers.crop_manager import CropManager
 from .editor_managers.floating_ui_manager import FloatingUIManager
 from .. import core as pynegative
+
+logger = logging.getLogger(__name__)
 
 
 class PreviewStarRatingWidget(StarRatingWidget):
@@ -233,7 +236,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.image_processor.performanceMeasured.connect(self._on_performance_measured)
 
         self.image_processor.uneditedPixmapUpdated.connect(
-            lambda p: self.comparison_manager.update_pixmaps(unedited=p)
+            self._on_unedited_pixmap_updated
         )
         self.image_processor.editedPixmapUpdated.connect(
             lambda p: self.comparison_manager.update_pixmaps(edited=p)
@@ -324,20 +327,21 @@ class EditorWidget(QtWidgets.QWidget):
 
     def load_image(self, path):
         path = Path(path)
+        logger.info(f"Image selection changed: {path.name}")
         self.raw_path = path
+
+        # 1. Clear previous image state immediately
+        self.image_processor.set_image(None)
+        self.view.set_pixmaps(None, 0, 0)
+        self.metadata_panel.clear()
+
         if self._metadata_panel_visible:
             self.metadata_panel.load_for_path(path)
 
         self.editing_controls.set_crop_checked(False)
         self.view.set_crop_mode(False)
 
-        if self.comparison_manager.enabled:
-            unedited_pixmap = self.image_processor.get_unedited_pixmap()
-            self.comparison_manager.comparison_overlay.setUneditedPixmap(
-                unedited_pixmap
-            )
-
-        QtWidgets.QApplication.processEvents()
+        # 2. Start RAW loader
         loader = RawLoader(path)
         loader.signals.finished.connect(self._on_raw_loaded)
         self.thread_pool.start(loader)
@@ -482,7 +486,12 @@ class EditorWidget(QtWidgets.QWidget):
         if img_arr is None:
             QtWidgets.QMessageBox.critical(self, "Error", "Failed to load image")
             return
+
+        # 1. Update processor first
         self.image_processor.set_image(img_arr)
+        h, w = img_arr.shape[:2]
+
+        # 2. Apply settings
         self.editing_controls.reset_sliders(silent=True)
         self.editing_controls.set_rating(0)
         self.preview_rating_widget.set_rating(0)
@@ -498,16 +507,24 @@ class EditorWidget(QtWidgets.QWidget):
             loaded_crop = settings.get("crop")
             rotate_val = settings.get("rotation", 0.0)
             if loaded_crop is None and abs(rotate_val) > 0.1:
-                h, w = img_arr.shape[:2]
                 loaded_crop = pynegative.calculate_max_safe_crop(w, h, rotate_val)
             all_params["crop"] = loaded_crop
             self.image_processor.set_processing_params(**all_params)
+
+        # 3. Explicitly update the view with the correct dimensions *before* resetting zoom.
+        # Use existing pixmap (thumbnail) if available, but update the reference dimensions.
+        current_pixmap = self.view._bg_item.pixmap()
+        self.view.set_pixmaps(current_pixmap, w, h)
+
+        # 4. Reset zoom to get correct viewport math for the new image size
+        self.view.reset_zoom()
+
+        # 5. Then request update
         self._request_update_from_view()
-        QtCore.QTimer.singleShot(50, self.view.reset_zoom)
-        QtCore.QTimer.singleShot(200, self.view.reset_zoom)
+
         if self.comparison_manager.enabled:
             self.comparison_manager.comparison_overlay.setUneditedPixmap(
-                self.image_processor.get_unedited_pixmap()
+                self.image_processor.get_unedited_pixmap(2048)
             )
         if self._metadata_panel_visible:
             self.metadata_panel.load_for_path(self.raw_path)
@@ -662,6 +679,16 @@ class EditorWidget(QtWidgets.QWidget):
         self._request_update_from_view()
         self.editing_controls.set_rating(rating)
         self.settings_manager.set_current_settings(settings, rating)
+
+    def _on_unedited_pixmap_updated(self, pixmap):
+        self.comparison_manager.update_pixmaps(unedited=pixmap)
+        # Fast feedback: if the view is currently empty, show the unedited version immediately
+        if self.image_processor.base_img_full is not None:
+            h, w = self.image_processor.base_img_full.shape[:2]
+            # Only set background if it's currently null (prevents flicker when high-quality comes in)
+            if self.view._bg_item.pixmap().isNull():
+                self.view.set_pixmaps(pixmap, w, h)
+                self.view.reset_zoom()
 
     @QtCore.Slot(float)
     def _on_performance_measured(self, elapsed_ms):

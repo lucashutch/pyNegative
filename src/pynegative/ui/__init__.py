@@ -5,7 +5,7 @@ from pathlib import Path
 
 # Configure logging EARLY before importing internal modules
 # to capture debug logs during the import phase.
-log_level = logging.DEBUG if "--debug" in sys.argv else logging.ERROR
+log_level = logging.DEBUG if "--debug" in sys.argv else logging.INFO
 logging.basicConfig(
     level=log_level,
     format="%(asctime)s.%(msecs)03d [%(levelname)s] %(name)s: %(message)s",
