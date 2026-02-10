@@ -31,13 +31,25 @@ class ThumbnailLoader(QtCore.QRunnable):
             mtime = self.path.stat().st_mtime
             cache_key = (path_str, mtime, self.size)
 
-            # Check cache first
+            # 1. Check Memory Cache first
             if cache_key in _THUMBNAIL_CACHE:
                 pixmap, metadata = _THUMBNAIL_CACHE[cache_key]
                 self.signals.finished.emit(path_str, pixmap, metadata)
                 return
 
-            # use the optimized extract_thumbnail from core
+            # 2. Check Disk Cache
+            pil_img, metadata = pynegative.load_cached_thumbnail(self.path, self.size)
+            if pil_img:
+                q_image = ImageQt.ImageQt(pil_img)
+                pixmap = QtGui.QPixmap.fromImage(q_image)
+
+                # Store in memory cache
+                _THUMBNAIL_CACHE[cache_key] = (pixmap, metadata)
+
+                self.signals.finished.emit(path_str, pixmap, metadata)
+                return
+
+            # 3. Generate from scratch
             pil_img = pynegative.extract_thumbnail(self.path)
             metadata = {}
 
@@ -55,8 +67,13 @@ class ThumbnailLoader(QtCore.QRunnable):
                 q_image = ImageQt.ImageQt(pil_img)
                 pixmap = QtGui.QPixmap.fromImage(q_image)
 
-                # Store in cache
+                # Store in Memory cache
                 _THUMBNAIL_CACHE[cache_key] = (pixmap, metadata)
+
+                # Store on Disk Cache
+                pynegative.save_cached_thumbnail(
+                    self.path, pil_img, metadata, self.size
+                )
 
                 self.signals.finished.emit(path_str, pixmap, metadata)
             else:
