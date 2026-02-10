@@ -611,7 +611,9 @@ def de_noise_image(
 def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
     """
     Applies a fast dehazing algorithm based on Dark Channel Prior.
-    Strength: 0.0 to 1.0 (though UI might pass 0-50).
+    Strength: 0.0 to 1.0.
+    Values > 1.0 are automatically normalized (divided by 50.0) for backward compatibility,
+    but callers should prefer passing normalized 0.0-1.0 values.
     Returns (result, atmospheric_light)
     """
     if img is None:
@@ -624,7 +626,7 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
         strength = float(strength)
         if strength <= 0:
             return img, fixed_atmospheric_light
-        # UI might pass 0-50, normalize to 0-1 for core
+        # Legacy: UI used to pass 0-50, normalize to 0-1 for core
         if strength > 1.0:
             strength /= 50.0
         strength = min(1.0, max(0.0, strength))

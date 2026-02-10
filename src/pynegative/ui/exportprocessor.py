@@ -118,7 +118,8 @@ class ExportProcessor(QtCore.QRunnable):
         # Apply Dehaze if present in sidecar
         dehaze_val = sidecar_settings.get("de_haze", 0)
         if dehaze_val > 0:
-            img, _ = pynegative.de_haze_image(img, dehaze_val, zoom=1.0)
+            # Normalize to 0-1 (UI storage is 0-50) before calling core
+            img, _ = pynegative.de_haze_image(img, dehaze_val / 50.0, zoom=1.0)
 
         # Apply Denoise if present in sidecar
         luma_str = sidecar_settings.get("denoise_luma")
