@@ -1,9 +1,11 @@
-import pytest
-from pathlib import Path
 import os
-import time
+
+import pytest
+
 from PIL import Image
+
 from pynegative import core
+
 
 @pytest.fixture
 def temp_raw_path(tmp_path):
@@ -12,9 +14,10 @@ def temp_raw_path(tmp_path):
     raw_file.touch()
     return raw_file
 
+
 def test_thumbnail_cache_save_load(temp_raw_path):
     # Create a dummy image
-    img = Image.new('RGB', (100, 100), color='red')
+    img = Image.new("RGB", (100, 100), color="red")
     metadata = {"width": 100, "height": 100, "date": "2024-01-01"}
     size = 400
 
@@ -24,7 +27,6 @@ def test_thumbnail_cache_save_load(temp_raw_path):
     # Check directory exists
     cache_dir = core.get_thumbnail_cache_dir(temp_raw_path)
     assert cache_dir.exists()
-    assert (cache_dir / SIDECAR_DIR if 'SIDECAR_DIR' in locals() else cache_dir).exists() # Already in SIDECAR_DIR
 
     # Load from cache
     loaded_img, loaded_metadata = core.load_cached_thumbnail(temp_raw_path, size)
@@ -33,8 +35,9 @@ def test_thumbnail_cache_save_load(temp_raw_path):
     assert loaded_img.size == (100, 100)
     assert loaded_metadata == metadata
 
+
 def test_thumbnail_cache_invalidation(temp_raw_path):
-    img = Image.new('RGB', (100, 100), color='red')
+    img = Image.new("RGB", (100, 100), color="red")
     metadata = {"width": 100, "height": 100}
     size = 400
 
@@ -56,8 +59,9 @@ def test_thumbnail_cache_invalidation(temp_raw_path):
     loaded_img, loaded_metadata = core.load_cached_thumbnail(temp_raw_path, size)
     assert loaded_img is not None
 
+
 def test_rename_sidecar_with_thumbnails(temp_raw_path, tmp_path):
-    img = Image.new('RGB', (100, 100), color='blue')
+    img = Image.new("RGB", (100, 100), color="blue")
     metadata = {"width": 100, "height": 100}
     size = 200
 
@@ -70,7 +74,6 @@ def test_rename_sidecar_with_thumbnails(temp_raw_path, tmp_path):
     core.rename_sidecar(temp_raw_path, new_raw_path)
 
     # Check if thumbnail cache was renamed
-    old_thumb_dir = core.get_thumbnail_cache_dir(temp_raw_path)
     new_thumb_dir = core.get_thumbnail_cache_dir(new_raw_path)
 
     # Since they are in the same parent tmp_path, old_thumb_dir might still exist
