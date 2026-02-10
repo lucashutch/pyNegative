@@ -2,6 +2,7 @@ from pathlib import Path
 from functools import partial
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
+import exifread
 
 from .loaders import RawLoader
 from .widgets import (
@@ -54,6 +55,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.thread_pool = thread_pool
         self.current_folder = None
         self.raw_path = None
+        self.settings = QtCore.QSettings("pyNegative", "Editor")
 
         # Auto-save timer for metadata
         self.save_timer = QtCore.QTimer()
@@ -125,14 +127,43 @@ class EditorWidget(QtWidgets.QWidget):
         # Set initial sizes for the splitter: sidebar at 360px, canvas takes rest
         self.splitter.setSizes([360, 1000])
 
-        # Layout for canvas + zoom controls + carousel
+        # Layout for canvas + zoom controls + carousel (including top bar and metadata panel)
         self.canvas_container = QtWidgets.QVBoxLayout(self.canvas_frame)
         self.canvas_container.setContentsMargins(0, 0, 0, 0)
         self.canvas_container.setSpacing(0)
 
+        # --- Editor Top Bar ---
+        self.editor_top_bar_frame = QtWidgets.QFrame()
+        self.editor_top_bar_frame.setObjectName("EditorTopBar")
+        self.editor_top_bar_layout = QtWidgets.QHBoxLayout(self.editor_top_bar_frame)
+        self.editor_top_bar_layout.setContentsMargins(10, 5, 10, 5)
+        self.editor_top_bar_layout.addStretch()
+
+        self.metadata_btn = QtWidgets.QToolButton()
+        self.metadata_btn.setText("ℹ️ Metadata")
+        self.metadata_btn.setToolTip("Show/Hide Metadata Panel")
+        self.metadata_btn.setCheckable(True)
+        self.metadata_btn.setEnabled(False)
+        self.metadata_btn.clicked.connect(self._on_metadata_toggle)
+        self.editor_top_bar_layout.addWidget(self.metadata_btn)
+
+        self.canvas_container.addWidget(self.editor_top_bar_frame)
+
+        # Main splitter for Canvas and Metadata Panel
+        self.main_content_splitter = QtWidgets.QSplitter(Qt.Horizontal)
+        self.main_content_splitter.setHandleWidth(4)
+        self.canvas_container.addWidget(self.main_content_splitter)
+
+        # Inner container for Splitter (View + Carousel)
+        self.inner_canvas_container = QtWidgets.QWidget()
+        self.inner_canvas_layout = QtWidgets.QVBoxLayout(self.inner_canvas_container)
+        self.inner_canvas_layout.setContentsMargins(0, 0, 0, 0)
+        self.inner_canvas_layout.setSpacing(0)
+
         # Vertical splitter for canvas and carousel
         self.canvas_splitter = QtWidgets.QSplitter(Qt.Vertical)
-        self.canvas_container.addWidget(self.canvas_splitter)
+        self.inner_canvas_layout.addWidget(self.canvas_splitter)
+        self.main_content_splitter.addWidget(self.inner_canvas_container)
 
         # 1. View replaced with ZoomableGraphicsView
         self.view = ZoomableGraphicsView()
@@ -141,6 +172,45 @@ class EditorWidget(QtWidgets.QWidget):
         # 2. Add carousel from carousel manager
         self.carousel_widget = self.carousel_manager.get_widget()
         self.canvas_splitter.addWidget(self.carousel_widget)
+
+        # --- Metadata Panel ---
+        self.metadata_panel = QtWidgets.QWidget()
+        self.metadata_panel.setFixedWidth(280)
+        self.metadata_panel.setObjectName("MetadataPanel")
+        self.metadata_panel.setVisible(False)
+
+        metadata_layout = QtWidgets.QVBoxLayout(self.metadata_panel)
+        metadata_layout.setContentsMargins(10, 10, 10, 10)
+        metadata_layout.setSpacing(8)
+
+        # Title
+        metadata_title = QtWidgets.QLabel("Image Metadata")
+        metadata_title.setStyleSheet("font-weight: bold; font-size: 14px;")
+        metadata_layout.addWidget(metadata_title)
+
+        # Scrollable area for metadata fields
+        scroll_area = QtWidgets.QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
+
+        self.metadata_content = QtWidgets.QWidget()
+        self.metadata_content_layout = QtWidgets.QFormLayout(self.metadata_content)
+        self.metadata_content_layout.setSpacing(6)
+        scroll_area.setWidget(self.metadata_content)
+
+        metadata_layout.addWidget(scroll_area)
+        self.main_content_splitter.addWidget(self.metadata_panel)
+
+        # Set initial sizes for the main content splitter
+        self.main_content_splitter.setSizes([1000, 280])
+
+        # Restore panel visibility from settings
+        self._metadata_panel_visible = self.settings.value(
+            "metadata_panel_visible", False, type=bool
+        )
+        if self._metadata_panel_visible:
+            self.metadata_btn.setChecked(True)
+            self.metadata_panel.setVisible(True)
         self.carousel_widget.installEventFilter(self)
 
         # Setup splitter properties
@@ -382,7 +452,9 @@ class EditorWidget(QtWidgets.QWidget):
             return
 
         cw = self.canvas_frame.width()
-        vx, vy = self.view.x(), self.view.y()
+        # Map view position to canvas_frame for correct floating UI placement
+        view_pos = self.view.mapTo(self.canvas_frame, QtCore.QPoint(0, 0))
+        vx, vy = view_pos.x(), view_pos.y()
         vw, vh = self.view.width(), self.view.height()
 
         # 1. Position zoom controls at bottom right of the VIEW specifically
@@ -421,7 +493,7 @@ class EditorWidget(QtWidgets.QWidget):
 
         # 5. Position Comparison Handle and Overlay
         if hasattr(self, "comparison_overlay"):
-            self.comparison_overlay.setGeometry(self.view.geometry())
+            self.comparison_overlay.setGeometry(vx, vy, vw, vh)
             self.comparison_overlay.raise_()
 
         self._update_comparison_handle_position()
@@ -435,7 +507,10 @@ class EditorWidget(QtWidgets.QWidget):
     def _update_comparison_handle_position(self):
         if hasattr(self, "comparison_handle") and hasattr(self, "comparison_overlay"):
             split_pos = self.comparison_overlay._split_position
-            split_x = int(self.canvas_frame.width() * split_pos)
+            # Position relative to overlay (which covers exactly the image view)
+            ov_x = self.comparison_overlay.x()
+            ov_w = self.comparison_overlay.width()
+            split_x = ov_x + int(ov_w * split_pos)
             hx = split_x - (self.comparison_handle.width() / 2)
             hy = (self.canvas_frame.height() - self.comparison_handle.height()) / 2
             self.comparison_handle.move(hx, hy)
@@ -522,6 +597,228 @@ class EditorWidget(QtWidgets.QWidget):
         self.view.set_pixmaps(QtGui.QPixmap(), 0, 0)
         self.carousel_manager.clear()
         self.settings_manager.clear_clipboard()
+        if hasattr(self, "metadata_btn"):
+            self.metadata_btn.setEnabled(False)
+        self._clear_metadata()
+
+    def _on_metadata_toggle(self):
+        """Handle metadata panel toggle button click."""
+        visible = self.metadata_btn.isChecked()
+        self._metadata_panel_visible = visible
+        self.settings.setValue("metadata_panel_visible", visible)
+        self.metadata_panel.setVisible(visible)
+
+        if visible and self.raw_path:
+            self._load_metadata()
+
+    def _load_metadata(self):
+        """Load and display EXIF metadata for current image."""
+        if not self.raw_path:
+            self._clear_metadata()
+            return
+
+        # Clear existing metadata
+        self._clear_metadata()
+
+        # Show loading state
+        loading_label = QtWidgets.QLabel("Loading metadata...")
+        self.metadata_content_layout.addRow(loading_label)
+
+        # Load EXIF data (synchronous)
+        try:
+            exif_data = self._extract_exif_data(str(self.raw_path))
+
+            # Clear loading state
+            self._clear_metadata()
+
+            # Populate metadata fields
+            self._populate_metadata(exif_data)
+        except Exception as e:
+            self._clear_metadata()
+            error_label = QtWidgets.QLabel(f"Error loading metadata: {str(e)}")
+            error_label.setWordWrap(True)
+            self.metadata_content_layout.addRow(error_label)
+
+    def _extract_exif_data(self, raw_path):
+        """Extract EXIF data from RAW file."""
+        exif = {}
+        try:
+            with open(raw_path, "rb") as f:
+                tags = exifread.process_file(f, details=False)
+
+                # Primary fields
+                exif["iso"] = tags.get("EXIF ISOSpeedRatings", None)
+                exif["shutter_speed"] = tags.get("EXIF ExposureTime", None)
+                exif["aperture"] = tags.get("EXIF FNumber", None)
+                exif["focal_length"] = tags.get("EXIF FocalLength", None)
+
+                # Secondary fields
+                exif["camera_make"] = tags.get("Image Make", None)
+                exif["camera_model"] = tags.get("Image Model", None)
+                exif["lens_model"] = tags.get("EXIF LensModel", None)
+                exif["date_taken"] = tags.get("EXIF DateTimeOriginal", None)
+                exif["exposure_compensation"] = tags.get("EXIF ExposureBiasValue", None)
+                exif["white_balance"] = tags.get("EXIF WhiteBalance", None)
+                exif["flash"] = tags.get("EXIF Flash", None)
+
+                # Image dimensions
+                exif["width"] = tags.get("EXIF ExifImageWidth", None)
+                exif["height"] = tags.get("EXIF ExifImageLength", None)
+        except Exception:
+            pass
+
+        # Fallback for date
+        if not exif.get("date_taken"):
+            date_taken = pynegative.get_exif_capture_date(raw_path)
+            if date_taken:
+                exif["date_taken"] = date_taken
+
+        # File size
+        try:
+            file_size = Path(raw_path).stat().st_size
+            exif["file_size"] = file_size
+        except Exception:
+            pass
+
+        return exif
+
+    def _populate_metadata(self, exif_data):
+        """Populate metadata panel with EXIF data."""
+
+        def format_value(value):
+            if value is None:
+                return "—"
+            return str(value)
+
+        def format_shutter_speed(value):
+            if value is None:
+                return "—"
+            try:
+                # exifread returns Ratio or similar objects
+                if hasattr(value, "num") and hasattr(value, "den"):
+                    num, den = value.num, value.den
+                    if num == 1:
+                        return f"1/{den}s"
+                    elif den == 1:
+                        return f"{num}s"
+                    else:
+                        decimal = num / den
+                        return f"{decimal:.2f}s"
+                return str(value)
+            except Exception:
+                return str(value)
+
+        def format_aperture(value):
+            if value is None:
+                return "—"
+            try:
+                if hasattr(value, "num") and hasattr(value, "den"):
+                    f_stop = value.num / value.den
+                    return f"f/{f_stop:.1f}"
+                return f"f/{value}"
+            except Exception:
+                return str(value)
+
+        def format_focal_length(value):
+            if value is None:
+                return "—"
+            try:
+                if hasattr(value, "num") and hasattr(value, "den"):
+                    mm = value.num / value.den
+                    return f"{mm:.0f}mm"
+                return f"{value}mm"
+            except Exception:
+                return str(value)
+
+        def format_file_size(bytes_size):
+            if bytes_size is None:
+                return "—"
+            try:
+                mb = bytes_size / (1024 * 1024)
+                return f"{mb:.2f} MB"
+            except Exception:
+                return "—"
+
+        # Primary fields
+        self.metadata_content_layout.addRow(
+            QtWidgets.QLabel("<b>ISO:</b>"),
+            QtWidgets.QLabel(format_value(exif_data.get("iso"))),
+        )
+        self.metadata_content_layout.addRow(
+            QtWidgets.QLabel("<b>Shutter Speed:</b>"),
+            QtWidgets.QLabel(format_shutter_speed(exif_data.get("shutter_speed"))),
+        )
+        self.metadata_content_layout.addRow(
+            QtWidgets.QLabel("<b>Aperture:</b>"),
+            QtWidgets.QLabel(format_aperture(exif_data.get("aperture"))),
+        )
+        self.metadata_content_layout.addRow(
+            QtWidgets.QLabel("<b>Focal Length:</b>"),
+            QtWidgets.QLabel(format_focal_length(exif_data.get("focal_length"))),
+        )
+
+        # Add separator
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.HLine)
+        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+        self.metadata_content_layout.addRow(separator)
+
+        # Secondary fields
+        if exif_data.get("camera_make") or exif_data.get("camera_model"):
+            camera = f"{format_value(exif_data.get('camera_make'))} {format_value(exif_data.get('camera_model'))}"
+            self.metadata_content_layout.addRow(
+                QtWidgets.QLabel("<b>Camera:</b>"), QtWidgets.QLabel(camera.strip())
+            )
+
+        if exif_data.get("lens_model"):
+            self.metadata_content_layout.addRow(
+                QtWidgets.QLabel("<b>Lens:</b>"),
+                QtWidgets.QLabel(format_value(exif_data.get("lens_model"))),
+            )
+
+        if exif_data.get("date_taken"):
+            self.metadata_content_layout.addRow(
+                QtWidgets.QLabel("<b>Date Taken:</b>"),
+                QtWidgets.QLabel(format_value(exif_data.get("date_taken"))),
+            )
+
+        if exif_data.get("exposure_compensation"):
+            self.metadata_content_layout.addRow(
+                QtWidgets.QLabel("<b>Exp. Comp.:</b>"),
+                QtWidgets.QLabel(format_value(exif_data.get("exposure_compensation"))),
+            )
+
+        if exif_data.get("white_balance"):
+            self.metadata_content_layout.addRow(
+                QtWidgets.QLabel("<b>White Balance:</b>"),
+                QtWidgets.QLabel(format_value(exif_data.get("white_balance"))),
+            )
+
+        if exif_data.get("flash"):
+            self.metadata_content_layout.addRow(
+                QtWidgets.QLabel("<b>Flash:</b>"),
+                QtWidgets.QLabel(format_value(exif_data.get("flash"))),
+            )
+
+        # Image info
+        if exif_data.get("width") and exif_data.get("height"):
+            dimensions = f"{exif_data['width']} × {exif_data['height']}"
+            self.metadata_content_layout.addRow(
+                QtWidgets.QLabel("<b>Dimensions:</b>"), QtWidgets.QLabel(dimensions)
+            )
+
+        if exif_data.get("file_size"):
+            self.metadata_content_layout.addRow(
+                QtWidgets.QLabel("<b>File Size:</b>"),
+                QtWidgets.QLabel(format_file_size(exif_data.get("file_size"))),
+            )
+
+    def _clear_metadata(self):
+        """Clear all metadata from the panel."""
+        while self.metadata_content_layout.count():
+            item = self.metadata_content_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
     def update_rating_for_path(self, path, rating):
         """Update rating for a specific path."""
@@ -533,6 +830,12 @@ class EditorWidget(QtWidgets.QWidget):
         """Load an image for editing."""
         path = Path(path)
         self.raw_path = path
+
+        # Enable metadata button and load if visible
+        if hasattr(self, "metadata_btn"):
+            self.metadata_btn.setEnabled(True)
+            if self._metadata_panel_visible:
+                self._load_metadata()
 
         # Reset Crop Tool
         self.editing_controls.set_crop_checked(False)
@@ -796,6 +1099,10 @@ class EditorWidget(QtWidgets.QWidget):
             self.comparison_overlay.setUneditedPixmap(
                 self.image_processor.get_unedited_pixmap()
             )
+
+        # 6. Ensure metadata is loaded for the new image if panel is visible
+        if self._metadata_panel_visible:
+            self._load_metadata()
 
     def _request_update_from_view(self):
         """Request image update from current view state."""

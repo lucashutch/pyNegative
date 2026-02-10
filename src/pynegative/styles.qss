@@ -98,6 +98,53 @@ QLabel#InfoLabel {
     background-color: transparent;
 }
 
+/* ========== Editor Top Bar ========== */
+QFrame#EditorTopBar {
+    background-color: #242424;
+    border: none;
+    border-bottom: 1px solid #303030;
+}
+
+/* ========== Metadata Panel ========== */
+QWidget#MetadataPanel {
+    background-color: #242424;
+    border-left: 1px solid #303030;
+}
+
+QWidget#MetadataPanel QLabel {
+    color: #e5e5e5;
+}
+
+QWidget#MetadataPanel QScrollArea {
+    background-color: transparent;
+}
+
+/* ========== Tool Buttons ========== */
+QToolButton {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 6px 12px;
+    color: #a3a3a3;
+    font-weight: 600;
+}
+
+QToolButton:hover {
+    background-color: rgba(99, 102, 241, 0.1);
+    border-color: rgba(99, 102, 241, 0.3);
+    color: #e5e5e5;
+}
+
+QToolButton:checked {
+    background-color: rgba(99, 102, 241, 0.15);
+    border-color: #6366f1;
+    color: #ffffff;
+}
+
+QToolButton:disabled {
+    color: #666666;
+}
+
 /* ========== Collapsible Sections ========== */
 QPushButton#SectionHeader {
     background-color: #2b2b2b;
