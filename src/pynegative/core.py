@@ -68,6 +68,10 @@ def apply_tone_map(
     saturation=1.0,
     calculate_stats=True,
 ):
+    """
+    Applies White Balance -> Exposure -> Levels -> Tone EQ -> Saturation -> Base Curve
+    Optimized for performance with in-place operations and minimal allocations.
+    """
     try:
         if img is None:
             return None, None
@@ -99,10 +103,6 @@ def apply_tone_map(
         # Re-raise or return default if parameters are critical
         return img, {}  # Or raise e, depending on desired error handling
 
-    """
-    Applies White Balance -> Exposure -> Levels -> Tone EQ -> Saturation -> Base Curve
-    Optimized for performance with in-place operations and minimal allocations.
-    """
     start_time = time.perf_counter()
     # Create a single copy at the start to protect the input array
     img = img.copy()

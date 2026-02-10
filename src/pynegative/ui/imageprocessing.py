@@ -55,10 +55,6 @@ class PipelineCache:
             self.caches = {}
             self.estimated_params = {}
             self._cached_bg_pixmap = None
-        else:
-            # In real-world use, we'd only invalidate from a certain stage onwards
-            # but for simplicity in this prototype, we'll clear per resolution
-            pass
 
     def clear(self):
         self.caches = {}
@@ -680,8 +676,6 @@ class ImageProcessingPipeline(QtCore.QObject):
         )
         self.thread_pool.start(worker)
 
-    def _on_render_timer_timeout(self):
-        pass
 
     def _measure_and_emit_perf(self):
         elapsed_ms = (time.perf_counter() - self.perf_start_time) * 1000

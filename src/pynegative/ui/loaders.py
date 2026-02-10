@@ -12,7 +12,6 @@ class ThumbnailLoaderSignals(QtCore.QObject):
 # Global cache to share thumbnails and metadata
 # Key: (path_str, mtime, size) -> (QPixmap, metadata)
 _THUMBNAIL_CACHE = {}
-_PENDING_LOADS = {}  # path -> list of signals
 
 
 class ThumbnailLoader(QtCore.QRunnable):
