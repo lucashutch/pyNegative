@@ -10,6 +10,7 @@ from .numba_denoise import (
     nl_means_numba_multichannel,
 )
 from .numba_dehaze import dark_channel_kernel, dehaze_recovery_kernel
+from .numba_histogram import numba_histogram_kernel
 
 __all__ = [
     "tone_map_kernel",
@@ -19,4 +20,5 @@ __all__ = [
     "nl_means_numba_multichannel",
     "dark_channel_kernel",
     "dehaze_recovery_kernel",
+    "numba_histogram_kernel",
 ]
