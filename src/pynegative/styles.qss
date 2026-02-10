@@ -98,13 +98,6 @@ QLabel#InfoLabel {
     background-color: transparent;
 }
 
-/* ========== Editor Top Bar ========== */
-QFrame#EditorTopBar {
-    background-color: #242424;
-    border: none;
-    border-bottom: 1px solid #303030;
-}
-
 /* ========== Metadata Panel ========== */
 QWidget#MetadataPanel {
     background-color: #242424;

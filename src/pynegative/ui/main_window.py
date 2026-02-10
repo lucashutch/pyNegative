@@ -140,6 +140,15 @@ class MainWindow(QtWidgets.QMainWindow):
         filter_layout.addWidget(self.filter_rating_widget)
         bar_layout.addLayout(filter_layout)
 
+        # Metadata Panel Toggle
+        self.metadata_btn = QtWidgets.QToolButton()
+        self.metadata_btn.setText("ℹ️ Metadata")
+        self.metadata_btn.setToolTip("Show/Hide Metadata Panel")
+        self.metadata_btn.setCheckable(True)
+        self.metadata_btn.setEnabled(False)
+        self.metadata_btn.clicked.connect(self._on_metadata_toggle)
+        bar_layout.addWidget(self.metadata_btn)
+
         self.btn_open_folder = QtWidgets.QPushButton("Open Folder")
         self.btn_open_folder.setObjectName("OpenFolderButton")
         self.btn_open_folder.clicked.connect(self.gallery.browse_folder)
@@ -159,17 +168,69 @@ class MainWindow(QtWidgets.QMainWindow):
         open_file_act.triggered.connect(self.open_single_file)
         file_menu.addAction(open_file_act)
 
+    def _on_metadata_toggle(self):
+        """Toggle metadata panel on the currently active view."""
+        visible = self.metadata_btn.isChecked()
+        current = self.stack.currentWidget()
+
+        if current == self.editor:
+            self.editor._metadata_panel_visible = visible
+            self.editor.settings.setValue("metadata_panel_visible", visible)
+            self.editor.metadata_panel.setVisible(visible)
+            if visible and self.editor.raw_path:
+                self.editor._load_metadata()
+        elif current == self.gallery:
+            if self.gallery._is_large_preview:
+                pw = self.gallery.preview_widget
+                pw._metadata_panel_visible = visible
+                pw.settings.setValue("metadata_panel_visible", visible)
+                pw.metadata_panel.setVisible(visible)
+                if visible and pw.raw_path:
+                    pw._load_metadata()
+            else:
+                # Gallery grid view
+                self.gallery._gallery_metadata_visible = visible
+                self.gallery.settings.setValue("gallery_metadata_visible", visible)
+                self.gallery.gallery_metadata_panel.setVisible(visible)
+                if visible:
+                    # Trigger a selection update to populate metadata
+                    self.gallery._on_gallery_selection_changed()
+
+    def _sync_metadata_btn_state(self):
+        """Sync the metadata button state with the active view."""
+        current = self.stack.currentWidget()
+        if current == self.editor:
+            has_image = self.editor.raw_path is not None
+            self.metadata_btn.setEnabled(has_image)
+            self.metadata_btn.setChecked(self.editor._metadata_panel_visible)
+        elif current == self.gallery:
+            if self.gallery._is_large_preview:
+                pw = self.gallery.preview_widget
+                has_image = pw.raw_path is not None
+                self.metadata_btn.setEnabled(has_image)
+                self.metadata_btn.setChecked(pw._metadata_panel_visible)
+            else:
+                # Grid view - always enable, state depends on gallery setting
+                has_folder = self.gallery.current_folder is not None
+                self.metadata_btn.setEnabled(has_folder)
+                self.metadata_btn.setChecked(self.gallery._gallery_metadata_visible)
+        else:
+            self.metadata_btn.setEnabled(False)
+            self.metadata_btn.setChecked(False)
+
     def switch_to_gallery(self):
         self.stack.setCurrentWidget(self.gallery)
         self.btn_gallery.setChecked(True)
         self.btn_edit.setChecked(False)
         self.btn_export.setChecked(False)
+        self._sync_metadata_btn_state()
 
     def switch_to_export(self):
         self.stack.setCurrentWidget(self.export_tab)
         self.btn_gallery.setChecked(False)
         self.btn_edit.setChecked(False)
         self.btn_export.setChecked(True)
+        self._sync_metadata_btn_state()
 
     def switch_to_edit(self):
         # If editor already has an image, just switch
@@ -178,6 +239,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.btn_gallery.setChecked(False)
             self.btn_edit.setChecked(True)
             self.btn_export.setChecked(False)
+            self._sync_metadata_btn_state()
             return
 
         # Editor is empty, try to populate it from gallery
@@ -202,6 +264,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.btn_gallery.setChecked(False)
                 self.btn_edit.setChecked(True)
                 self.btn_export.setChecked(False)
+                self._sync_metadata_btn_state()
 
     def open_editor(self, path):
         image_list = self.gallery.get_current_image_list()
@@ -210,6 +273,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_gallery.setChecked(False)
         self.btn_edit.setChecked(True)
         self.btn_export.setChecked(False)
+        self._sync_metadata_btn_state()
 
     def open_single_file(self):
         extensions = " ".join(["*" + e for e in pynegative.SUPPORTED_EXTS])
@@ -224,10 +288,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.open_editor(path)
 
     def _on_gallery_view_mode_changed(self, is_large_preview):
-        # If we are in large preview, we want to hide the gallery filters
-        # to give more space? The user didn't ask for this, but it might be good.
-        # Actually, let's keep them for now.
-        pass
+        # Sync metadata button state when gallery view mode changes
+        self._sync_metadata_btn_state()
 
     def _on_gallery_list_changed(self, image_list):
         # Update Gallery Preview if active
