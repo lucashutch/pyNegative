@@ -71,7 +71,9 @@ def _apply_nl_means_path(img_array, l_str, c_str, method):
     h_uv = (c_str / 50.0) * 50.0
 
     p_size, s_size = 5, 13
-    if "Fast+" in method:
+    if "Ultra Fast" in method:
+        p_size, s_size = 3, 3
+    elif "Fast+" in method:
         p_size, s_size = 3, 5
     elif "Fast" in method:
         p_size, s_size = 5, 9

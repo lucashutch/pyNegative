@@ -107,14 +107,40 @@ class ImageProcessorWorker(QtCore.QRunnable):
     def _process_heavy_stage(self, img, res_key, heavy_params, zoom_scale):
         """Processes and caches the heavy effects stage for a full image tier."""
 
-        # 1. Group parameters by effect
+        # 1. Determine Effective Denoise Method based on Image Tier
+        requested_method = heavy_params.get("denoise_method", "NLMeans (Numba Fast+)")
+        effective_method = requested_method
+
+        # Only override NLMeans methods (Bilateral is already fast)
+        if "NLMeans" in requested_method:
+            is_roi = isinstance(res_key, tuple)
+
+            if is_roi:
+                # True Quality for ROI (Zoomed-in Detail)
+                effective_method = requested_method
+            elif res_key in ["preview", "quarter"]:
+                effective_method = "NLMeans (Numba Ultra Fast YUV)"
+            elif res_key == "half":
+                effective_method = "NLMeans (Numba Fast+ YUV)"
+            elif res_key == "full":
+                # Cap Background at Hybrid
+                if "High Quality" in requested_method or "Hybrid" in requested_method:
+                    effective_method = "NLMeans (Numba Hybrid YUV)"
+                else:
+                    effective_method = requested_method
+
+        if effective_method != requested_method:
+            logger.debug(
+                f"Tier-aware denoise override: {requested_method} -> {effective_method} (tier: {res_key})"
+            )
+
+        # 2. Group parameters by effect
+
         dehaze_p = {"de_haze": heavy_params["de_haze"]}
         denoise_p = {
             "denoise_luma": heavy_params.get("denoise_luma", 0),
             "denoise_chroma": heavy_params.get("denoise_chroma", 0),
-            "denoise_method": heavy_params.get(
-                "denoise_method", "NLMeans (Numba Fast+)"
-            ),
+            "denoise_method": effective_method,
         }
         sharpen_p = {
             "sharpen_value": heavy_params["sharpen_value"],
