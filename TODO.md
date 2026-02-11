@@ -10,9 +10,6 @@ This document tracks planned features, project goals, and areas for technical im
 
 ## Performance Optimisation
 
-- **General Code Cleanup**: [DONE] Analyzed the codebase and removed redundant, duplicate, or unused code.
-- **use faster nlmeans denoise on zoomed out images**: [DONE] Implemented tier-aware dynamic quality scaling (Ultra Fast for previews, True Quality for 1:1 view).
-- **Zoom Controls**: Implement "Fit to Screen" button and "+" / "-" manual zoom buttons for the editor and gallery preview viewports.
 - **High-DPI Awareness**: Detect system screen scale factor (e.g. 200% for Retina) and adjust the Smart Resolution selection to provide appropriate pixel density.
 
 ## Bugs

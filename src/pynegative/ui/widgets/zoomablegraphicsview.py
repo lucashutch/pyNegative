@@ -12,6 +12,8 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
     cropRectChanged = Signal(QRectF)
     rotationChanged = Signal(float)  # Forward rotation changes from crop item
 
+    ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0]
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setRenderHint(QtGui.QPainter.Antialiasing)
@@ -153,6 +155,27 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self._current_zoom = scale
         self.setTransform(QtGui.QTransform.fromScale(scale, scale))
         self.zoomChanged.emit(self._current_zoom)
+
+    def zoom_in(self):
+        """Zoom in to the next predefined level."""
+        current = self.transform().m11()
+        for level in self.ZOOM_LEVELS:
+            if level > current + 0.001:
+                self.set_zoom(level, manual=True)
+                return
+        # If already at or above max level, zoom by 10%
+        self.set_zoom(min(current * 1.1, 4.0), manual=True)
+
+    def zoom_out(self):
+        """Zoom out to the next predefined level."""
+        current = self.transform().m11()
+        for level in reversed(self.ZOOM_LEVELS):
+            if level < current - 0.001:
+                # Still respect the dynamic fit-in-view minimum
+                self.set_zoom(max(level, self._fit_in_view_scale), manual=True)
+                return
+        # If already at or below min level, zoom by 10%
+        self.set_zoom(max(current * 0.9, self._fit_in_view_scale), manual=True)
 
     def wheelEvent(self, event):
         # Don't allow zooming if there's no content
