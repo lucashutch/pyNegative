@@ -80,6 +80,9 @@ The installer handles all dependencies, generates icons, and creates shortcuts f
 | Redo | `Ctrl+Shift+Z` |
 | Copy Settings | `Ctrl+C` |
 | Paste Settings | `Ctrl+V` |
+| Zoom In | `Ctrl++` / `Ctrl+=` |
+| Zoom Out | `Ctrl+-` |
+| Fit to Screen | `Ctrl+0` |
 | Toggle Comparison | `C` |
 | Rate 1–5 Stars | `1`–`5` |
 | Remove Rating | `0` |

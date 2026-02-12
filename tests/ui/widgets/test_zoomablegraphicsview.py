@@ -145,6 +145,36 @@ class TestZoomableGraphicsView:
         with qtbot.waitSignal(zoom_view.zoomChanged):
             zoom_view.set_zoom(2.0, manual=False)
 
+    def test_zoom_in_steps(self, zoom_view):
+        """Test that zoom_in follows ZOOM_LEVELS."""
+        # Use large pixmap to ensure _fit_in_view_scale doesn't block zoom steps
+        pixmap = QtGui.QPixmap(2000, 2000)
+        zoom_view.set_pixmaps(pixmap, 2000, 2000)
+        zoom_view.set_zoom(1.0, manual=False)
+
+        # Next level after 1.0 is 1.5
+        zoom_view.zoom_in()
+        assert abs(zoom_view._current_zoom - 1.5) < 0.001
+
+        # Next level after 1.5 is 2.0
+        zoom_view.zoom_in()
+        assert abs(zoom_view._current_zoom - 2.0) < 0.001
+
+    def test_zoom_out_steps(self, zoom_view):
+        """Test that zoom_out follows ZOOM_LEVELS."""
+        # Use large pixmap to ensure _fit_in_view_scale doesn't block zoom steps
+        pixmap = QtGui.QPixmap(2000, 2000)
+        zoom_view.set_pixmaps(pixmap, 2000, 2000)
+        zoom_view.set_zoom(1.0, manual=False)
+
+        # Level below 1.0 is 0.75
+        zoom_view.zoom_out()
+        assert abs(zoom_view._current_zoom - 0.75) < 0.001
+
+        # Level below 0.75 is 0.67
+        zoom_view.zoom_out()
+        assert abs(zoom_view._current_zoom - 0.67) < 0.001
+
     def test_zoom_changed_on_pan(self, zoom_view, qtbot, sample_pixmap):
         """Test zoomChanged signal emission during pan."""
         zoom_view.set_pixmaps(sample_pixmap, 100, 100)
