@@ -167,6 +167,12 @@ class EditorWidget(QtWidgets.QWidget):
         self.zoom_ctrl = ZoomControls()
         self.zoom_ctrl.setParent(self.canvas_frame)
         self.zoom_ctrl.zoomChanged.connect(lambda z: self.view.set_zoom(z, manual=True))
+        self.zoom_ctrl.zoomInClicked.connect(self.view.zoom_in)
+        self.zoom_ctrl.zoomOutClicked.connect(self.view.zoom_out)
+        self.zoom_ctrl.fitClicked.connect(self.view.reset_zoom)
+        self.zoom_ctrl.zoomPresetSelected.connect(
+            lambda z: self.view.set_zoom(z, manual=True)
+        )
         self.view.zoomChanged.connect(self.zoom_ctrl.update_zoom)
 
         # Preview Rating
@@ -290,6 +296,12 @@ class EditorWidget(QtWidgets.QWidget):
         nav_left.setContext(Qt.ApplicationShortcut)
         nav_right = QtGui.QShortcut(Qt.Key_Right, self, self._navigate_next)
         nav_right.setContext(Qt.ApplicationShortcut)
+
+        # Zoom shortcuts
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+="), self, self.view.zoom_in)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl++"), self, self.view.zoom_in)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+-"), self, self.view.zoom_out)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+0"), self, self.view.reset_zoom)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

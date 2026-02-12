@@ -32,16 +32,16 @@ class FloatingUIManager(QtCore.QObject):
 
         # 1. Zoom controls
         if zoom_ctrl:
-            zx = vx + vw - zoom_ctrl.width() - 20
-            zy = vy + vh - zoom_ctrl.height() - 20
+            zx = vx + vw - zoom_ctrl.width() - 10
+            zy = vy + vh - zoom_ctrl.height() - 10
             zoom_ctrl.move(zx, zy)
             zoom_ctrl.show()
             zoom_ctrl.raise_()
 
         # 2. Preview rating
         if preview_rating_widget:
-            prx = vx + 20
-            pry = vy + vh - preview_rating_widget.height() - 20
+            prx = vx + 10
+            pry = vy + vh - preview_rating_widget.height() - 5
             preview_rating_widget.move(prx, pry)
 
         # 3. Performance label
@@ -58,13 +58,13 @@ class FloatingUIManager(QtCore.QObject):
 
         # 4. Comparison Button
         if comparison_manager and hasattr(comparison_manager, "comparison_btn"):
-            bx = vx + vw - comparison_manager.comparison_btn.width() - 20
+            bx = vx + vw - comparison_manager.comparison_btn.width() - 10
             by = (
                 vy
                 + vh
                 - (zoom_ctrl.height() if zoom_ctrl else 0)
                 - comparison_manager.comparison_btn.height()
-                - 30
+                - 15
             )
             comparison_manager.comparison_btn.move(bx, by)
             comparison_manager.comparison_btn.show()
