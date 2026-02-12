@@ -137,7 +137,7 @@ echo.
 if %SILENT_MODE%==0 (
     set /p LAUNCH="Launch pyNegative now? (y/n): "
     if /I "!LAUNCH!"=="y" (
-        start /b uv run pynegative
+        wscript "%INSTALL_DIR%\scripts\launch-pynegative.vbs"
     )
 )
 
@@ -325,16 +325,22 @@ REM Create Start Menu directory
 set START_MENU_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\%APP_NAME%
 if not exist "%START_MENU_DIR%" mkdir "%START_MENU_DIR%"
 
+REM Create VBS launcher to hide the console window
+if not exist "%INSTALL_DIR%\scripts" mkdir "%INSTALL_DIR%\scripts"
+echo Set WshShell = CreateObject("WScript.Shell") > "%INSTALL_DIR%\scripts\launch-pynegative.vbs"
+echo WshShell.CurrentDirectory = "%INSTALL_DIR%" >> "%INSTALL_DIR%\scripts\launch-pynegative.vbs"
+echo WshShell.Run "uv run pynegative", 0, False >> "%INSTALL_DIR%\scripts\launch-pynegative.vbs"
+
 REM Create PowerShell script for making shortcuts
 echo $wsh = New-Object -ComObject WScript.Shell > %TEMP%\create_shortcuts.ps1
 echo $installDir = '%INSTALL_DIR%' >> %TEMP%\create_shortcuts.ps1
 echo $appName = '%APP_NAME%' >> %TEMP%\create_shortcuts.ps1
 echo $startMenuDir = '%START_MENU_DIR%' >> %TEMP%\create_shortcuts.ps1
 echo. >> %TEMP%\create_shortcuts.ps1
-echo # Main app shortcut >> %TEMP%\create_shortcuts.ps1
+echo # Main app shortcut - targets VBS launcher to avoid console window >> %TEMP%\create_shortcuts.ps1
 echo $shortcut = $wsh.CreateShortcut("$startMenuDir\$appName.lnk") >> %TEMP%\create_shortcuts.ps1
-echo $shortcut.TargetPath = "uv" >> %TEMP%\create_shortcuts.ps1
-echo $shortcut.Arguments = "run pynegative" >> %TEMP%\create_shortcuts.ps1
+echo $shortcut.TargetPath = "wscript.exe" >> %TEMP%\create_shortcuts.ps1
+echo $shortcut.Arguments = """$installDir\scripts\launch-pynegative.vbs""" >> %TEMP%\create_shortcuts.ps1
 echo $shortcut.WorkingDirectory = $installDir >> %TEMP%\create_shortcuts.ps1
 echo $shortcut.Description = "pyNegative - RAW Image Processor" >> %TEMP%\create_shortcuts.ps1
 echo # Try to use generated icon, fall back to main icon >> %TEMP%\create_shortcuts.ps1
@@ -353,7 +359,6 @@ echo $uninstall.Save() >> %TEMP%\create_shortcuts.ps1
 powershell -ExecutionPolicy Bypass -File %TEMP%\create_shortcuts.ps1
 
 REM Copy installer files to install dir for future updates
-if not exist "%INSTALL_DIR%\scripts" mkdir "%INSTALL_DIR%\scripts"
 copy /Y "%~f0" "%INSTALL_DIR%\scripts\install-pynegative.bat" >nul 2>&1
 
 echo Shortcuts created!
