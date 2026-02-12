@@ -99,7 +99,7 @@ def apply_tone_map(
 
     elapsed = (time.perf_counter() - start_time) * 1000
     logger.debug(
-        f"Tone Map (Numba): Size: {img.shape[1]}x{img.shape[0]} | Time: {elapsed:.2f}ms"
+        f"Tone Map: Size: {img.shape[1]}x{img.shape[0]} | Time: {elapsed:.2f}ms"
     )
     return img, stats
 

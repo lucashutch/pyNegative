@@ -381,7 +381,6 @@ class EditorWidget(QtWidgets.QWidget):
         else:
             self.load_carousel_folder(path.parent)
             self.carousel_manager.select_image(path)
-        self.load_image(path)
 
     def _on_setting_changed(self, setting_name, value):
         self.image_processor.set_processing_params(**{setting_name: value})

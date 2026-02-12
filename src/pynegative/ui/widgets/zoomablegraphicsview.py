@@ -97,9 +97,6 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         roi_h=0,
     ):
         """Unified update for both layers to ensure alignment."""
-        logger.info(
-            f"Rendered frame displayed (ROI: {'yes' if roi_pix and not roi_pix.isNull() else 'no'})"
-        )
         if bg_pix is None:
             bg_pix = QtGui.QPixmap()
         if roi_pix is None:
