@@ -146,11 +146,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 else:
                     effective_method = requested_method
 
-        if effective_method != requested_method:
-            logger.debug(
-                f"Tier-aware denoise override: {requested_method} -> {effective_method} (tier: {res_key})"
-            )
-
         # 2. Group parameters by effect
 
         dehaze_p = {"de_haze": heavy_params["de_haze"]}
@@ -195,6 +190,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 chroma_strength=denoise_p["denoise_chroma"],
                 method=denoise_p["denoise_method"],
                 zoom=zoom_scale,
+                tier=res_key,
             )
 
         def apply_sharpen(image):

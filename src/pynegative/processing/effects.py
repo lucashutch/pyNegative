@@ -44,16 +44,14 @@ def sharpen_image(img, radius, percent, method="High Quality"):
         kernel = np.ones((3, 3), np.uint8)
         edges = cv2.dilate(edges, kernel, iterations=1)
 
-        # 1. Numba JIT (Primary)
-        # Numba kernel is in-place, so we copy for the 'sharpened' version
+        # Kernel is in-place, so we copy for the 'sharpened' version
         sharpened = img.copy()
         sharpen_kernel(sharpened, blur, percent)
         result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img)
-        backend = "Numba JIT"
 
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.debug(
-            f"Sharpen: High Quality ({backend}) | Radius: {radius:.2f} | Percent: {percent:.1f}%{size_str} | Time: {elapsed:.2f}ms"
+            f"Sharpen: Radius: {radius:.2f} | Percent: {percent:.1f}%{size_str} | Time: {elapsed:.2f}ms"
         )
         return np.clip(result, 0, 1.0)
     except Exception as e:
@@ -62,7 +60,7 @@ def sharpen_image(img, radius, percent, method="High Quality"):
 
 
 def _apply_nl_means_path(img_array, l_str, c_str, method):
-    """Internal helper to apply Numba NL-Means denoising path."""
+    """Internal helper to apply NL-Means denoising path."""
     yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
     y, u, v = cv2.split(yuv)
 
@@ -113,7 +111,7 @@ def _apply_nl_means_path(img_array, l_str, c_str, method):
 
 
 def _apply_bilateral_path(img_array, l_str, c_str):
-    """Internal helper to apply Numba Bilateral denoising path."""
+    """Internal helper to apply Bilateral denoising path."""
     s_scale = 1.0 / 255.0
     yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
 
@@ -134,10 +132,15 @@ def _apply_bilateral_path(img_array, l_str, c_str):
 
 
 def de_noise_image(
-    img, luma_strength=0, chroma_strength=0, method="High Quality", zoom=None
+    img,
+    luma_strength=0,
+    chroma_strength=0,
+    method="High Quality",
+    zoom=None,
+    tier=None,
 ):
     """
-    Numba-accelerated de-noising strictly for NumPy float32 arrays.
+    De-noising for NumPy float32 arrays.
     """
     if img is None:
         return None
@@ -151,31 +154,29 @@ def de_noise_image(
     # Pipeline ensures float32 and C-contiguous
 
     h, w = img.shape[:2]
-    zoom_str = f" | Zoom: {zoom * 100:.0f}%" if zoom is not None else ""
-    size_str = f" | Size: {w}x{h}"
+    tier_str = f" | Tier: {tier}" if tier is not None else ""
 
     start_time = time.perf_counter()
     denoised = None
-    backend = "Unknown"
     method_name = method
 
     try:
         if method.startswith("NLMeans (Numba"):
-            backend = "Numba JIT"
-            # Get clean variant name for logging
-            parts = method.split(" ")
-            variant = parts[-1].replace(")", "") if len(parts) > 1 else "Full"
+            # Get clean variant name for logging (strip "YUV" suffix)
+            inner = method.split("(", 1)[1].rstrip(")")  # e.g. "Numba Fast+ YUV"
+            tokens = inner.split()
+            tokens = [t for t in tokens if t not in ("Numba", "YUV")]
+            variant = " ".join(tokens) if tokens else "Full"
             method_name = f"NL-Means ({variant})"
 
             denoised = _apply_nl_means_path(img, l_str, c_str, method)
         else:
-            backend = "Numba JIT"
             method_name = "Bilateral"
             denoised = _apply_bilateral_path(img, l_str, c_str)
 
         elapsed = (time.perf_counter() - start_time) * 1000
-        logger.debug(
-            f"Denoise: {method_name} ({backend}) | Luma: {l_str:.2f} Chroma: {c_str:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+        logger.info(
+            f"Denoise: {method_name} | Size: {w}x{h}{tier_str} | Time: {elapsed:.2f}ms"
         )
 
     except Exception as e:
@@ -279,13 +280,11 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
 
         # 4. Recover radiance
         # J(x) = (I(x) - A) / max(t(x), t0) + A
-        backend_rec = "Numba JIT"
         result = dehaze_recovery_kernel(img_array, transmission, atmospheric_light)
 
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.debug(
-            f"Dehaze: ({backend_rec}) | "
-            f"Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
+            f"Dehaze: Strength: {strength:.2f}{size_str}{zoom_str} | Time: {elapsed:.2f}ms"
         )
 
         return result, atmospheric_light
