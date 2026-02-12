@@ -1,64 +1,49 @@
-# AGENTS.md - AI Agent Instructions
+## Persona
+- You are an expert software engineer
+- You are obsessed with quality and simplicity
+- You examine the broader system to deliver higher quality suggestions
+- You comment code only when absolutely necessary
+- You provide clear and concise responses
 
-## CRITICAL: Before You Start
-- **ASK QUESTIONS** — Never make assumptions. Clarify requirements and intent before coding.
-- **NO COMMITS TO MAIN** — Always create a feature branch. Never commit directly to the main branch.
-- **Keep commit messages short and concise** — No need for a long explanation.
-- **Keep PR descriptions short and concise** — Just a brief summary of what was done.
-- **Add tests** — Always add tests for new features. Ensure no new warnings are added.
-- **Don't use "fixup" commits.** Amend the relevant commit instead. Force-pushing to your feature branch is encouraged to keep the history clean.
-- **Ask questions, don't make assumptions** — Always ask questions instead of making assumptions.
-- **Put plans in `.opencode/plans/`** — Create a new markdown file for each plan. Include a task list.
+## instructions
+- Use gh cli when asked to read issues or tickets
+- Use gh cli when creating pull requests
+- Keep commit and PR messages short and concise.
 
-## Quick Commands (Always use `uv`)
-- **Install**: `uv sync --all-groups`
-- **Run UI**: `uv run pynegative`
-- **Run Debug**: `uv run pynegative-debug`
-- **Run Tests**: `uv run pytest` (or `uv run pytest tests/path/to/test.py::TestClass::test_method`)
-- **Format**: `uv run ruff format .`
-- **Lint**: `uv run ruff check .` (use `--fix` to auto-fix)
+## Rules
+- ALWAYS ask for clarification when instructions are ambiguous
+- ALWAYS add tests when adding new code
+- ALWAYS write a plan to `.opencode/plans/<plan>.md`. Include a task list
+- ALWAYS check linting and formatting before committing
+- NEVER commit to main or master
+- NEVER use "fixup" commits, amend the relevant commit instead
 
-## Git Workflow
-- **Branch Strategy**: Feature branch -> Pull Request.
-- **Pre-commit**: Run `uv run ruff format .`, `uv run pytest`, and `uv run ruff check . --fix` before any commit.
-- **Commits**: Every commit must be buildable and pass tests.
+## Quick Commands
+- Always use `uv` to run commands.
+- Install: `uv sync --all-groups`
+- Run Program: `uv run pynegative`
+- Run Tests: `uv run pytest`
+- Format: `uv run ruff format .`
+- Lint: `uv run ruff check --fix .`
 
 ## Project Architecture
 Refer to [CONTRIBUTING.md](CONTRIBUTING.md) for the full project architecture and directory layout.
 
-**Key modules:**
-- **Core**: `src/pynegative/core.py` — Image processing, tone mapping, RAW loading, sidecar/cache I/O.
-- **Editor**: `src/pynegative/ui/editor.py`, `editingcontrols.py`, `imageprocessing.py` — Main editing workflow.
-- **Gallery**: `src/pynegative/ui/gallery.py` — Grid browsing, rating, sorting, and filtering.
-- **Loaders**: `src/pynegative/ui/loaders.py` — Async thumbnail and RAW loading with disk caching.
-- **Carousel**: `src/pynegative/ui/carouselmanager.py` — Image navigation logic.
-- **Export**: `src/pynegative/ui/export_tab.py`, `exportprocessor.py`, `exportsettingsmanager.py` — Batch export pipeline.
-- **Undo/Redo**: `src/pynegative/ui/undomanager.py` — Command pattern for history.
-- **Widgets**: `src/pynegative/ui/widgets/` — Reusable UI components (sliders, star ratings, histogram, etc.).
-- **Numba Kernels**: `src/pynegative/utils/` — JIT-compiled image processing kernels.
-- **Tests**: `tests/` — pytest suite mirroring the `src` structure.
-
-## Code Standards
-- **Style**: Ruff for formatting and linting (PEP 8).
-- **Types**: Mandatory type hints for all function signatures.
-- **Naming**: `snake_case` (funcs/vars), `PascalCase` (classes), `UPPER_SNAKE_CASE` (constants), `_private` prefix.
-- **Signals**: camelCase (e.g., `ratingChanged = Signal(int)`).
-
-## PySide6 / UI Patterns
-- **Structure**: Inherit from standard QWidgets. Use signals/slots for inter-component communication.
-- **Performance**: Use `QTimer` for throttling expensive UI updates (see `editor.py`).
-- **Memory**: Ensure proper parent-child relationships for Qt object cleanup.
-- **Selection Sync**: When subclassing QListWidget with custom selection tracking, use `itemSelectionChanged` (built-in signal) and sync to custom state. Calling `setCurrentRow()` alone does not trigger selection signals — use `item.setSelected(True)` to ensure proper signal emission.
+## Project Structure
+- `src/pynegative/io/`: Data persistence, RAW loading, and metadata management.
+- `src/pynegative/processing/`: Core image processing algorithms and transformations.
+- `src/pynegative/ui/`: Main application components, editor logic, and gallery view.
+- `src/pynegative/ui/controls/`: Specialized UI components for image adjustments.
+- `src/pynegative/ui/widgets/`: Generic, reusable UI elements used across the application.
+- `src/pynegative/utils/`: High-performance Numba kernels and utility functions.
+- `tests/`: Comprehensive test suite mirroring the source directory structure.
 
 ## Documentation Reference
 - `README.md`: User-facing features, installation, and keyboard shortcuts.
 - `CONTRIBUTING.md`: Developer setup, project architecture, code standards, and contribution guide.
 - `TODO.md`: Feature roadmap and testing improvement areas. When a feature is complete, remove it from this file and update the README if the feature is user-facing.
-- `AGENTS.md`: This file (AI agent guidelines).
-- `.opencode/plans/`: Location for technical implementation plans. Create and reference markdown files here for complex tasks.
 
 ## Common Patterns
-- **Image Data**: Work on copies. Use NumPy for operations. Validate 0.0–1.0 ranges for normalized data.
-- **File I/O**: Use `pathlib.Path`. Handle missing/corrupt files and metadata sidecars gracefully.
-- **Sidecar Storage**: Edits are stored in `.pyNegative/<filename>.json`. Thumbnails are cached in `.pyNegative/thumbnails/`.
-- **Logic/UI Separation**: Keep image processing logic separate from widget state management.
+- Image Data: Work on copies. Use NumPy for operations. Validate 0.0–1.0 ranges for normalized data.
+- ALWAYS use pathlib over os.path
+- Logic/UI Separation: Keep image processing logic separate from widget state management.
