@@ -8,6 +8,7 @@ from .controls.tone_controls import ToneControls
 from .controls.color_controls import ColorControls
 from .controls.detail_controls import DetailControls
 from .controls.geometry_controls import GeometryControls
+from .controls.lens_controls import LensControls
 
 
 class EditingControls(QtWidgets.QWidget):
@@ -88,11 +89,13 @@ class EditingControls(QtWidgets.QWidget):
         self.color_controls = ColorControls()
         self.detail_controls = DetailControls()
         self.geometry_controls = GeometryControls()
+        self.lens_controls = LensControls()
 
         self.controls_layout.addWidget(self.tone_controls)
         self.controls_layout.addWidget(self.color_controls)
         self.controls_layout.addWidget(self.detail_controls)
         self.controls_layout.addWidget(self.geometry_controls)
+        self.controls_layout.addWidget(self.lens_controls)
 
         # Connect signals
         self.tone_controls.settingChanged.connect(self.settingChanged.emit)
@@ -103,6 +106,7 @@ class EditingControls(QtWidgets.QWidget):
         self.geometry_controls.settingChanged.connect(self.settingChanged.emit)
         self.geometry_controls.cropToggled.connect(self.cropToggled.emit)
         self.geometry_controls.aspectRatioChanged.connect(self.aspectRatioChanged.emit)
+        self.lens_controls.settingChanged.connect(self.settingChanged.emit)
 
         self.controls_layout.addStretch()
 
@@ -178,6 +182,18 @@ class EditingControls(QtWidgets.QWidget):
     def rotation(self):
         return self.geometry_controls.get_value("rotation")
 
+    @property
+    def val_lens_distortion(self):
+        return self.lens_controls.get_value("lens_distortion")
+
+    @property
+    def val_lens_vignette(self):
+        return self.lens_controls.get_value("lens_vignette")
+
+    @property
+    def val_lens_ca(self):
+        return self.lens_controls.get_value("lens_ca")
+
     # Compatibility for tests
     @property
     def val_sharpen_value_slider(self):
@@ -233,6 +249,7 @@ class EditingControls(QtWidgets.QWidget):
         self.color_controls.reset_section()
         self.detail_controls.reset_section()
         self.geometry_controls.reset_section()
+        self.lens_controls.reset_section()
 
     def cycle_denoise_method(self):
         try:
@@ -275,6 +292,15 @@ class EditingControls(QtWidgets.QWidget):
             "rotation": self.rotation,
             "flip_h": self.val_flip_h,
             "flip_v": self.val_flip_v,
+            "lens_distortion": self.val_lens_distortion,
+            "lens_vignette": self.val_lens_vignette,
+            "lens_ca": self.val_lens_ca,
+            "lens_camera_override": self.lens_controls.camera_combo.currentText()
+            if self.lens_controls.camera_combo.currentText() != "Auto"
+            else None,
+            "lens_name_override": self.lens_controls.lens_combo.currentText()
+            if self.lens_controls.lens_combo.currentText() != "Auto"
+            else None,
         }
 
         # Collect raw slider values
@@ -283,6 +309,7 @@ class EditingControls(QtWidgets.QWidget):
             self.color_controls,
             self.detail_controls,
             self.geometry_controls,
+            self.lens_controls,
         ]:
             for var_name, slider in ctrl.sliders.items():
                 settings[f"raw_{var_name}"] = slider.value()
@@ -321,6 +348,9 @@ class EditingControls(QtWidgets.QWidget):
             "val_denoise_chroma",
             "val_de_haze",
             "rotation",
+            "lens_distortion",
+            "lens_vignette",
+            "lens_ca",
         ]
 
         controls_map = {
@@ -338,6 +368,9 @@ class EditingControls(QtWidgets.QWidget):
             "val_denoise_chroma": self.detail_controls,
             "val_de_haze": self.detail_controls,
             "rotation": self.geometry_controls,
+            "lens_distortion": self.lens_controls,
+            "lens_vignette": self.lens_controls,
+            "lens_ca": self.lens_controls,
         }
 
         for var in slider_vars:
@@ -370,9 +403,26 @@ class EditingControls(QtWidgets.QWidget):
                     val = min(50.0, val)
                 if var == "val_de_haze":
                     val = min(50.0, val)
+
+                # Special handling for lens settings which don't have val_ prefix in some contexts
+                if var in ["lens_distortion", "lens_vignette", "lens_ca"]:
+                    val = settings.get(var, 0.0)
+
                 ctrl.set_slider_value(var, val, silent=True)
 
-        # 3. Special derived parameters
+        # 3. Handle lens overrides
+        self.lens_controls.camera_combo.blockSignals(True)
+        self.lens_controls.lens_combo.blockSignals(True)
+        self.lens_controls.camera_combo.setCurrentText(
+            settings.get("lens_camera_override", "Auto")
+        )
+        self.lens_controls.lens_combo.setCurrentText(
+            settings.get("lens_name_override", "Auto")
+        )
+        self.lens_controls.camera_combo.blockSignals(False)
+        self.lens_controls.lens_combo.blockSignals(False)
+
+        # 4. Special derived parameters
         s_val = self.val_sharpen_value
         self.detail_controls.val_sharpen_radius = 0.5 + (s_val / 100.0) * 2.5
         self.detail_controls.val_sharpen_percent = (s_val / 100.0) * 300.0

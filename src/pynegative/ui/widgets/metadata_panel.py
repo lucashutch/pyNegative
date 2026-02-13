@@ -107,6 +107,16 @@ class MetadataPanel(QtWidgets.QWidget):
             import rawpy
 
             with rawpy.imread(str(raw_path)) as raw:
+                # Use our robust lens info extractor
+                from ...io import lens_metadata
+
+                lens_info = lens_metadata.extract_lens_info(raw_path)
+
+                # Camera info
+                exif["camera_make"] = lens_info.get("camera_make")
+                exif["camera_model"] = lens_info.get("camera_model")
+                exif["lens_model"] = lens_info.get("lens_model")
+
                 if hasattr(raw, "camera_whitebalance"):
                     wb = raw.camera_whitebalance
                     if wb is not None and len(wb) > 0:
@@ -136,13 +146,16 @@ class MetadataPanel(QtWidgets.QWidget):
                         exif["camera_make"] = tags.get("Image Make", None)
                         exif["camera_model"] = tags.get("Image Model", None)
 
-                        exif["lens_model"] = (
-                            tags.get("EXIF LensModel", None)
-                            or tags.get("MakerNote LensModel", None)
-                            or tags.get("EXIF Lens", None)
-                            or tags.get("MakerNote Lens", None)
-                            or tags.get("EXIF LensInfo", None)
-                        )
+                        # Use our robust lens info extractor
+                        from ...io import lens_metadata
+
+                        lens_info = lens_metadata.extract_lens_info(raw_path)
+                        if not exif["camera_make"]:
+                            exif["camera_make"] = lens_info.get("camera_make")
+                        if not exif["camera_model"]:
+                            exif["camera_model"] = lens_info.get("camera_model")
+
+                        exif["lens_model"] = lens_info.get("lens_model")
 
                         # Date/time
                         exif["date_taken"] = (
@@ -196,6 +209,16 @@ class MetadataPanel(QtWidgets.QWidget):
                         )
                         exif["max_aperture"] = tags.get("EXIF MaxApertureValue", None)
 
+                        # Resolution Source (pyNegative specific)
+                        from ...io import lens_resolver
+
+                        source, resolved = lens_resolver.resolve_lens_profile(raw_path)
+                        if resolved:
+                            exif["lens_model_resolved"] = resolved.get("name")
+                            exif["lens_source"] = source.name
+                        else:
+                            exif["lens_source"] = "NONE"
+
                         # Image description / copyright
                         exif["image_description"] = tags.get(
                             "Image ImageDescription", None
@@ -204,10 +227,25 @@ class MetadataPanel(QtWidgets.QWidget):
                         exif["artist"] = tags.get("Image Artist", None)
 
                 except Exception:
-                    pass  # Silently fail if thumbnail extraction doesn't work
+                    # If thumbnail extraction fails, we still have lens info from early check
+                    pass
 
         except Exception:
             pass  # Silently fail if RAW file can't be opened
+
+        # 3. Final fallback: If some critical fields still missing, only then try exifread on original file
+        if not exif.get("iso"):
+            try:
+                # We already know rawpy works better for RAW, so we only use exifread for
+                # non-RAW or if we really need specific tags not exposed by rawpy.
+                # But to avoid the "format not recognized" warning, we can check extension
+                ext = Path(raw_path).suffix.lower()
+                if ext in [".jpg", ".jpeg", ".tiff", ".tif"]:
+                    with open(raw_path, "rb") as f:
+                        tags = exifread.process_file(f, details=False)
+                        # Fill in gaps...
+            except:
+                pass
 
         # Fallback for date
         if not exif.get("date_taken"):
@@ -266,8 +304,11 @@ class MetadataPanel(QtWidgets.QWidget):
             if value is None:
                 return "—"
             try:
+                # Handle Ratio objects
                 if hasattr(value, "num") and hasattr(value, "den"):
                     num, den = value.num, value.den
+                    if den == 0:
+                        return "—"
                     if num == 1:
                         return f"1/{den}s"
                     elif den == 1:
@@ -275,7 +316,26 @@ class MetadataPanel(QtWidgets.QWidget):
                     else:
                         decimal = num / den
                         return f"{decimal:.2f}s"
-                return str(value)
+
+                # Handle string fractions
+                s_val = str(value)
+                if "/" in s_val:
+                    parts = s_val.split("/")
+                    if len(parts) == 2:
+                        try:
+                            num = float(parts[0])
+                            den = float(parts[1])
+                            if den != 0:
+                                if num == 1:
+                                    return f"1/{int(den)}s"
+                                elif den == 1:
+                                    return f"{int(num)}s"
+                                else:
+                                    return f"{num / den:.2f}s"
+                        except ValueError:
+                            pass
+
+                return f"{value}s" if value != "—" else "—"
             except Exception:
                 return str(value)
 
@@ -283,9 +343,26 @@ class MetadataPanel(QtWidgets.QWidget):
             if value is None:
                 return "—"
             try:
+                # Handle Ratio objects from exifread
                 if hasattr(value, "num") and hasattr(value, "den"):
+                    if value.den == 0:
+                        return "—"
                     f_stop = value.num / value.den
                     return f"f/{f_stop:.1f}"
+
+                # Handle string fractions like "9/5"
+                s_val = str(value)
+                if "/" in s_val:
+                    parts = s_val.split("/")
+                    if len(parts) == 2:
+                        try:
+                            num = float(parts[0])
+                            den = float(parts[1])
+                            if den != 0:
+                                return f"f/{num / den:.1f}"
+                        except ValueError:
+                            pass
+
                 return f"f/{value}"
             except Exception:
                 return str(value)
@@ -294,9 +371,26 @@ class MetadataPanel(QtWidgets.QWidget):
             if value is None:
                 return "—"
             try:
+                # Handle Ratio objects
                 if hasattr(value, "num") and hasattr(value, "den"):
+                    if value.den == 0:
+                        return "—"
                     mm = value.num / value.den
                     return f"{mm:.0f}mm"
+
+                # Handle string fractions
+                s_val = str(value)
+                if "/" in s_val:
+                    parts = s_val.split("/")
+                    if len(parts) == 2:
+                        try:
+                            num = float(parts[0])
+                            den = float(parts[1])
+                            if den != 0:
+                                return f"{num / den:.0f}mm"
+                        except ValueError:
+                            pass
+
                 return f"{value}mm"
             except Exception:
                 return str(value)
@@ -351,6 +445,19 @@ class MetadataPanel(QtWidgets.QWidget):
 
         if exif_data.get("lens_model"):
             self._add_field("Lens", fv(exif_data.get("lens_model")))
+
+        if exif_data.get("lens_source"):
+            source = exif_data.get("lens_source")
+            if source != "NONE":
+                source_text = {
+                    "EMBEDDED": "Embedded RAW",
+                    "LENSFUN_DB": "Lensfun Match",
+                    "MANUAL": "Manual Override",
+                }.get(source, source)
+                self._add_field(
+                    "Lens Profile",
+                    f"{fv(exif_data.get('lens_model_resolved'))} ({source_text})",
+                )
 
         if exif_data.get("max_aperture"):
             try:

@@ -120,6 +120,17 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo Dependencies installed successfully!
 
+REM Download lens database
+echo.
+echo Downloading lens database...
+if not exist "%INSTALL_DIR%\data\lensfun" mkdir "%INSTALL_DIR%\data\lensfun"
+uv run --python 3 python "%INSTALL_DIR%\scripts\download_lens_database.py" --output-dir "%INSTALL_DIR%\data\lensfun" --quiet
+if %ERRORLEVEL% EQU 0 (
+    echo Lens database downloaded successfully!
+) else (
+    echo Warning: Failed to download lens database. You can try again later from within the app.
+)
+
 REM Create Start Menu shortcuts
 call :create_shortcuts
 

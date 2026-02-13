@@ -16,7 +16,7 @@ logging.basicConfig(
 logging.getLogger("PIL").setLevel(logging.INFO)
 logging.getLogger("numba").setLevel(logging.WARNING)
 logging.getLogger("llvmlite").setLevel(logging.WARNING)
-logging.getLogger("exifread").setLevel(logging.WARNING)
+logging.getLogger("exifread").setLevel(logging.ERROR)
 
 from PySide6 import QtWidgets, QtGui, QtCore  # noqa: E402
 from .main_window import MainWindow  # noqa: E402
@@ -124,6 +124,16 @@ def main():
 
     update_splash_status("Loading UI...")
     app.processEvents()
+
+    # Load lens database
+    update_splash_status("Loading lens database...")
+    from ..io import lens_db_xml
+
+    db_path = Path.home() / ".local" / "share" / "pyNegative" / "data" / "lensfun"
+    # Fallback to local data dir if not in standard location (for dev)
+    if not db_path.exists():
+        db_path = Path(__file__).parent.parent.parent.parent / "data" / "lensfun"
+    lens_db_xml.load_database(db_path)
 
     window = MainWindow(initial_path=args.path)
     window.showMaximized()

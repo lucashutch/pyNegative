@@ -515,6 +515,13 @@ class EditorWidget(QtWidgets.QWidget):
             )
             self.editing_controls.apply_settings(settings)
             all_params = self.editing_controls.get_all_settings()
+
+            # Update Lens Controls info
+            from ..io import lens_resolver
+
+            source, resolved = lens_resolver.resolve_lens_profile(path)
+            self.editing_controls.lens_controls.set_lens_info(source, resolved or {})
+
             loaded_crop = settings.get("crop")
             rotate_val = settings.get("rotation", 0.0)
             if loaded_crop is None and abs(rotate_val) > 0.1:
