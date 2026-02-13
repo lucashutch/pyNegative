@@ -1,8 +1,7 @@
-import os
 import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +70,11 @@ class LensDatabase:
             mounts = [m.text for m in lens.findall("mount") if m.text]
             crop_factor = lens.findtext("crop_factor")
 
+            # Calibration data for matching
+            focal_min = lens.findtext("focal_min")
+            focal_max = lens.findtext("focal_max")
+            aperture = lens.findtext("aperture")
+
             if maker and model:
                 self.lenses.append(
                     {
@@ -80,32 +84,31 @@ class LensDatabase:
                         "crop_factor": float(crop_factor) if crop_factor else 1.0,
                         "maker_lower": maker.lower(),
                         "model_lower": model.lower(),
+                        "focal_min": float(focal_min) if focal_min else None,
+                        "focal_max": float(focal_max) if focal_max else None,
+                        "aperture": float(aperture) if aperture else None,
                         "raw_element": lens,  # Keep reference for Phase 2+ calibration data
                     }
                 )
 
     def find_lens(
-        self, camera_maker: str, camera_model: str, lens_model: str
+        self,
+        camera_maker: str,
+        camera_model: str,
+        lens_model: str,
+        focal_length: Optional[float] = None,
+        aperture: Optional[float] = None,
     ) -> Optional[Dict]:
         if not self.loaded:
             return None
 
-        # 1. Try exact match on lens model
-        lens_model_lower = lens_model.lower()
-        camera_maker_lower = camera_maker.lower()
+        # 1. Normalize inputs
+        lens_model_lower = lens_model.strip().lower()
+        camera_maker_lower = camera_maker.strip().lower()
 
-        # Check for common third-party manufacturers in the lens name
-        third_party = [
-            "sigma",
-            "tamron",
-            "tokina",
-            "samyang",
-            "rokinon",
-            "zeiss",
-            "voigtlander",
-            "laowa",
-        ]
-        is_third_party = any(tp in lens_model_lower for tp in third_party)
+        # If lens model is empty or too short, we can't reliably match
+        if len(lens_model_lower) < 2:
+            return None
 
         best_match = None
         best_score = 0
@@ -113,16 +116,46 @@ class LensDatabase:
         for lens in self.lenses:
             score = 0
 
+            # Tier 1: Hardware Specs Check (Focal length and Aperture)
+            # If we have EXIF specs, they MUST be within the lens's physical range
+            if (
+                focal_length is not None
+                and lens["focal_min"] is not None
+                and lens["focal_max"] is not None
+            ):
+                # Allow a small margin for focal length (e.g. 17.9mm matched to 18mm lens)
+                if not (
+                    lens["focal_min"] - 1.0 <= focal_length <= lens["focal_max"] + 1.0
+                ):
+                    continue  # Not a physical match
+
+                # If exact focal length match for prime lens or zoom boundary, boost score
+                if (
+                    abs(lens["focal_min"] - focal_length) < 0.1
+                    or abs(lens["focal_max"] - focal_length) < 0.1
+                ):
+                    score += 15
+
+            if aperture is not None and lens["aperture"] is not None:
+                # Aperture match (allow small margin)
+                # If EXIF aperture is faster (lower f-stop) than lens max aperture, it's probably not the lens
+                if aperture < lens["aperture"] - 0.1:
+                    continue  # Too fast for this lens
+
+                if abs(lens["aperture"] - aperture) < 0.1:
+                    score += 10
+
+            # Tier 2: String matching
             # Exact match is highest priority
             if lens_model_lower == lens["model_lower"]:
-                return lens
+                score += 100
 
             # Check if lens_model is a substring of DB model or vice versa
             if (
                 lens_model_lower in lens["model_lower"]
                 or lens["model_lower"] in lens_model_lower
             ):
-                score += 10
+                score += 20
 
                 # Check maker match
                 if (
@@ -133,18 +166,19 @@ class LensDatabase:
 
                 # If lens name contains the DB maker name, it's a good sign
                 if lens["maker_lower"] in lens_model_lower:
-                    score += 8
+                    score += 15
 
                 # Length similarity (prefer closer match lengths)
                 len_diff = abs(len(lens_model_lower) - len(lens["model_lower"]))
-                score += max(0, 5 - len_diff // 5)
+                score += max(0, 10 - len_diff // 2)
 
             if score > best_score:
                 best_score = score
                 best_match = lens
 
         # Minimum score threshold to avoid garbage matches
-        if best_score >= 10:
+        # If we have a decent string match (20+) or specs + string match
+        if best_score >= 20:
             return best_match
 
         return None
@@ -171,7 +205,9 @@ class LensDatabase:
     def get_all_lens_names(self) -> List[str]:
         if not self.loaded:
             return []
-        return sorted(list(set(f"{l['maker']} {l['model']}" for l in self.lenses)))
+        return sorted(
+            list(set(f"{lens['maker']} {lens['model']}" for lens in self.lenses))
+        )
 
 
 # Global instance

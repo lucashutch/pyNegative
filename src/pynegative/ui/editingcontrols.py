@@ -413,12 +413,19 @@ class EditingControls(QtWidgets.QWidget):
         # 3. Handle lens overrides
         self.lens_controls.camera_combo.blockSignals(True)
         self.lens_controls.lens_combo.blockSignals(True)
-        self.lens_controls.camera_combo.setCurrentText(
-            settings.get("lens_camera_override", "Auto")
-        )
-        self.lens_controls.lens_combo.setCurrentText(
-            settings.get("lens_name_override", "Auto")
-        )
+
+        cam_ovr = settings.get("lens_camera_override")
+        if cam_ovr and cam_ovr != "Auto":
+            self.lens_controls.camera_combo.setCurrentText(cam_ovr)
+        else:
+            self.lens_controls.camera_combo.setCurrentIndex(0)
+
+        lens_ovr = settings.get("lens_name_override")
+        if lens_ovr and lens_ovr != "Auto":
+            self.lens_controls.lens_combo.setCurrentText(lens_ovr)
+        else:
+            self.lens_controls.lens_combo.setCurrentIndex(0)
+
         self.lens_controls.camera_combo.blockSignals(False)
         self.lens_controls.lens_combo.blockSignals(False)
 

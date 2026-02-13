@@ -32,6 +32,8 @@ def resolve_lens_profile(
     camera_make = exif_info.get("camera_make", "")
     camera_model = exif_info.get("camera_model", "")
     lens_model = exif_info.get("lens_model", "")
+    focal_length = exif_info.get("focal_length")
+    aperture = exif_info.get("aperture")
 
     # Tier 1: Embedded Correction Params
     embedded_params = lens_metadata.extract_embedded_correction_params(raw_path)
@@ -46,7 +48,13 @@ def resolve_lens_profile(
     # Tier 2: Lensfun Database Match
     db = lens_db_xml.get_instance()
     if db.loaded:
-        matched_lens = db.find_lens(camera_make, camera_model, lens_model)
+        matched_lens = db.find_lens(
+            camera_make,
+            camera_model,
+            lens_model,
+            focal_length=focal_length,
+            aperture=aperture,
+        )
         if matched_lens:
             logger.info(
                 f"Matched lensfun profile: {matched_lens['maker']} {matched_lens['model']}"
@@ -61,4 +69,4 @@ def resolve_lens_profile(
     if lens_model:
         return ProfileSource.MANUAL, {"name": lens_model, "exif": exif_info}
 
-    return ProfileSource.NONE, None
+    return ProfileSource.NONE, {"name": None, "exif": exif_info}

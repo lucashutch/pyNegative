@@ -95,24 +95,24 @@ class MetadataPanel(QtWidgets.QWidget):
 
     @staticmethod
     def _extract_exif_data(raw_path):
-        """Extract EXIF data from RAW file using rawpy (supports CR3, ARW, NEF, etc)."""
+        """Extract EXIF data from RAW file using rawpy and custom BMFF parser."""
         exif = {}
 
         # File info
         p = Path(raw_path)
         exif["file_name"] = p.name
         exif["file_location"] = str(p.parent)
+        ext = p.suffix.lower()
 
         try:
             import rawpy
+            from ...io import lens_metadata, bmff_metadata
 
+            # 1. Try rawpy for basic RAW handling and WB
             with rawpy.imread(str(raw_path)) as raw:
                 # Use our robust lens info extractor
-                from ...io import lens_metadata
-
                 lens_info = lens_metadata.extract_lens_info(raw_path)
 
-                # Camera info
                 exif["camera_make"] = lens_info.get("camera_make")
                 exif["camera_model"] = lens_info.get("camera_model")
                 exif["lens_model"] = lens_info.get("lens_model")
@@ -128,124 +128,89 @@ class MetadataPanel(QtWidgets.QWidget):
                         exif["width"] = sizes.raw_width
                         exif["height"] = sizes.raw_height
 
+            # 2. For CR3 files, use our manual BMFF extractor for exposure data
+            if ext == ".cr3":
+                bmff_tags = bmff_metadata.extract_bmff_metadata(raw_path)
+                bmff_info = bmff_metadata.get_exposure_info(bmff_tags)
+
+                # Fill in exposure fields that rawpy misses
+                if "iso" in bmff_info:
+                    exif["iso"] = bmff_info["iso"]
+                if "shutter_speed" in bmff_info:
+                    exif["shutter_speed"] = bmff_info["shutter_speed"]
+                if "aperture" in bmff_info:
+                    exif["aperture"] = bmff_info["aperture"]
+                if "focal_length" in bmff_info:
+                    exif["focal_length"] = bmff_info["focal_length"]
+
+                # Additional lens info
+                exif["focal_length_35mm"] = bmff_tags.get("EXIF FocalLengthIn35mmFilm")
+                exif["max_aperture"] = bmff_tags.get("EXIF MaxApertureValue")
+
+                # Resolution Source (pyNegative specific)
+                from ...io import lens_resolver
+
+                source, resolved = lens_resolver.resolve_lens_profile(raw_path)
+                if resolved:
+                    exif["lens_model_resolved"] = resolved.get("name")
+                    exif["lens_source"] = source.name
+                else:
+                    exif["lens_source"] = "NONE"
+
+                # Other metadata
+                exif["date_taken"] = bmff_tags.get(
+                    "EXIF DateTimeOriginal"
+                ) or bmff_tags.get("Image DateTime")
+                exif["artist"] = bmff_tags.get("Image Artist")
+                exif["copyright"] = bmff_tags.get("Image Copyright")
+
+            # 3. For other files or if still missing data, try thumbnail/standard EXIF
+            if not exif.get("iso"):
                 try:
-                    thumb = raw.extract_thumb()
-                    if thumb.format == rawpy.ThumbFormat.JPEG:
-                        from io import BytesIO
+                    with rawpy.imread(str(raw_path)) as raw:
+                        thumb = raw.extract_thumb()
+                        if thumb.format == rawpy.ThumbFormat.JPEG:
+                            from io import BytesIO
 
-                        thumb_io = BytesIO(thumb.data)
-                        tags = exifread.process_file(thumb_io, details=False)
+                            tags = exifread.process_file(
+                                BytesIO(thumb.data), details=False
+                            )
 
-                        # Primary exposure fields
-                        exif["iso"] = tags.get("EXIF ISOSpeedRatings", None)
-                        exif["shutter_speed"] = tags.get("EXIF ExposureTime", None)
-                        exif["aperture"] = tags.get("EXIF FNumber", None)
-                        exif["focal_length"] = tags.get("EXIF FocalLength", None)
+                            # Primary exposure fields
+                            if not exif.get("iso"):
+                                exif["iso"] = tags.get("EXIF ISOSpeedRatings")
+                            if not exif.get("shutter_speed"):
+                                exif["shutter_speed"] = tags.get("EXIF ExposureTime")
+                            if not exif.get("aperture"):
+                                exif["aperture"] = tags.get("EXIF FNumber")
+                            if not exif.get("focal_length"):
+                                exif["focal_length"] = tags.get("EXIF FocalLength")
 
-                        # Camera/lens
-                        exif["camera_make"] = tags.get("Image Make", None)
-                        exif["camera_model"] = tags.get("Image Model", None)
+                            # Date/time
+                            if not exif.get("date_taken"):
+                                exif["date_taken"] = (
+                                    tags.get("EXIF DateTimeOriginal")
+                                    or tags.get("Image DateTime")
+                                    or tags.get("EXIF DateTimeDigitized")
+                                )
 
-                        # Use our robust lens info extractor
-                        from ...io import lens_metadata
+                            # Resolution Source (pyNegative specific)
+                            from ...io import lens_resolver
 
-                        lens_info = lens_metadata.extract_lens_info(raw_path)
-                        if not exif["camera_make"]:
-                            exif["camera_make"] = lens_info.get("camera_make")
-                        if not exif["camera_model"]:
-                            exif["camera_model"] = lens_info.get("camera_model")
-
-                        exif["lens_model"] = lens_info.get("lens_model")
-
-                        # Date/time
-                        exif["date_taken"] = (
-                            tags.get("EXIF DateTimeOriginal", None)
-                            or tags.get("Image DateTime", None)
-                            or tags.get("EXIF DateTimeDigitized", None)
-                        )
-
-                        # Exposure settings
-                        exif["exposure_compensation"] = tags.get(
-                            "EXIF ExposureBiasValue", None
-                        )
-                        exif["metering_mode"] = tags.get("EXIF MeteringMode", None)
-                        exif["exposure_program"] = tags.get(
-                            "EXIF ExposureProgram", None
-                        )
-                        exif["exposure_mode"] = tags.get("EXIF ExposureMode", None)
-
-                        # White balance & color
-                        exif["white_balance"] = tags.get(
-                            "EXIF WhiteBalance", None
-                        ) or tags.get("MakerNote WhiteBalance", None)
-                        exif["color_space"] = tags.get("EXIF ColorSpace", None)
-
-                        # Flash
-                        exif["flash"] = tags.get("EXIF Flash", None)
-
-                        # Image processing
-                        exif["software"] = tags.get("Image Software", None)
-                        exif["orientation"] = tags.get("Image Orientation", None)
-                        exif["scene_capture_type"] = tags.get(
-                            "EXIF SceneCaptureType", None
-                        )
-                        exif["digital_zoom"] = tags.get("EXIF DigitalZoomRatio", None)
-                        exif["contrast"] = tags.get("EXIF Contrast", None)
-                        exif["saturation"] = tags.get("EXIF Saturation", None)
-                        exif["sharpness"] = tags.get("EXIF Sharpness", None)
-
-                        # GPS (if available)
-                        gps_lat = tags.get("GPS GPSLatitude", None)
-                        gps_lat_ref = tags.get("GPS GPSLatitudeRef", None)
-                        gps_lon = tags.get("GPS GPSLongitude", None)
-                        gps_lon_ref = tags.get("GPS GPSLongitudeRef", None)
-                        if gps_lat and gps_lon:
-                            exif["gps_latitude"] = f"{gps_lat} {gps_lat_ref}"
-                            exif["gps_longitude"] = f"{gps_lon} {gps_lon_ref}"
-
-                        # Additional lens info
-                        exif["focal_length_35mm"] = tags.get(
-                            "EXIF FocalLengthIn35mmFilm", None
-                        )
-                        exif["max_aperture"] = tags.get("EXIF MaxApertureValue", None)
-
-                        # Resolution Source (pyNegative specific)
-                        from ...io import lens_resolver
-
-                        source, resolved = lens_resolver.resolve_lens_profile(raw_path)
-                        if resolved:
-                            exif["lens_model_resolved"] = resolved.get("name")
-                            exif["lens_source"] = source.name
-                        else:
-                            exif["lens_source"] = "NONE"
-
-                        # Image description / copyright
-                        exif["image_description"] = tags.get(
-                            "Image ImageDescription", None
-                        )
-                        exif["copyright"] = tags.get("Image Copyright", None)
-                        exif["artist"] = tags.get("Image Artist", None)
+                            source, resolved = lens_resolver.resolve_lens_profile(
+                                raw_path
+                            )
+                            if resolved:
+                                exif["lens_model_resolved"] = resolved.get("name")
+                                exif["lens_source"] = source.name
+                            else:
+                                exif["lens_source"] = "NONE"
 
                 except Exception:
-                    # If thumbnail extraction fails, we still have lens info from early check
                     pass
 
-        except Exception:
-            pass  # Silently fail if RAW file can't be opened
-
-        # 3. Final fallback: If some critical fields still missing, only then try exifread on original file
-        if not exif.get("iso"):
-            try:
-                # We already know rawpy works better for RAW, so we only use exifread for
-                # non-RAW or if we really need specific tags not exposed by rawpy.
-                # But to avoid the "format not recognized" warning, we can check extension
-                ext = Path(raw_path).suffix.lower()
-                if ext in [".jpg", ".jpeg", ".tiff", ".tif"]:
-                    with open(raw_path, "rb") as f:
-                        tags = exifread.process_file(f, details=False)
-                        # Fill in gaps...
-            except:
-                pass
+        except Exception as e:
+            logger.debug(f"Metadata extraction failed for {raw_path}: {e}")
 
         # Fallback for date
         if not exif.get("date_taken"):
@@ -255,8 +220,7 @@ class MetadataPanel(QtWidgets.QWidget):
 
         # File size
         try:
-            file_size = Path(raw_path).stat().st_size
-            exif["file_size"] = file_size
+            exif["file_size"] = p.stat().st_size
         except Exception:
             pass
 
@@ -443,20 +407,30 @@ class MetadataPanel(QtWidgets.QWidget):
             )
             self._add_field("Camera", camera.strip())
 
-        if exif_data.get("lens_model"):
-            self._add_field("Lens", fv(exif_data.get("lens_model")))
+        # Always show Lens field if we have camera info, even if lens is unknown
+        lens_model = exif_data.get("lens_model")
+        if lens_model:
+            self._add_field("Lens", fv(lens_model))
+        elif exif_data.get("camera_make") or exif_data.get("camera_model"):
+            self._add_field("Lens", "Unknown / Not detected")
 
         if exif_data.get("lens_source"):
             source = exif_data.get("lens_source")
-            if source != "NONE":
-                source_text = {
-                    "EMBEDDED": "Embedded RAW",
-                    "LENSFUN_DB": "Lensfun Match",
-                    "MANUAL": "Manual Override",
-                }.get(source, source)
+            resolved = exif_data.get("lens_model_resolved")
+
+            source_text = {
+                "EMBEDDED": "Embedded RAW",
+                "LENSFUN_DB": "Lensfun Match",
+                "MANUAL": "Manual Override",
+                "NONE": "Manual Mode",
+            }.get(source, source)
+
+            if source == "NONE":
+                self._add_field("Lens Profile", f"No Profile Found ({source_text})")
+            else:
                 self._add_field(
                     "Lens Profile",
-                    f"{fv(exif_data.get('lens_model_resolved'))} ({source_text})",
+                    f"{fv(resolved)} ({source_text})",
                 )
 
         if exif_data.get("max_aperture"):
