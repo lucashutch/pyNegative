@@ -4,6 +4,7 @@ import cv2
 import time
 import logging
 from ... import core as pynegative
+from ...processing.geometry import GeometryResolver
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,7 @@ class ImageProcessorSignals(QtCore.QObject):
     """Signals for the image processing worker."""
 
     finished = QtCore.Signal(
-        QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int, int
+        QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int, int, float
     )
     histogramUpdated = QtCore.Signal(dict, int)
     tierGenerated = QtCore.Signal(float, np.ndarray)  # scale, array
@@ -36,14 +37,12 @@ class TierGeneratorWorker(QtCore.QRunnable):
             h, w = self.img_array.shape[:2]
 
             # 1. Immediate Fast Feedback (1:16)
-            # This is roughly 300-600px, perfect for instant pixels
             scale_fast = 0.0625
             fast_w, fast_h = int(w * scale_fast), int(h * scale_fast)
             preview_fast = cv2.resize(
                 self.img_array, (fast_w, fast_h), interpolation=cv2.INTER_LINEAR
             )
 
-            # Generate unedited pixmap from fast preview for near-instant display
             img_uint8 = (np.clip(preview_fast, 0, 1) * 255).astype(np.uint8)
             h_p, w_p, c_p = img_uint8.shape
             qimage = QtGui.QImage(
@@ -55,14 +54,12 @@ class TierGeneratorWorker(QtCore.QRunnable):
             # Emit fast tier
             self.signals.tierGenerated.emit(scale_fast, preview_fast)
 
-            # 2. High Quality Pyramid HQ Chain (INTER_AREA)
-            # 1:2 -> 1:4 -> 1:8 -> 1:16
+            # 2. High Quality Pyramid Chain
             scales = [0.5, 0.25, 0.125, 0.0625]
             current_img = self.img_array
 
             for scale in scales:
                 tw, th = int(w * scale), int(h * scale)
-                # Chain from previous for speed and cache locality
                 next_img = cv2.resize(
                     current_img, (tw, th), interpolation=cv2.INTER_AREA
                 )
@@ -70,7 +67,7 @@ class TierGeneratorWorker(QtCore.QRunnable):
                 current_img = next_img
 
         except Exception as e:
-            print(f"Tier generation error: {e}")
+            logger.error(f"Tier generation error: {e}")
 
 
 class ImageProcessorWorker(QtCore.QRunnable):
@@ -94,7 +91,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.signals = signals
         self._view_ref = view_ref
         self.base_img_full = base_img_full
-        self.tiers = tiers  # Dictionary of scales (0.5, 0.25, etc.)
+        self.tiers = tiers
         self.settings = settings
         self.request_id = request_id
         self.calculate_histogram = calculate_histogram
@@ -105,22 +102,20 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
     def run(self):
         try:
-            result = self._update_preview()
-            self.signals.finished.emit(*result, self.request_id)
+            *result, rotate_val = self._update_preview()
+            self.signals.finished.emit(*result, rotate_val, self.request_id)
         except Exception as e:
+            logger.error(f"Image processing worker failed: {e}", exc_info=True)
             self.signals.error.emit(str(e), self.request_id)
 
     def _process_lens_stage(self, img, res_key, scale, roi_offset=None, full_size=None):
-        """Processes lens correction stage (distortion, vignetting, etc.)"""
-        # 0. Check if lens correction is enabled globally
+        """Processes lens correction stage."""
         if not self.settings.get("lens_enabled", True):
             return img
 
-        # 1. Check for manual sliders
         k1 = self.settings.get("lens_distortion", 0.0)
         vignette = self.settings.get("lens_vignette", 0.0)
 
-        # 2. Check for auto-correction in lens_info
         has_auto_dist = False
         has_auto_vig = False
         if self.lens_info:
@@ -141,7 +136,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
         ):
             return img
 
-        # Apply lens corrections
         t0 = time.perf_counter()
         result = pynegative.apply_lens_correction(
             img, self.settings, self.lens_info, scale, roi_offset, full_size
@@ -149,19 +143,18 @@ class ImageProcessorWorker(QtCore.QRunnable):
         elapsed = (time.perf_counter() - t0) * 1000
 
         logger.debug(
-            f"Lens Correction ({res_key}): k1={k1:.4f}, vig={vignette:.4f}, auto_dist={has_auto_dist}, auto_vig={has_auto_vig} ({elapsed:.2f}ms)"
+            f"Lens Correction ({res_key}): k1={k1:.4f}, vig={vignette:.4f} ({elapsed:.2f}ms)"
         )
         return result
 
     def _process_denoise_stage(self, img, res_key, heavy_params, zoom_scale):
-        """Processes and caches the denoising stage early in the pipeline (Linear Denoise)."""
+        """Processes and caches the denoising stage."""
         l_str = float(heavy_params.get("denoise_luma", 0))
         c_str = float(heavy_params.get("denoise_chroma", 0))
 
         if l_str <= 0 and c_str <= 0:
             return img
 
-        # 1. Determine Effective Denoise Method (Tier-based optimization)
         requested_method = heavy_params.get("denoise_method", "NLMeans (Numba Fast+)")
         effective_method = requested_method
 
@@ -203,7 +196,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
             if cached is not None:
                 return cached
 
-        # Execute Denoise
         processed = pynegative.de_noise_image(
             img,
             luma_strength=l_str,
@@ -219,9 +211,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         return processed
 
     def _process_heavy_stage(self, img, res_key, heavy_params, zoom_scale):
-        """Processes and caches the heavy effects stage for a full image tier."""
-
-        # 1. Group parameters by effect
+        """Processes and caches the heavy effects stage."""
         dehaze_p = {"de_haze": heavy_params["de_haze"]}
         sharpen_p = {
             "sharpen_value": heavy_params["sharpen_value"],
@@ -229,11 +219,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "sharpen_percent": heavy_params["sharpen_percent"],
         }
 
-        # 2. Define application functions
         def apply_dehaze(image):
             if dehaze_p["de_haze"] <= 0:
                 return image
-            # Always sync atmospheric light from preview if possible
             atmos_fixed = (
                 self.cache.estimated_params.get("atmospheric_light")
                 if self.cache
@@ -245,7 +233,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 zoom=zoom_scale,
                 fixed_atmospheric_light=atmos_fixed,
             )
-            # If we are processing preview, store the estimated light for other tiers
             if res_key == "preview" and self.cache and atmos_fixed is None:
                 self.cache.estimated_params["atmospheric_light"] = atmos
             return processed
@@ -260,7 +247,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 "High Quality",
             )
 
-        # 3. Determine execution order (Dehaze vs Sharpen)
         active = self.last_heavy_adjusted
         if active == "de_haze":
             pipeline = [
@@ -273,11 +259,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 ("sharpen", sharpen_p, apply_sharpen),
             ]
 
-        # 4. Execute pipeline with multi-stage caching
         processed = img
         accumulated_params = {}
 
-        # Scale radius-based parameters
         img_w = img.shape[1]
         full_w = self.base_img_full.shape[1]
         scale_factor = img_w / full_w
@@ -295,7 +279,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 "High Quality",
             )
 
-        # Re-build pipeline with scaled functions
         pipeline_scaled = []
         for name, p, func in pipeline:
             if name == "sharpen":
@@ -313,10 +296,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     processed = cached
                     continue
 
-            # Cache miss: compute this stage
             processed = func(processed)
-
-            # Store in cache
             if self.cache:
                 self.cache.put(res_key, stage_id, accumulated_params, processed)
 
@@ -324,17 +304,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
     def _update_preview(self):
         if self.base_img_full is None or self._view_ref is None:
-            return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0
+            return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0, 0.0
 
-        full_h, full_w, _ = self.base_img_full.shape
-
-        try:
-            zoom_scale = self._view_ref.transform().m11()
-            # Viewport dimensions in screen pixels
-            view_rect = self._view_ref.viewport().rect()
-            v_w = view_rect.width()
-        except (AttributeError, RuntimeError):
-            return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0
+        full_h, full_w = self.base_img_full.shape[:2]
 
         # --- STEP 0: SETTINGS EXTRACTION ---
         rotate_val = self.settings.get("rotation", 0.0)
@@ -367,103 +339,120 @@ class ImageProcessorWorker(QtCore.QRunnable):
         }
 
         # --- STEP 1: RESOLUTION SELECTION ---
-        is_fitting = getattr(self._view_ref, "_is_fitting", False)
+        try:
+            zoom_scale = self._view_ref.transform().m11()
+            view_rect = self._view_ref.viewport().rect()
+            v_w = view_rect.width()
+            is_fitting = getattr(self._view_ref, "_is_fitting", False)
+        except (AttributeError, RuntimeError):
+            return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0, 0.0
 
-        # Physical width (in screen pixels) the image occupies at current zoom
-        if is_fitting:
-            # If fitting, we only need a resolution that matches the viewport
-            target_on_screen_width = v_w
-        else:
-            target_on_screen_width = full_w * zoom_scale
+        # Optimization: ROI logic
+        is_zoomed_in = not is_fitting and zoom_scale > 0.5
+        target_on_screen_width = full_w * zoom_scale if not is_fitting else v_w
 
-        # Threshold: if zoom is low enough that 1:16 is sufficient, stay zoomed out.
-        # Otherwise, pick smallest tier that covers target_on_screen_width.
+        # Master Geometry Resolver (The UI scene truth)
+        full_resolver = GeometryResolver(full_w, full_h)
+        full_resolver.resolve(
+            rotate=rotate_val,
+            crop=crop_val,
+            flip_h=flip_h,
+            flip_v=flip_v,
+            expand=True,
+        )
+        new_full_w, new_full_h = full_resolver.get_output_size()
 
+        # --- Part 1: Global Background ---
+        # Optimization: Cap background resolution when zoomed in to keep interaction fast
+        bg_limit_w = (
+            min(target_on_screen_width, 1500)
+            if is_zoomed_in
+            else target_on_screen_width
+        )
+
+        available_scales = sorted(self.tiers.keys()) + [1.0]
         selected_scale = 1.0
         selected_img = self.base_img_full
 
-        # Power-of-two scales in ascending order
-        available_scales = sorted(self.tiers.keys()) + [1.0]
-
         for scale in available_scales:
             tier_img = self.tiers.get(scale) if scale < 1.0 else self.base_img_full
-            if tier_img is not None:
-                # If this tier's resolution is enough to cover the screen width, pick it
-                if tier_img.shape[1] >= target_on_screen_width:
-                    selected_scale = scale
-                    selected_img = tier_img
-                    break
+            if tier_img is not None and tier_img.shape[1] >= bg_limit_w:
+                selected_scale = scale
+                selected_img = tier_img
+                break
 
-        # Optimization: if we are zoomed out enough that we aren't even
-        # using the Full resolution, we don't necessarily need a high-res ROI.
-        # ROI is only needed if the viewport is a subset of the image at the selected resolution
-        # or if the user is zoomed in past a "comfort" point.
-        is_zoomed_in = not is_fitting and (selected_scale > 0.125 or zoom_scale > 0.5)
-
-        # --- Part 1: Global Background ---
-        # Res key for caching
         res_key = f"tier_{selected_scale}"
-        img_render_base = selected_img
+        h_src, w_src = selected_img.shape[:2]
+
+        tier_resolver = GeometryResolver(w_src, h_src)
+        tier_resolver.resolve(
+            rotate=rotate_val,
+            crop=crop_val,
+            flip_h=flip_h,
+            flip_v=flip_v,
+            expand=True,
+        )
+        M_tier = tier_resolver.get_matrix_2x3()
+        out_w_tier, out_h_tier = tier_resolver.get_output_size()
 
         cached_bg, cached_w, cached_h = (None, 0, 0)
         if self.cache:
             cached_bg, cached_w, cached_h = self.cache.get_cached_bg_pixmap()
 
-        if is_zoomed_in and cached_bg is not None:
+        if (
+            is_zoomed_in
+            and cached_bg is not None
+            and cached_w == new_full_w
+            and cached_h == new_full_h
+        ):
             pix_bg = cached_bg
-            new_full_w = cached_w
-            new_full_h = cached_h
         else:
-            # 1. DENOISE STAGE (Early, linear)
-            denoised_bg = self._process_denoise_stage(
-                img_render_base, res_key, heavy_params, zoom_scale
-            )
+            # Render background (potentially low-res if zoomed in)
+            if is_zoomed_in:
+                # OPTIMIZATION: Skip heavy effects for background when zoomed in.
+                # The background is just context/blur, so we don't need expensive effects.
+                processed_bg = selected_img
+                # Still need lens correction for geometry alignment
+                corrected_bg = self._process_lens_stage(
+                    processed_bg, res_key, selected_scale, (0, 0), (w_src, h_src)
+                )
+                bg_output, _ = pynegative.apply_tone_map(
+                    corrected_bg, **tone_map_settings, calculate_stats=False
+                )
+                bg_output = pynegative.apply_defringe(bg_output, self.settings)
+            else:
+                denoised_bg = self._process_denoise_stage(
+                    selected_img, res_key, heavy_params, zoom_scale
+                )
+                corrected_bg = self._process_lens_stage(
+                    denoised_bg, res_key, selected_scale, (0, 0), (w_src, h_src)
+                )
+                processed_bg = self._process_heavy_stage(
+                    corrected_bg, res_key, heavy_params, zoom_scale
+                )
+                bg_output, _ = pynegative.apply_tone_map(
+                    processed_bg, **tone_map_settings, calculate_stats=False
+                )
+                bg_output = pynegative.apply_defringe(bg_output, self.settings)
 
-            # 2. LENS STAGE (Correction)
-            corrected_bg = self._process_lens_stage(
-                denoised_bg,
-                res_key,
-                selected_scale,
-                roi_offset=(0, 0),
-                full_size=(selected_img.shape[1], selected_img.shape[0]),
-            )
-
-            # 3. HEAVY STAGE (Sharpen, Dehaze)
-            processed_bg = self._process_heavy_stage(
-                corrected_bg, res_key, heavy_params, zoom_scale
-            )
-            bg_output, _ = pynegative.apply_tone_map(
-                processed_bg, **tone_map_settings, calculate_stats=False
-            )
-            bg_output = pynegative.apply_defringe(bg_output, self.settings)
-            bg_output = pynegative.apply_geometry(
+            img_dest = cv2.warpAffine(
                 bg_output,
-                rotate=rotate_val,
-                crop=crop_val,
-                flip_h=flip_h,
-                flip_v=flip_v,
+                M_tier,
+                (int(round(out_w_tier)), int(round(out_h_tier))),
+                flags=cv2.INTER_LINEAR,
             )
-            img_uint8 = (np.clip(bg_output, 0, 1) * 255).astype(np.uint8)
-
-            # Map coordinates: selected_scale tells us the relationship to full
-            scale_x = 1.0 / selected_scale
-            scale_y = 1.0 / selected_scale
-
-            # Using uint8 shape directly
-            h_bg, w_bg, c_bg = img_uint8.shape
-            new_full_w = int(w_bg * scale_x)
-            new_full_h = int(h_bg * scale_y)
+            img_uint8 = (np.clip(img_dest, 0, 1) * 255).astype(np.uint8)
 
             if self.calculate_histogram:
                 try:
                     hist_data = self._calculate_histograms(img_uint8)
                     self.signals.histogramUpdated.emit(hist_data, self.request_id)
                 except Exception as e:
-                    print(f"Histogram calculation error: {e}")
+                    logger.error(f"Histogram error: {e}")
 
-            # Direct NumPy to QImage conversion
+            h_bg, w_bg = img_uint8.shape[:2]
             qimg_bg = QtGui.QImage(
-                img_uint8.data, w_bg, h_bg, c_bg * w_bg, QtGui.QImage.Format_RGB888
+                img_uint8.data, w_bg, h_bg, 3 * w_bg, QtGui.QImage.Format_RGB888
             )
             pix_bg = QtGui.QPixmap.fromImage(qimg_bg)
             if self.cache:
@@ -476,155 +465,151 @@ class ImageProcessorWorker(QtCore.QRunnable):
             roi_scene = self._view_ref.mapToScene(
                 self._view_ref.viewport().rect()
             ).boundingRect()
-            v_x, v_y, v_w_roi, v_h_roi = (
+            rx, ry, rw, rh = (
                 roi_scene.x(),
                 roi_scene.y(),
                 roi_scene.width(),
                 roi_scene.height(),
             )
 
-            offset_x, offset_y = 0, 0
-            if crop_val:
-                offset_x = int(crop_val[0] * full_w)
-                offset_y = int(crop_val[1] * full_h)
-
-            src_x, src_y = int(v_x + offset_x), int(v_y + offset_y)
-            src_w, src_h = int(v_w_roi), int(v_h_roi)
-
-            if flip_h:
-                src_x = full_w - (src_x + src_w)
-            if flip_v:
-                src_y = full_h - (src_y + src_h)
-
-            src_x, src_y = max(0, src_x), max(0, src_y)
-            src_x2, src_y2 = min(full_w, src_x + src_w), min(full_h, src_y + src_h)
-
-            # --- ROI PADDING LOGIC ---
+            # ROI PADDING
             pad_ratio = 0.5 if self.expand_roi else 0.05
-            p_w, p_h = src_x2 - src_x, src_y2 - src_y
-            pad_w, pad_h = int(p_w * pad_ratio), int(p_h * pad_ratio)
+            p_w, p_h = rw * pad_ratio, rh * pad_ratio
+            rx, ry, rw, rh = rx - p_w, ry - p_h, rw + 2 * p_w, rh + 2 * p_h
 
-            src_x = max(0, src_x - pad_w)
-            src_y = max(0, src_y - pad_h)
-            src_x2 = min(full_w, src_x2 + pad_w)
-            src_y2 = min(full_h, src_y2 + pad_h)
-            req_w, req_h = src_x2 - src_x, src_y2 - src_y
+            # Clamp
+            rx, ry = max(0, rx), max(0, ry)
+            rw, rh = min(new_full_w - rx, rw), min(new_full_h - ry, rh)
 
-            if req_w > 10 and req_h > 10:
-                roi_area = req_w * req_h
-                full_area = full_w * full_h
-
-                if roi_area / full_area > 0.95 and not self.expand_roi:
-                    return (pix_bg, new_full_w, new_full_h, pix_roi, 0, 0, 0, 0)
-
-                # ROI resolution selection: always use smallest tier that covers display requirement.
-                # Display requirement is ALWAYS full_w * zoom_scale to maintain 1:1 pixel density.
-                req_roi_display_w = full_w * zoom_scale
-
-                res_key_roi = "full"
-                base_roi_img = self.base_img_full
-                tier_scale_roi = 1.0
+            if rw > 10 and rh > 10:
+                req_display_w = full_w * zoom_scale
+                res_key_roi, base_roi_img, ts_roi = "full", self.base_img_full, 1.0
 
                 for scale in available_scales:
                     tier_img = (
                         self.tiers.get(scale) if scale < 1.0 else self.base_img_full
                     )
-                    if tier_img is not None:
-                        if tier_img.shape[1] >= req_roi_display_w:
-                            res_key_roi = f"tier_{scale}"
-                            base_roi_img = tier_img
-                            tier_scale_roi = scale
-                            break
-
-                h_tier, w_tier = base_roi_img.shape[:2]
-                s_x = int(src_x * tier_scale_roi)
-                s_y = int(src_y * tier_scale_roi)
-                s_x2 = int(src_x2 * tier_scale_roi)
-                s_y2 = int(src_y2 * tier_scale_roi)
-
-                # Attempt Spatial Cache Hit
-                requested_tier_rect = (s_x, s_y, s_x2, s_y2)
-                crop_chunk = None
-
-                if self.cache:
-                    crop_chunk = self.cache.get_spatial_roi(
-                        res_key_roi, requested_tier_rect, heavy_params
-                    )
-                    if crop_chunk is not None:
-                        logger.debug(f"Spatial ROI Cache HIT for tier {res_key_roi}")
-
-                if crop_chunk is None:
-                    pad = 16
-                    p_x1, p_y1 = max(0, s_x - pad), max(0, s_y - pad)
-                    p_x2, p_y2 = min(w_tier, s_x2 + pad), min(h_tier, s_y2 + pad)
-
-                    raw_chunk = base_roi_img[p_y1:p_y2, p_x1:p_x2]
-                    roi_res_id = (res_key_roi, p_x1, p_y1, p_x2, p_y2)
-
-                    # 1. DENOISE STAGE (Early, linear)
-                    denoised_chunk = self._process_denoise_stage(
-                        raw_chunk, roi_res_id, heavy_params, zoom_scale
-                    )
-
-                    # 2. LENS STAGE (Correction)
-                    corrected_chunk = self._process_lens_stage(
-                        denoised_chunk,
-                        res_key_roi,
-                        tier_scale_roi,
-                        roi_offset=(p_x1, p_y1),
-                        full_size=(w_tier, h_tier),
-                    )
-
-                    # 3. HEAVY STAGE (Sharpen, Dehaze)
-                    processed_chunk_padded = self._process_heavy_stage(
-                        corrected_chunk, roi_res_id, heavy_params, zoom_scale
-                    )
-
-                    if self.cache:
-                        self.cache.put_spatial_roi(
-                            res_key_roi,
-                            (p_x1, p_y1, p_x2, p_y2),
-                            heavy_params,
-                            processed_chunk_padded,
+                    if tier_img is not None and tier_img.shape[1] >= req_display_w:
+                        res_key_roi, base_roi_img, ts_roi = (
+                            f"tier_{scale}",
+                            tier_img,
+                            scale,
                         )
+                        break
 
-                    c_y1, c_x1 = s_y - p_y1, s_x - p_x1
-                    c_y2, c_x2 = c_y1 + (s_y2 - s_y), c_x1 + (s_x2 - s_x)
-                    crop_chunk = processed_chunk_padded[c_y1:c_y2, c_x1:c_x2]
-
-                if flip_h or flip_v:
-                    flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
-                    crop_chunk = cv2.flip(crop_chunk, flip_code)
-
-                processed_roi, _ = pynegative.apply_tone_map(
-                    crop_chunk, **tone_map_settings, calculate_stats=False
+                M_inv = full_resolver.get_inverse_matrix()
+                corners = np.array(
+                    [
+                        [rx, ry, 1],
+                        [rx + rw, ry, 1],
+                        [rx + rw, ry + rh, 1],
+                        [rx, ry + rh, 1],
+                    ],
+                    dtype=np.float32,
                 )
-                processed_roi = pynegative.apply_defringe(processed_roi, self.settings)
-                roi_uint8 = (np.clip(processed_roi, 0, 1) * 255).astype(np.uint8)
-                h_r, w_r, c_r = roi_uint8.shape
-                qimg_roi = QtGui.QImage(
-                    roi_uint8.data, w_r, h_r, c_r * w_r, QtGui.QImage.Format_RGB888
-                )
-                pix_roi = QtGui.QPixmap.fromImage(qimg_roi)
-                roi_x, roi_y = src_x - offset_x, src_y - offset_y
-                roi_w, roi_h = req_w, req_h
+                src_corners = (M_inv @ corners.T).T
 
-        return pix_bg, new_full_w, new_full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
+                s_xmin, s_ymin = np.floor(
+                    np.min(src_corners[:, :2], axis=0) * ts_roi
+                ).astype(int)
+                s_xmax, s_ymax = np.ceil(
+                    np.max(src_corners[:, :2], axis=0) * ts_roi
+                ).astype(int)
+
+                h_rs, w_rs = base_roi_img.shape[:2]
+                pad_src = 16
+                s_xmin, s_ymin = max(0, s_xmin - pad_src), max(0, s_ymin - pad_src)
+                s_xmax, s_ymax = (
+                    min(w_rs, s_xmax + pad_src),
+                    min(h_rs, s_ymax + pad_src),
+                )
+
+                raw_chunk = base_roi_img[s_ymin:s_ymax, s_xmin:s_xmax]
+                if raw_chunk.size > 0:
+                    roi_res_id = (res_key_roi, s_xmin, s_ymin, s_xmax, s_ymax)
+                    chunk_processed = (
+                        self.cache.get_spatial_roi(
+                            res_key_roi, (s_xmin, s_ymin, s_xmax, s_ymax), heavy_params
+                        )
+                        if self.cache
+                        else None
+                    )
+
+                    if chunk_processed is None:
+                        c = self._process_denoise_stage(
+                            raw_chunk, roi_res_id, heavy_params, zoom_scale
+                        )
+                        c = self._process_lens_stage(
+                            c, res_key_roi, ts_roi, (s_xmin, s_ymin), (w_rs, h_rs)
+                        )
+                        chunk_processed = self._process_heavy_stage(
+                            c, roi_res_id, heavy_params, zoom_scale
+                        )
+                        if self.cache:
+                            self.cache.put_spatial_roi(
+                                res_key_roi,
+                                (s_xmin, s_ymin, s_xmax, s_ymax),
+                                heavy_params,
+                                chunk_processed,
+                            )
+
+                    resolver_roi = GeometryResolver(w_rs, h_rs)
+                    resolver_roi.resolve(
+                        rotate=rotate_val,
+                        crop=crop_val,
+                        flip_h=flip_h,
+                        flip_v=flip_v,
+                        expand=True,
+                    )
+                    M_roi_full_tier = resolver_roi.get_matrix_2x3()
+
+                    M_local = M_roi_full_tier.copy()
+                    M_local[0, 2] += (
+                        M_roi_full_tier[0, 0] * s_xmin + M_roi_full_tier[0, 1] * s_ymin
+                    )
+                    M_local[1, 2] += (
+                        M_roi_full_tier[1, 0] * s_xmin + M_roi_full_tier[1, 1] * s_ymin
+                    )
+                    M_local[:2, :] /= ts_roi
+                    M_local[0, 2] -= rx
+                    M_local[1, 2] -= ry
+
+                    rw_i, rh_i = int(round(rw)), int(round(rh))
+                    roi_output, _ = pynegative.apply_tone_map(
+                        chunk_processed, **tone_map_settings, calculate_stats=False
+                    )
+                    roi_output = pynegative.apply_defringe(roi_output, self.settings)
+                    roi_dest = cv2.warpAffine(
+                        roi_output, M_local, (rw_i, rh_i), flags=cv2.INTER_LINEAR
+                    )
+
+                    roi_uint8 = (np.clip(roi_dest, 0, 1) * 255).astype(np.uint8)
+                    qimg_roi = QtGui.QImage(
+                        roi_uint8.data, rw_i, rh_i, 3 * rw_i, QtGui.QImage.Format_RGB888
+                    )
+                    pix_roi = QtGui.QPixmap.fromImage(qimg_roi)
+                    roi_x, roi_y, roi_w, roi_h = rx, ry, rw, rh
+
+        return (
+            pix_bg,
+            new_full_w,
+            new_full_h,
+            pix_roi,
+            roi_x,
+            roi_y,
+            roi_w,
+            roi_h,
+            rotate_val,
+        )
 
     def _calculate_histograms(self, img_array):
-        # Use strided Numba kernel for maximum speed
-        # Stride based on image size to keep samples roughly constant (~65k samples)
         start_time = time.perf_counter()
         h, w = img_array.shape[:2]
-        area = h * w
-        stride = max(1, int(np.sqrt(area / 65536)))
-
-        # Ensure RGB (OpenCV might provide RGBA in some cases, though pipeline uses RGB)
+        stride = max(1, int(np.sqrt((h * w) / 65536)))
         if img_array.shape[2] == 4:
             img_rgb = cv2.cvtColor(img_array, cv2.COLOR_RGBA2RGB)
         else:
             img_rgb = img_array
-
         hr, hg, hb, hy, hu, hv = pynegative.numba_histogram_kernel(img_rgb, stride)
 
         def smooth(h):
@@ -638,9 +623,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "U": smooth(hu),
             "V": smooth(hv),
         }
-
         elapsed = (time.perf_counter() - start_time) * 1000
-        logger.debug(
-            f"Histogram calculation: {elapsed:.2f}ms (stride: {stride}, size: {w}x{h})"
-        )
+        logger.debug(f"Histogram calculation: {elapsed:.2f}ms")
         return result

@@ -43,6 +43,12 @@ class CropRectItem(QtWidgets.QGraphicsObject):
         )
         self._grid_pen.setCosmetic(True)
 
+    def get_event_pos(self, event):
+        """Compatibility helper for Qt6 mouse events."""
+        if hasattr(event, "position"):
+            return event.position()
+        return event.pos()
+
     def boundingRect(self):
         # Add padding for handles
         # Use a very generous padding to ensure rotation handles are hit-testable
@@ -247,7 +253,9 @@ class CropRectItem(QtWidgets.QGraphicsObject):
         }
 
     def hoverMoveEvent(self, event):
-        pos = event.pos()
+        pos = self.get_event_pos(event)
+        if isinstance(pos, QtCore.QPointF):
+            pos = pos.toPoint()
 
         # Check rotation zone first (handle + far outside)
         rotation_handle = self._hit_test_rotation(pos)
@@ -286,14 +294,20 @@ class CropRectItem(QtWidgets.QGraphicsObject):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            pos = event.position()
+            pos = self.get_event_pos(event)
+            if isinstance(pos, QtCore.QPointF):
+                pos = pos.toPoint()
 
             # 1. Check specific rotation handle (top middle)
             handle = self._hit_test_rotation(pos)
             if handle:
                 self._active_rotation_handle = handle
                 self._mouse_press_pos = pos
-                self._rotation_start_angle = self._calculate_angle_from_center(pos)
+                # Use scene coordinates for rotation to avoid jitter when item coordinate system rotates
+                scene_pos = event.scenePos() if hasattr(event, "scenePos") else pos
+                self._rotation_start_angle = self._calculate_angle_from_center(
+                    scene_pos, scene_space=True
+                )
                 self._rotation_start_rotation = self._rotation_angle
                 event.accept()
                 return
@@ -330,7 +344,10 @@ class CropRectItem(QtWidgets.QGraphicsObject):
                 # Far enough outside to rotate
                 self._active_rotation_handle = "general"
                 self._mouse_press_pos = pos
-                self._rotation_start_angle = self._calculate_angle_from_center(pos)
+                scene_pos = event.scenePos() if hasattr(event, "scenePos") else pos
+                self._rotation_start_angle = self._calculate_angle_from_center(
+                    scene_pos, scene_space=True
+                )
                 self._rotation_start_rotation = self._rotation_angle
                 event.accept()
                 return
@@ -339,8 +356,15 @@ class CropRectItem(QtWidgets.QGraphicsObject):
 
     def mouseMoveEvent(self, event):
         if self._active_rotation_handle:
-            # Calculate rotation angle
-            current_angle = self._calculate_angle_from_center(event.position())
+            # Calculate rotation angle using scene coordinates to avoid feedback jitter
+            if hasattr(event, "scenePos"):
+                scene_pos = event.scenePos()
+            else:
+                scene_pos = self.get_event_pos(event)
+
+            current_angle = self._calculate_angle_from_center(
+                scene_pos, scene_space=True
+            )
             delta_angle = current_angle - self._rotation_start_angle
 
             # Handle angle wrapping (crossing the 180/-180 boundary)
@@ -617,11 +641,17 @@ class CropRectItem(QtWidgets.QGraphicsObject):
                 return k
         return None
 
-    def _calculate_angle_from_center(self, pos: QtCore.QPointF) -> float:
+    def _calculate_angle_from_center(
+        self, pos: QtCore.QPointF, scene_space: bool = False
+    ) -> float:
         """Calculate angle in degrees from rect center to position."""
         import math
 
-        center = self._rect.center()
+        if scene_space:
+            center = self.mapToScene(self._rect.center())
+        else:
+            center = self._rect.center()
+
         dx = pos.x() - center.x()
         dy = pos.y() - center.y()
         angle_rad = math.atan2(dy, dx)

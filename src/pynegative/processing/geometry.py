@@ -3,59 +3,155 @@ import cv2
 import numpy as np
 
 
+class GeometryResolver:
+    """
+    Unified geometry engine that composes all affine transformations into a single matrix.
+    Pillar B: Unified Geometry Engine
+    """
+
+    def __init__(self, full_w: int, full_h: int):
+        self.full_w = full_w
+        self.full_h = full_h
+        self.matrix = np.eye(3, dtype=np.float32)
+
+    def reset(self):
+        """Resets the transformation matrix to identity."""
+        self.matrix = np.eye(3, dtype=np.float32)
+
+    def flip(self, horizontal: bool, vertical: bool):
+        """Applies flipping to the matrix."""
+        if not horizontal and not vertical:
+            return
+
+        m = np.eye(3, dtype=np.float32)
+        if horizontal:
+            m[0, 0] = -1
+            m[0, 2] = self.full_w - 1
+        if vertical:
+            m[1, 1] = -1
+            m[1, 2] = self.full_h - 1
+
+        self.matrix = m @ self.matrix
+
+    def rotate(self, angle_deg: float, expand: bool = True):
+        """Applies rotation around the center of the current coordinate space."""
+        if abs(angle_deg) < 1e-4:
+            return
+
+        cx, cy = self.full_w / 2.0, self.full_h / 2.0
+
+        # 1. Standard rotation matrix around origin
+        angle_rad = math.radians(angle_deg)  # Matches cv2 CCW
+        cos_a = math.cos(angle_rad)
+        sin_a = math.sin(angle_rad)
+        r = np.array(
+            [[cos_a, sin_a, 0], [-sin_a, cos_a, 0], [0, 0, 1]], dtype=np.float32
+        )
+
+        # 2. Handle expansion if requested
+        tx, ty = 0, 0
+        if expand:
+            # Calculate new dimensions
+            new_w = int(abs(self.full_h * sin_a) + abs(self.full_w * cos_a))
+            new_h = int(abs(self.full_h * cos_a) + abs(self.full_w * sin_a))
+
+            # Adjust translation to keep centered in new canvas
+            tx = (new_w / 2.0) - cx
+            ty = (new_h / 2.0) - cy
+
+            self.full_w = new_w
+            self.full_h = new_h
+
+        # Compose: Translation to origin -> Rotate -> Translation back + expansion shift
+        t1 = np.eye(3, dtype=np.float32)
+        t1[0, 2] = -cx
+        t1[1, 2] = -cy
+
+        t2 = np.eye(3, dtype=np.float32)
+        t2[0, 2] = cx + tx
+        t2[1, 2] = cy + ty
+
+        m = t2 @ r @ t1
+        self.matrix = m @ self.matrix
+
+    def get_inverse_matrix(self) -> np.ndarray:
+        """Returns the inverse 3x3 matrix."""
+        return np.linalg.inv(self.matrix)
+
+    def get_output_size(self) -> tuple[int, int]:
+        """Returns current bounding box dimensions."""
+        return int(self.full_w), int(self.full_h)
+
+    def crop(self, left: float, top: float, right: float, bottom: float):
+        """
+        Applies a crop. Coordinates are normalized (0.0-1.0) relative to
+        the CURRENT bounding box of the transformed image.
+        """
+        if left == 0.0 and top == 0.0 and right == 1.0 and bottom == 1.0:
+            return
+
+        # Calculate translation based on normalized coordinates
+        tx = left * self.full_w
+        ty = top * self.full_h
+
+        # Update dimensions
+        new_w = (right - left) * self.full_w
+        new_h = (bottom - top) * self.full_h
+
+        m = np.eye(3, dtype=np.float32)
+        m[0, 2] = -tx
+        m[1, 2] = -ty
+
+        self.matrix = m @ self.matrix
+        self.full_w = new_w
+        self.full_h = new_h
+
+    def get_matrix_2x3(self) -> np.ndarray:
+        """Returns the 2x3 affine matrix for OpenCV."""
+        return self.matrix[:2, :]
+
+    def resolve(self, rotate=0.0, crop=None, flip_h=False, flip_v=False, expand=True):
+        """
+        Composes all transforms into the internal matrix.
+        Matches the sequential order: Flip -> Rotate -> Crop.
+        """
+        self.reset()
+        self.flip(flip_h, flip_v)
+        self.rotate(rotate, expand=expand)
+        if crop:
+            self.crop(*crop)
+        return self.get_matrix_2x3()
+
+
 def apply_geometry(img, rotate=0.0, crop=None, flip_h=False, flip_v=False):
     """
     Applies geometric transformations: Flip -> Rotation -> Crop.
-
-    Args:
-        img: numpy array
-        rotate: float (degrees, CCW. Negative values rotate clockwise)
-        crop: tuple (left, top, right, bottom) as normalized coordinates (0.0-1.0).
-              The crop coordinates are relative to the FLIPPED and ROTATED image.
-        flip_h: bool, mirror horizontally
-        flip_v: bool, mirror vertically
+    Unified via GeometryResolver.
     """
     if img is None:
         return None
 
-    # 1. Apply Flip
-    if flip_h or flip_v:
-        # flipCode: 0 for x-axis, 1 for y-axis, -1 for both
-        flip_code = -1 if (flip_h and flip_v) else (1 if flip_h else 0)
-        img = cv2.flip(img, flip_code)
+    h, w = img.shape[:2]
+    resolver = GeometryResolver(w, h)
+    resolver.resolve(
+        rotate=rotate, crop=crop, flip_h=flip_h, flip_v=flip_v, expand=True
+    )
 
-    # 2. Apply Rotation
-    if abs(rotate) > 0.01:
-        h, w = img.shape[:2]
-        center = (w / 2, h / 2)
-        # Use INTER_CUBIC for rotation quality
-        M = cv2.getRotationMatrix2D(center, rotate, 1.0)
-        cos_val = np.abs(M[0, 0])
-        sin_val = np.abs(M[0, 1])
-        new_w = int((h * sin_val) + (w * cos_val))
-        new_h = int((h * cos_val) + (w * sin_val))
-        M[0, 2] += (new_w / 2) - center[0]
-        M[1, 2] += (new_h / 2) - center[1]
-        img = cv2.warpAffine(
-            img,
-            M,
-            (new_w, new_h),
-            flags=cv2.INTER_CUBIC,
-            borderMode=cv2.BORDER_CONSTANT,
-            borderValue=(0, 0, 0),
-        )
+    M = resolver.get_matrix_2x3()
+    out_w, out_h = resolver.get_output_size()
 
-    # 3. Apply Crop
-    if crop is not None:
-        h, w = img.shape[:2]
-        c_left, c_top, c_right, c_bottom = crop
-        x1, y1 = int(c_left * w), int(c_top * h)
-        x2, y2 = int(c_right * w), int(c_bottom * h)
-        x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
-        if x2 > x1 and y2 > y1:
-            img = img[y1:y2, x1:x2]
+    # Ensure output size is at least 1x1
+    out_w = max(1, int(round(out_w)))
+    out_h = max(1, int(round(out_h)))
 
-    return img
+    return cv2.warpAffine(
+        img,
+        M,
+        (out_w, out_h),
+        flags=cv2.INTER_CUBIC,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(0, 0, 0),
+    )
 
 
 def calculate_max_safe_crop(w, h, angle_deg, aspect_ratio=None):

@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class ImageProcessingPipeline(QtCore.QObject):
     previewUpdated = QtCore.Signal(
-        QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int
+        QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int, float
     )
     histogramUpdated = QtCore.Signal(dict)
     performanceMeasured = QtCore.Signal(float)
@@ -147,6 +147,7 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     def set_processing_params(self, **kwargs):
         heavy_keys = {"de_haze", "denoise_luma", "denoise_chroma", "sharpen_value"}
+        geometry_keys = {"rotation", "flip_h", "flip_v", "crop"}
         lens_keys = {
             "lens_distortion",
             "lens_vignette",
@@ -163,6 +164,7 @@ class ImageProcessingPipeline(QtCore.QObject):
 
         changed = False
         lens_changed = False
+        geom_changed = False
         for k, v in kwargs.items():
             if self._processing_params.get(k) != v:
                 self._processing_params[k] = v
@@ -171,9 +173,13 @@ class ImageProcessingPipeline(QtCore.QObject):
                     self._last_heavy_adjusted = k
                 if k in lens_keys:
                     lens_changed = True
+                if k in geometry_keys:
+                    geom_changed = True
 
-        if lens_changed:
-            logger.debug("Invalidating pipeline cache due to lens parameter changes")
+        if lens_changed or geom_changed:
+            logger.debug(
+                f"Invalidating pipeline cache (lens_changed={lens_changed}, geom_changed={geom_changed})"
+            )
             self.cache.invalidate(clear_estimated=False)
 
         if changed:
@@ -269,9 +275,19 @@ class ImageProcessingPipeline(QtCore.QObject):
         elapsed_ms = (time.perf_counter() - self.perf_start_time) * 1000
         self.performanceMeasured.emit(elapsed_ms)
 
-    @QtCore.Slot(QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int, int)
+    @QtCore.Slot(QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int, float, int)
     def _on_worker_finished(
-        self, pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h, request_id
+        self,
+        pix_bg,
+        full_w,
+        full_h,
+        pix_roi,
+        roi_x,
+        roi_y,
+        roi_w,
+        roi_h,
+        rotation,
+        request_id,
     ):
         self._is_rendering_locked = False
 
@@ -290,7 +306,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             self._last_roi_rect = QtCore.QRectF()
 
         self.previewUpdated.emit(
-            pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h
+            pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h, rotation
         )
         self.editedPixmapUpdated.emit(pix_bg)
         self._measure_and_emit_perf()

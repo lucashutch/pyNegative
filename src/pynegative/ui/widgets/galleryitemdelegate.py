@@ -298,10 +298,17 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
         )
         return circle_rect.contains(pos)
 
+    def get_event_pos(self, event):
+        """Compatibility helper for Qt6 mouse events."""
+        if hasattr(event, "position"):
+            return event.position()
+        return event.pos()
+
     def editorEvent(self, event, model, option, index):
         if event.type() == QtCore.QEvent.Type.MouseButtonPress:
+            pos = self.get_event_pos(event)
             # If clicking on the selection circle
-            if self.is_click_on_circle(event.position().toPoint(), option.rect):
+            if self.is_click_on_circle(pos.toPoint(), option.rect):
                 self._circle_clicked = True
                 return False
 
@@ -325,9 +332,9 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
                     // 2
                 )
 
-                if event.position().x() >= stars_x_start:
+                if pos.x() >= stars_x_start:
                     # Determine which star was clicked
-                    rel_y = event.position().y() - stars_y_start
+                    rel_y = pos.y() - stars_y_start
                     for i in range(5):
                         star_y = i * (self.STAR_SIZE + 4)
                         if star_y <= rel_y <= star_y + self.STAR_SIZE:
