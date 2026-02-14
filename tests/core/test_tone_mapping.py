@@ -3,6 +3,7 @@
 
 import pytest
 import numpy as np
+from pynegative.processing.constants import LUMA_R, LUMA_G, LUMA_B
 
 import pynegative
 
@@ -93,8 +94,8 @@ class TestApplyToneMap:
         # Desaturate to 0 (should become grayscale)
         result, _ = pynegative.apply_tone_map(img, saturation=0.0, apply_gamma=False)
 
-        # Luminance for [0.5, 0.2, 0.2] is 0.5*0.2126 + 0.2*0.7152 + 0.2*0.0722 = 0.26378
-        expected_gray = 0.26378
+        # Luminance for [0.5, 0.2, 0.2] is 0.5*LUMA_R + 0.2*LUMA_G + 0.2*LUMA_B
+        expected_gray = 0.5 * LUMA_R + 0.2 * LUMA_G + 0.2 * LUMA_B
         np.testing.assert_array_almost_equal(
             result,
             np.array(
@@ -104,8 +105,8 @@ class TestApplyToneMap:
 
         # Oversaturate
         result, _ = pynegative.apply_tone_map(img, saturation=2.0, apply_gamma=False)
-        # Manual check: lum + (img-lum)*2 = 0.26378 + (0.5-0.26378)*2 = 0.26378 + 0.23622*2 = 0.73622
-        expected_r = 0.73622
+        # Manual check: lum + (img-lum)*2
+        expected_r = expected_gray + (0.5 - expected_gray) * 2.0
         assert result[0, 0, 0] == pytest.approx(expected_r)
 
     def test_edge_case_zero_division_protection(self):

@@ -1,10 +1,11 @@
 import numpy as np
 from numba import njit, prange
+from ..processing.constants import LUMA_R, LUMA_G, LUMA_B
 
 
 @njit(inline="always")
 def _get_luma(r, g, b):
-    return 0.299 * r + 0.587 * g + 0.114 * b
+    return LUMA_R * r + LUMA_G * g + LUMA_B * b
 
 
 @njit(parallel=True)

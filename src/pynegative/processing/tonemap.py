@@ -2,6 +2,7 @@ import logging
 import time
 import math
 import numpy as np
+from .constants import LUMA_R, LUMA_G, LUMA_B
 from ..utils.numba_kernels import tone_map_kernel
 
 logger = logging.getLogger(__name__)
@@ -119,9 +120,9 @@ def calculate_auto_exposure(img):
 
     # 1. Calculate luminance
     lum = (
-        0.2126 * img_small[:, :, 0]
-        + 0.7152 * img_small[:, :, 1]
-        + 0.0722 * img_small[:, :, 2]
+        LUMA_R * img_small[:, :, 0]
+        + LUMA_G * img_small[:, :, 1]
+        + LUMA_B * img_small[:, :, 2]
     )
 
     # Target: 98th percentile should be at ~0.85 (bright but not clipped)

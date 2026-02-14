@@ -22,8 +22,8 @@ def test_defringe_logic():
     defringe_kernel(img, out, 1.0, 0.0, 0.05, 1.0)
 
     # Check that the magenta pixel at (5,8) was desaturated
-    # Luma of (1, 0.2, 1) is roughly 0.299*1 + 0.587*0.2 + 0.114*1 = 0.53
-    # Channels should move towards ~0.53
+    # Luma of (1, 0.2, 1) is roughly 0.2126*1 + 0.7152*0.2 + 0.0722*1 = 0.428
+    # Channels should move towards ~0.428
     assert out[5, 8, 0] < 0.7
     assert out[5, 8, 1] > 0.4
     assert out[5, 8, 2] < 0.7

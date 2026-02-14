@@ -8,7 +8,7 @@ dist/
 build/
 plan.md
 task.md
-.opencode/
+.opencode/*
 data/
 .ignore
 
