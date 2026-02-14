@@ -395,6 +395,18 @@ class EditorWidget(QtWidgets.QWidget):
     def _on_setting_changed(self, setting_name, value):
         self.image_processor.set_processing_params(**{setting_name: value})
 
+        if setting_name == "crop" and value is None:
+            # If crop is reset to None, and we are in crop mode, reset the visual rect
+            if self.editing_controls.geometry_controls.crop_btn.isChecked():
+                scene_rect = self.view.sceneRect()
+                if not scene_rect.isEmpty():
+                    self.view.set_crop_rect(scene_rect)
+                    # Also update safe bounds for current rotation
+                    rotate_val = self.image_processor.get_current_settings().get(
+                        "rotation", 0.0
+                    )
+                    self.crop_manager.update_safe_bounds(rotate_val)
+
         if setting_name in ["flip_h", "flip_v"]:
             current_settings = self.image_processor.get_current_settings()
             current_crop = current_settings.get("crop")
