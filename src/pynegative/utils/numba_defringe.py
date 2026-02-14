@@ -43,13 +43,13 @@ def defringe_kernel(img, out, purple_thresh, green_thresh, edge_thresh, radius):
 
             # 2. Color Analysis
             r, g, b = img[y, x, 0], img[y, x, 1], img[y, x, 2]
-            l = luma[y, x]
+            luma_val = luma[y, x]
 
             # Cr and Cb approx (Red-Green and Blue-Yellow scales)
             # Purple: Cr > 0, Cb > 0
             # Green: Cr < 0, Cb < 0
-            cr = r - l
-            cb = b - l
+            cr = r - luma_val
+            cb = b - luma_val
 
             is_purple = cr > 0.01 and cb > 0.01
             is_green = cr < -0.01 and cb < -0.01
@@ -66,7 +66,7 @@ def defringe_kernel(img, out, purple_thresh, green_thresh, edge_thresh, radius):
             if suppression > 0:
                 # Move towards luma (desaturate)
                 out[y, x, 0] = r - cr * suppression
-                out[y, x, 1] = g + (l - g) * suppression
+                out[y, x, 1] = g + (luma_val - g) * suppression
                 out[y, x, 2] = b - cb * suppression
             else:
                 out[y, x, 0] = r
