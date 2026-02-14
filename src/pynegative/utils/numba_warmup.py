@@ -46,8 +46,8 @@ def warmup_kernels() -> tuple[bool, float]:
     atmospheric = np.array([0.5, 0.5, 0.5], dtype=np.float32)
 
     # 1. tone_map_kernel(img, exposure, contrast, blacks, whites,
-    #                    shadows, highlights, saturation, r, g, b)
-    tone_map_kernel(img3.copy(), 1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
+    #                    shadows, highlights, saturation, r, g, b, apply_gamma)
+    tone_map_kernel(img3.copy(), 1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, True)
 
     # 2. sharpen_kernel(img, blurred, percent)
     sharpen_kernel(img3.copy(), img3.copy(), 50.0)

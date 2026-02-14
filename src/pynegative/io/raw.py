@@ -50,8 +50,13 @@ def open_raw(path, half_size=False, output_bps=8):
                 img = img.convert("RGB")
             if half_size:
                 img.thumbnail((img.width // 2, img.height // 2))
-            rgb = np.array(img)
-            return rgb.astype(np.float32) / 255.0
+            rgb = np.array(img).astype(np.float32) / 255.0
+            # Linearize sRGB for consistent pipeline processing (Pillar A)
+            # Standard sRGB to linear conversion
+            mask = rgb <= 0.04045
+            rgb[mask] = rgb[mask] / 12.92
+            rgb[~mask] = ((rgb[~mask] + 0.055) / 1.055) ** 2.4
+            return rgb
 
     path_str = str(path)
     with rawpy.imread(path_str) as raw:
@@ -60,6 +65,7 @@ def open_raw(path, half_size=False, output_bps=8):
             half_size=half_size,
             no_auto_bright=True,  # Disable auto-brighten to allow manual recovery
             bright=1.0,
+            gamma=(1, 1),  # Force linear output (Pillar A: The Truth Layer)
             output_bps=output_bps,
         )
 

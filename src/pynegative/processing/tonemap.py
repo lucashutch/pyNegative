@@ -19,6 +19,7 @@ def apply_tone_map(
     highlights=0.0,
     saturation=1.0,
     calculate_stats=True,
+    apply_gamma=True,  # New parameter (Pillar A)
 ):
     """
     Applies White Balance -> Exposure -> Levels -> Tone EQ -> Saturation -> Base Curve
@@ -47,8 +48,9 @@ def apply_tone_map(
         highlights = safe_float(highlights, 0.0)
         saturation = safe_float(saturation, 1.0)
 
-        # Ensure calculate_stats is boolean
+        # Ensure calculate_stats and apply_gamma are boolean
         calculate_stats = bool(calculate_stats)
+        apply_gamma = bool(apply_gamma)
 
     except Exception as e:
         logger.error(f"Error sanitizing apply_tone_map parameters: {e}")
@@ -86,6 +88,7 @@ def apply_tone_map(
         r_mult,
         g_mult,
         b_mult,
+        apply_gamma,
     )
 
     if calculate_stats:
