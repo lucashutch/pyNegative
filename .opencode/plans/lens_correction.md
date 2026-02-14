@@ -182,9 +182,9 @@ The app **never crashes** if the lens database is missing:
 - [x] Tests for XML parsing and lens matching
 
 ### Phase 2: Distortion Correction
-- [ ] Implement `src/pynegative/processing/lens.py` distortion correction
-- [ ] Add lens stage to pipeline worker
-- [ ] Integrate with lens controls
+- [x] Implement `src/pynegative/processing/lens.py` distortion correction
+- [x] Add lens stage to pipeline worker
+- [x] Integrate with lens controls
 
 ### Phase 3: Vignette Correction
 - [ ] Implement vignette correction in processing/lens.py

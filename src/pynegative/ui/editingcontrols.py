@@ -303,6 +303,8 @@ class EditingControls(QtWidgets.QWidget):
             else None,
             "lens_auto_detect": self.lens_controls.camera_combo.currentIndex() == 0
             and self.lens_controls.lens_combo.currentIndex() == 0,
+            "lens_enabled": self.lens_controls.enable_check.isChecked(),
+            "lens_autocrop": self.lens_controls.autocrop_check.isChecked(),
         }
 
         # Collect raw slider values
@@ -411,6 +413,16 @@ class EditingControls(QtWidgets.QWidget):
                     val = settings.get(var, 0.0)
 
                 ctrl.set_slider_value(var, val, silent=True)
+
+        if "lens_enabled" in settings:
+            self.lens_controls.enable_check.blockSignals(True)
+            self.lens_controls.enable_check.setChecked(settings["lens_enabled"])
+            self.lens_controls.enable_check.blockSignals(False)
+
+        if "lens_autocrop" in settings:
+            self.lens_controls.autocrop_check.blockSignals(True)
+            self.lens_controls.autocrop_check.setChecked(settings["lens_autocrop"])
+            self.lens_controls.autocrop_check.blockSignals(False)
 
         # 3. Handle lens overrides
         self.lens_controls.camera_combo.blockSignals(True)

@@ -71,12 +71,20 @@ def get_exposure_info(tags: Dict[str, Any]) -> Dict[str, Any]:
         info["shutter_speed"] = shutter
 
     # Aperture
-    aperture = tags.get("EXIF FNumber") or tags.get("Image FNumber")
+    aperture = (
+        tags.get("EXIF FNumber")
+        or tags.get("Image FNumber")
+        or tags.get("Image ApertureValue")
+    )
     if aperture:
         info["aperture"] = aperture
 
     # Focal Length
-    focal = tags.get("EXIF FocalLength") or tags.get("Image FocalLength")
+    focal = (
+        tags.get("EXIF FocalLength")
+        or tags.get("Image FocalLength")
+        or tags.get("EXIF FocalLengthIn35mmFilm")
+    )
     if focal:
         info["focal_length"] = focal
 

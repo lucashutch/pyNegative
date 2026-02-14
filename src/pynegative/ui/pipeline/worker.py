@@ -88,6 +88,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         cache=None,
         last_heavy_adjusted="de_haze",
         expand_roi=False,
+        lens_info=None,
     ):
         super().__init__()
         self.signals = signals
@@ -100,6 +101,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.cache = cache
         self.last_heavy_adjusted = last_heavy_adjusted
         self.expand_roi = expand_roi
+        self.lens_info = lens_info
 
     def run(self):
         try:
@@ -107,6 +109,39 @@ class ImageProcessorWorker(QtCore.QRunnable):
             self.signals.finished.emit(*result, self.request_id)
         except Exception as e:
             self.signals.error.emit(str(e), self.request_id)
+
+    def _process_lens_stage(self, img, res_key, scale, roi_offset=None, full_size=None):
+        """Processes lens correction stage (distortion, etc.)"""
+        # 0. Check if lens correction is enabled globally
+        if not self.settings.get("lens_enabled", True):
+            return img
+
+        # 1. Check for manual slider
+        k1 = self.settings.get("lens_distortion", 0.0)
+
+        # 2. Check for auto-correction in lens_info
+        has_auto = False
+        if self.lens_info and "distortion" in self.lens_info:
+            has_auto = self.lens_info["distortion"] is not None
+
+        if abs(k1) < 1e-5 and not has_auto:
+            return img
+
+        # Apply distortion correction
+        t0 = time.perf_counter()
+        # total_k1 logic is inside apply_lens_correction
+        result = pynegative.apply_lens_correction(
+            img, self.settings, self.lens_info, scale, roi_offset, full_size
+        )
+        elapsed = (time.perf_counter() - t0) * 1000
+
+        # Determine if we should log based on whether ANY correction is happening
+        k1_manual = self.settings.get("lens_distortion", 0.0)
+        has_auto = self.lens_info and self.lens_info.get("distortion")
+
+        if abs(k1_manual) > 1e-5 or has_auto:
+            logger.info(f"Lens Correction ({res_key}): {elapsed:.2f}ms")
+        return result
 
     def _process_heavy_stage(self, img, res_key, heavy_params, zoom_scale):
         """Processes and caches the heavy effects stage for a full image tier."""
@@ -371,8 +406,17 @@ class ImageProcessorWorker(QtCore.QRunnable):
             new_full_w = cached_w
             new_full_h = cached_h
         else:
+            # LENS STAGE (Correction)
+            corrected_bg = self._process_lens_stage(
+                img_render_base,
+                res_key,
+                selected_scale,
+                roi_offset=(0, 0),
+                full_size=(selected_img.shape[1], selected_img.shape[0]),
+            )
+
             processed_bg = self._process_heavy_stage(
-                img_render_base, res_key, heavy_params, zoom_scale
+                corrected_bg, res_key, heavy_params, zoom_scale
             )
             bg_output, _ = pynegative.apply_tone_map(
                 processed_bg, **tone_map_settings, calculate_stats=False
@@ -500,9 +544,21 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     p_x2, p_y2 = min(w_tier, s_x2 + pad), min(h_tier, s_y2 + pad)
 
                     raw_chunk = base_roi_img[p_y1:p_y2, p_x1:p_x2]
+
+                    # LENS STAGE (Correction)
+                    # Note: Correcting a chunk without proper ROI map slicing is an approximation
+                    # but should work for small distortions.
+                    corrected_chunk = self._process_lens_stage(
+                        raw_chunk,
+                        res_key_roi,
+                        tier_scale_roi,
+                        roi_offset=(p_x1, p_y1),
+                        full_size=(w_tier, h_tier),
+                    )
+
                     roi_res_id = (res_key_roi, p_x1, p_y1, p_x2, p_y2)
                     processed_chunk_padded = self._process_heavy_stage(
-                        raw_chunk, roi_res_id, heavy_params, zoom_scale
+                        corrected_chunk, roi_res_id, heavy_params, zoom_scale
                     )
 
                     if self.cache:

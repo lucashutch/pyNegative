@@ -43,6 +43,18 @@ class LensControls(BaseControlWidget):
         self.auto_detect_btn.clicked.connect(self._on_auto_detect)
         status_row.addWidget(self.auto_detect_btn)
 
+        self.enable_check = QtWidgets.QCheckBox("Enable Correction")
+        self.enable_check.setStyleSheet("font-size: 10px; color: #aaa;")
+        self.enable_check.setChecked(True)
+        self.enable_check.stateChanged.connect(self._on_selection_changed)
+        status_row.insertWidget(1, self.enable_check)
+
+        self.autocrop_check = QtWidgets.QCheckBox("Auto Crop")
+        self.autocrop_check.setStyleSheet("font-size: 10px; color: #aaa;")
+        self.autocrop_check.setChecked(True)
+        self.autocrop_check.stateChanged.connect(self._on_selection_changed)
+        status_row.insertWidget(2, self.autocrop_check)
+
         self.section.add_layout(status_row)
 
         combo_style = """
@@ -124,14 +136,29 @@ class LensControls(BaseControlWidget):
         self._populate_combos()
 
     def reset_section(self):
+        self.camera_combo.blockSignals(True)
+        self.lens_combo.blockSignals(True)
+        self.enable_check.blockSignals(True)
+        self.autocrop_check.blockSignals(True)
+
         self.camera_combo.setCurrentIndex(0)
         self.lens_combo.setCurrentIndex(0)
+        self.enable_check.setChecked(True)
+        self.autocrop_check.setChecked(True)
+
+        self.camera_combo.blockSignals(False)
+        self.lens_combo.blockSignals(False)
+        self.enable_check.blockSignals(False)
+        self.autocrop_check.blockSignals(False)
+
         self.set_slider_value("lens_distortion", 0.0)
         self.set_slider_value("lens_vignette", 0.0)
         self.set_slider_value("lens_ca", 0.0)
 
         self.settingChanged.emit("lens_camera_override", None)
         self.settingChanged.emit("lens_name_override", None)
+        self.settingChanged.emit("lens_enabled", True)
+        self.settingChanged.emit("lens_autocrop", True)
         self.settingChanged.emit("lens_distortion", 0.0)
         self.settingChanged.emit("lens_vignette", 0.0)
         self.settingChanged.emit("lens_ca", 0.0)
@@ -209,26 +236,13 @@ class LensControls(BaseControlWidget):
         model = exif.get("camera_model", "").strip()
 
         # Avoid duplicate maker if it's already in the model string
-        if make.lower() in model.lower():
+        if make and model and model.lower().startswith(make.lower()):
             det_cam = model
         else:
             det_cam = f"{make} {model}".strip()
 
-        # Fix for duplicate maker in lens name
+        # Clean lens name is now provided by lens_resolver
         det_lens = info.get("name") or ""
-        # If lens data is from lensfun, it might already have the maker in it
-        if "lens_data" in info and det_lens:
-            lens_maker = info["lens_data"].get("maker", "").strip()
-            if lens_maker.lower() in det_lens.lower():
-                # Already includes maker correctly
-                pass
-            else:
-                det_lens = f"{lens_maker} {det_lens}".strip()
-
-        # Final sanity check for duplicate maker in det_lens (e.g. "Canon Canon EF")
-        parts = det_lens.split()
-        if len(parts) >= 2 and parts[0].lower() == parts[1].lower():
-            det_lens = " ".join(parts[1:])
 
         self.camera_combo.blockSignals(True)
         self.lens_combo.blockSignals(True)
@@ -256,6 +270,8 @@ class LensControls(BaseControlWidget):
 
         self.settingChanged.emit("lens_camera_override", cam)
         self.settingChanged.emit("lens_name_override", lens)
+        self.settingChanged.emit("lens_enabled", self.enable_check.isChecked())
+        self.settingChanged.emit("lens_autocrop", self.autocrop_check.isChecked())
 
         # Update status immediately
         if cam_idx > 0 or lens_idx > 0:

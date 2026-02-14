@@ -27,6 +27,7 @@ from .processing.tonemap import (
 )
 from .processing.geometry import apply_geometry, calculate_max_safe_crop
 from .processing.effects import sharpen_image, de_noise_image, de_haze_image
+from .processing.lens import apply_lens_correction
 from .utils.numba_kernels import numba_histogram_kernel
 
 __all__ = [
@@ -54,6 +55,7 @@ __all__ = [
     "calculate_auto_wb",
     "apply_geometry",
     "calculate_max_safe_crop",
+    "apply_lens_correction",
     "sharpen_image",
     "de_noise_image",
     "de_haze_image",

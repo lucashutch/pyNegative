@@ -91,6 +91,71 @@ class LensDatabase:
                     }
                 )
 
+    def get_distortion_params(self, lens: Dict, focal_length: float) -> Optional[Dict]:
+        """
+        Extract and interpolate distortion parameters for a given focal length.
+        """
+        element = lens.get("raw_element")
+        if element is None:
+            return None
+
+        calib = element.find("calibration")
+        if calib is None:
+            return None
+
+        # Find all distortion entries
+        dist_entries = []
+        for dist in calib.findall("distortion"):
+            try:
+                model = dist.get("model")
+                f = float(dist.get("focal", 0))
+                # Collect all attributes that are floats (k1, k2, k3, a, b, c)
+                params = {"model": model, "focal": f}
+                for key, val in dist.attrib.items():
+                    if key not in ["model", "focal"]:
+                        try:
+                            params[key] = float(val)
+                        except ValueError:
+                            pass
+                dist_entries.append(params)
+            except (ValueError, TypeError):
+                continue
+
+        if not dist_entries:
+            return None
+
+        # Sort by focal length
+        dist_entries.sort(key=lambda x: x["focal"])
+
+        # Interpolate
+        if focal_length <= dist_entries[0]["focal"]:
+            return dist_entries[0]
+        if focal_length >= dist_entries[-1]["focal"]:
+            return dist_entries[-1]
+
+        # Linear interpolation between nearest points
+        for i in range(len(dist_entries) - 1):
+            d1 = dist_entries[i]
+            d2 = dist_entries[i + 1]
+            if d1["focal"] <= focal_length <= d2["focal"]:
+                # Ensure they use the same model (unlikely to change, but safety first)
+                if d1["model"] != d2["model"]:
+                    return (
+                        d1
+                        if abs(focal_length - d1["focal"])
+                        < abs(focal_length - d2["focal"])
+                        else d2
+                    )
+
+                t = (focal_length - d1["focal"]) / (d2["focal"] - d1["focal"])
+                result = {"model": d1["model"], "focal": focal_length}
+                for key in d1:
+                    if key not in ["model", "focal"]:
+                        result[key] = d1[key] + t * (d2[key] - d1[key])
+                return result
+
+        return dist_entries[0]
+
     def find_lens(
         self,
         camera_maker: str,
@@ -103,11 +168,14 @@ class LensDatabase:
             return None
 
         # 1. Normalize inputs
-        lens_model_lower = lens_model.strip().lower()
-        camera_maker_lower = camera_maker.strip().lower()
+        def normalize(s):
+            return "".join(c for c in s.lower() if c.isalnum())
+
+        lens_model_norm = normalize(lens_model)
+        camera_maker_norm = normalize(camera_maker)
 
         # If lens model is empty or too short, we can't reliably match
-        if len(lens_model_lower) < 2:
+        if len(lens_model_norm) < 2:
             return None
 
         best_match = None
@@ -115,6 +183,8 @@ class LensDatabase:
 
         for lens in self.lenses:
             score = 0
+            db_model_norm = normalize(lens["model"])
+            db_maker_norm = normalize(lens["maker"])
 
             # Tier 1: Hardware Specs Check (Focal length and Aperture)
             # If we have EXIF specs, they MUST be within the lens's physical range
@@ -146,30 +216,27 @@ class LensDatabase:
                     score += 10
 
             # Tier 2: String matching
-            # Exact match is highest priority
-            if lens_model_lower == lens["model_lower"]:
+            # Exact match on normalized strings is highest priority
+            if lens_model_norm == db_model_norm:
                 score += 100
 
-            # Check if lens_model is a substring of DB model or vice versa
-            if (
-                lens_model_lower in lens["model_lower"]
-                or lens["model_lower"] in lens_model_lower
-            ):
+            # Check if lens_model is a substring of DB model or vice versa (normalized)
+            if lens_model_norm in db_model_norm or db_model_norm in lens_model_norm:
                 score += 20
 
                 # Check maker match
                 if (
-                    lens["maker_lower"] in camera_maker_lower
-                    or camera_maker_lower in lens["maker_lower"]
+                    db_maker_norm in camera_maker_norm
+                    or camera_maker_norm in db_maker_norm
                 ):
                     score += 5
 
                 # If lens name contains the DB maker name, it's a good sign
-                if lens["maker_lower"] in lens_model_lower:
+                if db_maker_norm in lens_model_norm:
                     score += 15
 
                 # Length similarity (prefer closer match lengths)
-                len_diff = abs(len(lens_model_lower) - len(lens["model_lower"]))
+                len_diff = abs(len(lens_model_norm) - len(db_model_norm))
                 score += max(0, 10 - len_diff // 2)
 
             if score > best_score:
@@ -177,7 +244,6 @@ class LensDatabase:
                 best_match = lens
 
         # Minimum score threshold to avoid garbage matches
-        # If we have a decent string match (20+) or specs + string match
         if best_score >= 20:
             return best_match
 

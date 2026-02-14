@@ -65,10 +65,17 @@ def resolve_lens_profile(
         )
         if matched_lens:
             name = format_lens_name(matched_lens["maker"], matched_lens["model"])
-            logger.info(f"Matched lensfun profile: {name}")
+            logger.debug(f"Matched lensfun profile: {name}")
+
+            # Get distortion params if available
+            distortion = None
+            if focal_length is not None:
+                distortion = db.get_distortion_params(matched_lens, focal_length)
+
             return ProfileSource.LENSFUN_DB, {
                 "name": name,
                 "lens_data": matched_lens,
+                "distortion": distortion,
                 "exif": exif_info,
             }
 

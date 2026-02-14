@@ -29,16 +29,25 @@ def extract_lens_info(raw_path: str | Path) -> Dict[str, Any]:
     def to_float(val):
         if val is None:
             return None
+
+        # Handle lists/sequences (common in EXIF tags)
+        if isinstance(val, (list, tuple)) and len(val) > 0:
+            val = val[0]
+
         try:
             if hasattr(val, "num") and hasattr(val, "den"):
                 return float(val.num) / float(val.den) if val.den != 0 else None
+
             s = str(val)
+            # Remove brackets if it was converted from a list to string "[18]"
+            s = s.replace("[", "").replace("]", "").strip()
+
             if "/" in s:
                 parts = s.split("/")
                 return (
                     float(parts[0]) / float(parts[1]) if float(parts[1]) != 0 else None
                 )
-            return float(val)
+            return float(s)
         except (ValueError, TypeError):
             return None
 

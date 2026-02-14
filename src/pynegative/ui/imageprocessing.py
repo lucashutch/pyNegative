@@ -36,6 +36,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._view_ref = None
         self.perf_start_time = 0
         self.histogram_enabled = False
+        self.lens_info = None
 
         self._current_request_id = 0
         self._last_processed_id = -1
@@ -135,6 +136,10 @@ class ImageProcessingPipeline(QtCore.QObject):
         if enabled:
             self.request_update()
 
+    def set_lens_info(self, info):
+        self.lens_info = info
+        self.request_update()
+
     def set_processing_params(self, **kwargs):
         heavy_keys = {"de_haze", "denoise_luma", "denoise_chroma", "sharpen_value"}
         for k in kwargs:
@@ -222,6 +227,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             cache=self.cache,
             last_heavy_adjusted=self._last_heavy_adjusted,
             expand_roi=expand_roi,
+            lens_info=self.lens_info,
         )
         self.thread_pool.start(worker)
 

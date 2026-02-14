@@ -536,6 +536,7 @@ class EditorWidget(QtWidgets.QWidget):
 
             source, resolved = lens_resolver.resolve_lens_profile(path)
             self.editing_controls.lens_controls.set_lens_info(source, resolved or {})
+            self.image_processor.set_lens_info(resolved)
 
             loaded_crop = settings.get("crop")
             rotate_val = settings.get("rotation", 0.0)
