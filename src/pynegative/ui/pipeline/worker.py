@@ -406,16 +406,39 @@ class ImageProcessorWorker(QtCore.QRunnable):
             remapped_channels = []
             for i in range(3):
                 mx, my = fused_maps[i]
-                remapped_channels.append(cv2.remap(channels[i], mx, my, interpolation))
+                remapped_channels.append(
+                    cv2.remap(
+                        channels[i],
+                        mx,
+                        my,
+                        interpolation,
+                        borderMode=cv2.BORDER_CONSTANT,
+                        borderValue=0,
+                    )
+                )
             return cv2.merge(remapped_channels)
         elif len(fused_maps) == 1:
             m = fused_maps[0]
             if isinstance(m, tuple):
                 # Distortion map
-                return cv2.remap(img, m[0], m[1], interpolation)
+                return cv2.remap(
+                    img,
+                    m[0],
+                    m[1],
+                    interpolation,
+                    borderMode=cv2.BORDER_CONSTANT,
+                    borderValue=0,
+                )
             else:
                 # Affine matrix
-                return cv2.warpAffine(img, m, (out_w, out_h), flags=interpolation)
+                return cv2.warpAffine(
+                    img,
+                    m,
+                    (out_w, out_h),
+                    flags=interpolation,
+                    borderMode=cv2.BORDER_CONSTANT,
+                    borderValue=0,
+                )
         return img
 
     def _update_preview(self):

@@ -11,6 +11,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
     doubleClicked = Signal()
     cropRectChanged = Signal(QRectF)
     rotationChanged = Signal(float)  # Forward rotation changes from crop item
+    interactionFinished = Signal()
 
     ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0]
 
@@ -51,6 +52,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self._crop_item.cropChanged.connect(self.cropRectChanged.emit)
         self._crop_item.cropChanged.connect(self._on_crop_rect_changed)
         self._crop_item.rotationChanged.connect(self.rotationChanged.emit)
+        self._crop_item.interactionFinished.connect(self.interactionFinished.emit)
 
         self._current_zoom = 1.0
         self._fit_in_view_scale = 1.0

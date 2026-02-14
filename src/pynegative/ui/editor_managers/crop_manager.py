@@ -45,20 +45,7 @@ class CropManager(QtCore.QObject):
                 else:
                     self.editor.view.set_crop_rect(QtCore.QRectF(0, 0, W, H))
 
-                # Safe bounds
-                text = self.editor.editing_controls.geometry_controls.aspect_ratio_combo.currentText()
-                ratio = self._text_to_ratio(text)
-                safe_crop = pynegative.calculate_max_safe_crop(
-                    w, h, rotate_val, aspect_ratio=ratio
-                )
-                c_safe_l, c_safe_t, c_safe_r, c_safe_b = safe_crop
-                safe_rect = QtCore.QRectF(
-                    c_safe_l * W,
-                    c_safe_t * H,
-                    (c_safe_r - c_safe_l) * W,
-                    (c_safe_b - c_safe_t) * H,
-                )
-                self.editor.view.set_crop_safe_bounds(safe_rect)
+                self.update_safe_bounds(rotate_val)
 
             self.editor.image_processor.set_processing_params(crop=None)
             self.editor._request_update_from_view()
@@ -103,6 +90,49 @@ class CropManager(QtCore.QObject):
         self.editor.editing_controls.set_slider_value("rotation", angle, silent=True)
         if not self._rotation_handle_throttle_timer.isActive():
             self._rotation_handle_throttle_timer.start()
+
+    def handle_interaction_finished(self):
+        """Called when mouse is released after rotation/crop interaction."""
+        current_settings = self.editor.image_processor.get_current_settings()
+        rotate_val = current_settings.get("rotation", 0.0)
+        self.update_safe_bounds(rotate_val)
+
+    def update_safe_bounds(self, rotate_val: float):
+        """Calculates and updates the crop safe bounds for the given rotation."""
+        if self.editor.image_processor.base_img_full is None:
+            return
+
+        h, w = self.editor.image_processor.base_img_full.shape[:2]
+        phi = abs(math.radians(rotate_val))
+        W = w * math.cos(phi) + h * math.sin(phi)
+        H = w * math.sin(phi) + h * math.cos(phi)
+
+        text = self.editor.editing_controls.geometry_controls.aspect_ratio_combo.currentText()
+        ratio = self._text_to_ratio(text)
+
+        safe_crop = pynegative.calculate_max_safe_crop(
+            w, h, rotate_val, aspect_ratio=ratio
+        )
+        c_safe_l, c_safe_t, c_safe_r, c_safe_b = safe_crop
+        safe_rect = QtCore.QRectF(
+            c_safe_l * W,
+            c_safe_t * H,
+            (c_safe_r - c_safe_l) * W,
+            (c_safe_b - c_safe_t) * H,
+        )
+        self.editor.view.set_crop_safe_bounds(safe_rect)
+
+        # Clip current crop to safe rect if it's out of bounds
+        current_crop_rect = self.editor.view.get_crop_rect()
+        if not safe_rect.contains(current_crop_rect):
+            # Clamp current rect to safe bounds while trying to preserve size/ratio
+            r = current_crop_rect.intersected(safe_rect)
+            if self._text_to_ratio(text) is not None:
+                # If ratio is locked, we might need a more sophisticated shrink-to-fit.
+                # For now, just set to safe_rect as a fallback if intersection breaks ratio.
+                if abs(r.width() / r.height() - ratio) > 0.01:
+                    r = safe_rect
+            self.editor.view.set_crop_rect(r)
 
     def _apply_pending_rotation(self):
         if self._pending_rotation_from_handle is None:

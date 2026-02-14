@@ -128,14 +128,16 @@ class GeometryResolver:
             M,
             (out_w, out_h),
             flags=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_REPLICATE,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=-1.0,
         )
         fused_y = cv2.warpAffine(
             lens_map_y,
             M,
             (out_w, out_h),
             flags=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_REPLICATE,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=-1.0,
         )
 
         return fused_x, fused_y

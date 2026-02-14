@@ -231,6 +231,9 @@ class EditorWidget(QtWidgets.QWidget):
         self.editing_controls.presetApplied.connect(self._on_preset_applied)
 
         self.view.rotationChanged.connect(self.crop_manager.handle_rotation_changed)
+        self.view.interactionFinished.connect(
+            self.crop_manager.handle_interaction_finished
+        )
 
         self.editing_controls.histogram_section.expandedChanged.connect(
             self.image_processor.set_histogram_enabled
@@ -417,29 +420,34 @@ class EditorWidget(QtWidgets.QWidget):
             and self.image_processor.base_img_full is not None
         ):
             rotate_val = value
-            if self.editing_controls.geometry_controls.crop_btn.isChecked():
-                self.view.set_rotation(rotate_val)
             h, w = self.image_processor.base_img_full.shape[:2]
             text = (
                 self.editing_controls.geometry_controls.aspect_ratio_combo.currentText()
             )
             ratio = self.crop_manager._text_to_ratio(text)
-            safe_crop = pynegative.calculate_max_safe_crop(
-                w, h, rotate_val, aspect_ratio=ratio
-            )
-            phi = abs(math.radians(rotate_val))
-            W = w * math.cos(phi) + h * math.sin(phi)
-            H = w * math.sin(phi) + math.cos(phi) * h
-            c_left, c_top, c_right, c_bottom = safe_crop
-            safe_rect = QtCore.QRectF(
-                c_left * W, c_top * H, (c_right - c_left) * W, (c_bottom - c_top) * H
-            )
-            self.view.set_crop_safe_bounds(safe_rect)
+
             if self.editing_controls.geometry_controls.crop_btn.isChecked():
-                self.view.set_crop_rect(safe_rect)
-                self.image_processor.set_processing_params(crop=None)
+                self.view.set_rotation(rotate_val)
+                # Only update safe bounds immediately on SLIDER move
+                self.crop_manager.update_safe_bounds(rotate_val)
             else:
+                # If not in crop mode, automatically update to the best fitting safe crop
+                safe_crop = pynegative.calculate_max_safe_crop(
+                    w, h, rotate_val, aspect_ratio=ratio
+                )
                 self.image_processor.set_processing_params(crop=safe_crop)
+                # Still need to update safe bounds in the view for when we enter crop mode
+                phi = abs(math.radians(rotate_val))
+                W = w * math.cos(phi) + h * math.sin(phi)
+                H = w * math.sin(phi) + math.cos(phi) * h
+                c_safe_l, c_safe_t, c_safe_r, c_safe_b = safe_crop
+                safe_rect = QtCore.QRectF(
+                    c_safe_l * W,
+                    c_safe_t * H,
+                    (c_safe_r - c_safe_l) * W,
+                    (c_safe_b - c_safe_t) * H,
+                )
+                self.view.set_crop_safe_bounds(safe_rect)
 
         if (
             setting_name in ["lens_name_override", "lens_camera_override"]
