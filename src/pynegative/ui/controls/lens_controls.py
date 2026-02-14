@@ -67,13 +67,17 @@ class LensControls(BaseControlWidget):
         self.camera_combo.setStyleSheet(combo_style)
         self.camera_combo.setEditable(True)
         self.camera_combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
-        if self.camera_combo.completer():
-            self.camera_combo.completer().setCompletionMode(
-                QtWidgets.QCompleter.CompletionMode.PopupCompletion
-            )
-            self.camera_combo.completer().setFilterMode(
-                QtCore.Qt.MatchFlag.MatchContains
-            )
+
+        # Improve Completer
+        cam_completer = QtWidgets.QCompleter()
+        cam_completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        cam_completer.setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
+        cam_completer.setCompletionMode(
+            QtWidgets.QCompleter.CompletionMode.PopupCompletion
+        )
+        cam_completer.setModel(self.camera_combo.model())
+        self.camera_combo.setCompleter(cam_completer)
+
         cam_row.addWidget(self.camera_combo)
         self.section.add_layout(cam_row)
 
@@ -88,11 +92,16 @@ class LensControls(BaseControlWidget):
         self.lens_combo.setStyleSheet(combo_style)
         self.lens_combo.setEditable(True)
         self.lens_combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
-        if self.lens_combo.completer():
-            self.lens_combo.completer().setCompletionMode(
-                QtWidgets.QCompleter.CompletionMode.PopupCompletion
-            )
-            self.lens_combo.completer().setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
+
+        # Improve Completer
+        completer = QtWidgets.QCompleter()
+        completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        completer.setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
+        completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
+        # Link to the combo box's model
+        completer.setModel(self.lens_combo.model())
+        self.lens_combo.setCompleter(completer)
+
         lens_row.addWidget(self.lens_combo)
         self.section.add_layout(lens_row)
 
@@ -139,7 +148,18 @@ class LensControls(BaseControlWidget):
         self.lens_combo.blockSignals(True)
 
         self.camera_combo.clear()
-        cameras = sorted(list(set(f"{c['maker']} {c['model']}" for c in db.cameras)))
+
+        # Build camera names with deduplication
+        cam_names = set()
+        for c in db.cameras:
+            maker = c["maker"].strip()
+            model = c["model"].strip()
+            if model.lower().startswith(maker.lower()):
+                cam_names.add(model)
+            else:
+                cam_names.add(f"{maker} {model}")
+
+        cameras = sorted(list(cam_names))
         self.camera_combo.addItems(["Auto"] + cameras)
 
         self.lens_combo.clear()

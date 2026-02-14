@@ -39,7 +39,7 @@ def extract_lens_info(raw_path: str | Path) -> Dict[str, Any]:
                     float(parts[0]) / float(parts[1]) if float(parts[1]) != 0 else None
                 )
             return float(val)
-        except:
+        except (ValueError, TypeError):
             return None
 
     # 1. Try rawpy (LibRaw) - robust for RAW formats

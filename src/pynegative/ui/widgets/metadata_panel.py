@@ -3,8 +3,11 @@
 from pathlib import Path
 from PySide6 import QtWidgets, QtCore
 import exifread
+import logging
 
 from ... import core as pynegative
+
+logger = logging.getLogger(__name__)
 
 
 class MetadataPanel(QtWidgets.QWidget):
@@ -50,8 +53,13 @@ class MetadataPanel(QtWidgets.QWidget):
         """Access to the form layout (for backward compat with editor)."""
         return self._content_layout
 
-    def load_for_path(self, raw_path):
-        """Load and display EXIF metadata for the given file path."""
+    def load_for_path(self, raw_path, settings=None):
+        """Load and display EXIF metadata for the given file path.
+
+        Args:
+            raw_path: Path to the raw file.
+            settings: Optional dictionary of current editing settings (including lens overrides).
+        """
         if raw_path is None:
             self.show_empty()
             return
@@ -65,6 +73,23 @@ class MetadataPanel(QtWidgets.QWidget):
 
         try:
             exif_data = self._extract_exif_data(self._current_path)
+
+            # Apply overrides from settings if present
+            if settings:
+                override_name = settings.get("lens_name_override")
+                if override_name and override_name != "Auto":
+                    # Fix duplication even in overrides if they were saved with duplicates
+
+                    # We don't have maker separately here easily, but we can try to parse it
+                    # or just rely on the fact that combo box now produces clean names.
+                    # To be safe, if it's already duplicated "Sigma Sigma", resolve it.
+                    parts = override_name.split()
+                    if len(parts) >= 2 and parts[0].lower() == parts[1].lower():
+                        override_name = " ".join(parts[1:])
+
+                    exif_data["lens_model_resolved"] = override_name
+                    exif_data["lens_source"] = "MANUAL_OVERRIDE"
+
             self._clear()
             self._populate(exif_data)
         except Exception as e:
@@ -401,16 +426,26 @@ class MetadataPanel(QtWidgets.QWidget):
 
         # === Camera & Lens ===
         if exif_data.get("camera_make") or exif_data.get("camera_model"):
-            camera = (
-                f"{fv(exif_data.get('camera_make'))} "
-                f"{fv(exif_data.get('camera_model'))}"
-            )
+            make = fv(exif_data.get("camera_make")).strip()
+            model = fv(exif_data.get("camera_model")).strip()
+
+            # Prevent duplicating maker name if it's already in the model string
+            if make and model and model.lower().startswith(make.lower()):
+                camera = model
+            else:
+                camera = f"{make} {model}"
+
             self._add_field("Camera", camera.strip())
 
         # Always show Lens field if we have camera info, even if lens is unknown
         lens_model = exif_data.get("lens_model")
         if lens_model:
-            self._add_field("Lens", fv(lens_model))
+            # Clean up potential duplicated manufacturer in raw EXIF name
+            lm_clean = fv(lens_model)
+            parts = lm_clean.split()
+            if len(parts) >= 2 and parts[0].lower() == parts[1].lower():
+                lm_clean = " ".join(parts[1:])
+            self._add_field("Lens", lm_clean)
         elif exif_data.get("camera_make") or exif_data.get("camera_model"):
             self._add_field("Lens", "Unknown / Not detected")
 
@@ -422,15 +457,22 @@ class MetadataPanel(QtWidgets.QWidget):
                 "EMBEDDED": "Embedded RAW",
                 "LENSFUN_DB": "Lensfun Match",
                 "MANUAL": "Manual Override",
+                "MANUAL_OVERRIDE": "user selected",
                 "NONE": "Manual Mode",
             }.get(source, source)
 
             if source == "NONE":
                 self._add_field("Lens Profile", f"No Profile Found ({source_text})")
             else:
+                # Ensure resolved name is clean
+                res_name = fv(resolved)
+                parts = res_name.split()
+                if len(parts) >= 2 and parts[0].lower() == parts[1].lower():
+                    res_name = " ".join(parts[1:])
+
                 self._add_field(
                     "Lens Profile",
-                    f"{fv(resolved)} ({source_text})",
+                    f"{res_name} ({source_text})",
                 )
 
         if exif_data.get("max_aperture"):

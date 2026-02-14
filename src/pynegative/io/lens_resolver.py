@@ -16,6 +16,14 @@ class ProfileSource(Enum):
     NONE = auto()
 
 
+def format_lens_name(maker: str, model: str) -> str:
+    maker = maker.strip()
+    model = model.strip()
+    if model.lower().startswith(maker.lower()):
+        return model
+    return f"{maker} {model}"
+
+
 def resolve_lens_profile(
     raw_path: str | Path,
 ) -> Tuple[ProfileSource, Optional[Dict[str, Any]]]:
@@ -56,11 +64,10 @@ def resolve_lens_profile(
             aperture=aperture,
         )
         if matched_lens:
-            logger.info(
-                f"Matched lensfun profile: {matched_lens['maker']} {matched_lens['model']}"
-            )
+            name = format_lens_name(matched_lens["maker"], matched_lens["model"])
+            logger.info(f"Matched lensfun profile: {name}")
             return ProfileSource.LENSFUN_DB, {
-                "name": f"{matched_lens['maker']} {matched_lens['model']}",
+                "name": name,
                 "lens_data": matched_lens,
                 "exif": exif_info,
             }

@@ -363,7 +363,11 @@ class GalleryWidget(QtWidgets.QWidget):
             # Show metadata for the last selected item
             item = selected_items[-1]
             path = item.data(QtCore.Qt.UserRole)
-            self.gallery_metadata_panel.load_for_path(path)
+
+            # Load sidecar settings to check for lens overrides
+            sidecar_settings = pynegative.load_sidecar(path)
+
+            self.gallery_metadata_panel.load_for_path(path, sidecar_settings)
         else:
             self.gallery_metadata_panel.show_empty()
 

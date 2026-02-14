@@ -205,9 +205,17 @@ class LensDatabase:
     def get_all_lens_names(self) -> List[str]:
         if not self.loaded:
             return []
-        return sorted(
-            list(set(f"{lens['maker']} {lens['model']}" for lens in self.lenses))
-        )
+
+        lens_names = set()
+        for lens in self.lenses:
+            maker = lens["maker"].strip()
+            model = lens["model"].strip()
+            if model.lower().startswith(maker.lower()):
+                lens_names.add(model)
+            else:
+                lens_names.add(f"{maker} {model}")
+
+        return sorted(list(lens_names))
 
 
 # Global instance

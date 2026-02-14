@@ -296,11 +296,13 @@ class EditingControls(QtWidgets.QWidget):
             "lens_vignette": self.val_lens_vignette,
             "lens_ca": self.val_lens_ca,
             "lens_camera_override": self.lens_controls.camera_combo.currentText()
-            if self.lens_controls.camera_combo.currentText() != "Auto"
+            if self.lens_controls.camera_combo.currentIndex() > 0
             else None,
             "lens_name_override": self.lens_controls.lens_combo.currentText()
-            if self.lens_controls.lens_combo.currentText() != "Auto"
+            if self.lens_controls.lens_combo.currentIndex() > 0
             else None,
+            "lens_auto_detect": self.lens_controls.camera_combo.currentIndex() == 0
+            and self.lens_controls.lens_combo.currentIndex() == 0,
         }
 
         # Collect raw slider values
