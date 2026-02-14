@@ -2,11 +2,14 @@ import numpy as np
 from PySide6 import QtCore, QtGui
 import time
 import cv2
+import logging
 from .pipeline.cache import PipelineCache
 from .pipeline.worker import (
     ImageProcessorSignals,
     ImageProcessorWorker,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ImageProcessingPipeline(QtCore.QObject):
@@ -137,18 +140,38 @@ class ImageProcessingPipeline(QtCore.QObject):
             self.request_update()
 
     def set_lens_info(self, info):
-        self.lens_info = info
-        self.request_update()
+        if self.lens_info != info:
+            logger.debug("Lens info changed, invalidating pipeline cache")
+            self.lens_info = info
+            self.cache.invalidate(clear_estimated=False)
 
     def set_processing_params(self, **kwargs):
         heavy_keys = {"de_haze", "denoise_luma", "denoise_chroma", "sharpen_value"}
-        for k in kwargs:
-            if k in heavy_keys:
-                self._last_heavy_adjusted = k
-                break
-        self._processing_params.update(kwargs)
-        # Settings changed, so last ROI is invalid
-        self._last_roi_rect = QtCore.QRectF()
+        lens_keys = {
+            "lens_distortion",
+            "lens_vignette",
+            "lens_enabled",
+            "lens_autocrop",
+            "lens_name_override",
+            "lens_camera_override",
+        }
+
+        changed = False
+        for k, v in kwargs.items():
+            if self._processing_params.get(k) != v:
+                self._processing_params[k] = v
+                changed = True
+                if k in heavy_keys:
+                    self._last_heavy_adjusted = k
+                if k in lens_keys:
+                    logger.debug(
+                        f"Invalidating pipeline cache due to lens parameter change: {k}"
+                    )
+                    self.cache.invalidate(clear_estimated=False)
+
+        if changed:
+            # Settings changed, so last ROI is invalid
+            self._last_roi_rect = QtCore.QRectF()
 
     def get_current_settings(self):
         return self._processing_params.copy()
@@ -240,10 +263,13 @@ class ImageProcessingPipeline(QtCore.QObject):
         self, pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h, request_id
     ):
         self._is_rendering_locked = False
-        if request_id < self._last_processed_id:
+
+        # Drop stale results (a newer request has been started)
+        if request_id < self._current_request_id:
             if self._render_pending:
                 self._process_pending_update()
             return
+
         self._last_processed_id = request_id
 
         # Store the ROI rect in scene coordinates for panning checks
@@ -267,7 +293,8 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     @QtCore.Slot(dict, int)
     def _on_histogram_updated(self, hist_data, request_id):
-        if request_id < self._last_processed_id:
+        # Drop stale results
+        if request_id < self._current_request_id:
             return
         self.histogramUpdated.emit(hist_data)
 

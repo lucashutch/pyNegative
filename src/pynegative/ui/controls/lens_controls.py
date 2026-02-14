@@ -122,7 +122,7 @@ class LensControls(BaseControlWidget):
             "Distortion", -0.5, 0.5, 0.0, "lens_distortion", 0.01, self.section
         )
         self.vignette_slider = self._add_slider(
-            "Vignette", 0.0, 1.0, 0.0, "lens_vignette", 0.01, self.section
+            "Vignette", -1.0, 1.0, 0.0, "lens_vignette", 0.01, self.section
         )
         self.ca_slider = self._add_slider(
             "CA Correction", 0.0, 1.0, 0.0, "lens_ca", 0.01, self.section

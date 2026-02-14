@@ -240,6 +240,8 @@ class EditingControls(QtWidgets.QWidget):
             self.detail_controls.set_slider_value(var_name, value, silent)
         elif var_name == "rotation":
             self.geometry_controls.set_slider_value(var_name, value, silent)
+        elif var_name in ["lens_distortion", "lens_vignette", "lens_ca"]:
+            self.lens_controls.set_slider_value(var_name, value, silent)
 
     def set_crop_checked(self, checked):
         self.geometry_controls.crop_btn.setChecked(checked)

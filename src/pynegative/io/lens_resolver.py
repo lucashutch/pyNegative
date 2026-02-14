@@ -69,13 +69,19 @@ def resolve_lens_profile(
 
             # Get distortion params if available
             distortion = None
+            vignetting = None
             if focal_length is not None:
                 distortion = db.get_distortion_params(matched_lens, focal_length)
+                if aperture is not None:
+                    vignetting = db.get_vignette_params(
+                        matched_lens, focal_length, aperture
+                    )
 
             return ProfileSource.LENSFUN_DB, {
                 "name": name,
                 "lens_data": matched_lens,
                 "distortion": distortion,
+                "vignetting": vignetting,
                 "exif": exif_info,
             }
 

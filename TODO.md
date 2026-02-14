@@ -32,8 +32,9 @@ This document tracks planned features, project goals, and areas for technical im
   - **Brush Tool**: Paint-in adjustments.
 - **Spot Removal / Healing**: Basic tool to correct dust spots and skin blemishes.
 - **Lens Corrections**:
-  - Auto-correction for geometric distortion and chromatic aberration (possibly via Lensfun).
-  - Manual Vignette controls.
+  - Auto-correction for geometric distortion and vignette (via Lensfun).
+  - Manual distortion and vignette controls.
+  - Chromatic aberration auto-correction (TODO).
 - **Clipping Warnings**: Visual overlay (e.g. red/blue highlight) to show overexposed or underexposed areas.
 - **Auto-Straighten Tool**: A "Spirit Level" tool to draw a line along the horizon and automatically rotate the image.
 - **White Balance Picker (Eyedropper)**: Click on a neutral grey/white area in the image to instantly set the correct Temperature and Tint.

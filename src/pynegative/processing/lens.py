@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import logging
+import time
 from numba import njit, prange
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,28 @@ def calculate_autocrop_scale(model, params, fw, fh):
     return max_rescale
 
 
+@njit(parallel=True)
+def vignette_kernel(img, k1, k2, k3, cx, cy, full_w, full_h):
+    h, w, c = img.shape
+    max_r2 = (full_w / 2.0) ** 2 + (full_h / 2.0) ** 2
+    inv_max_r2 = 1.0 / max_r2
+
+    for y in prange(h):
+        for x in range(w):
+            dx = x - cx
+            dy = y - cy
+            r2 = dx * dx + dy * dy
+            rn2 = r2 * inv_max_r2
+            rn4 = rn2 * rn2
+            rn6 = rn4 * rn2
+
+            # I_corr = I_dist * (1 + k1*r^2 + k2*r^4 + k3*r^6)
+            gain = 1.0 + k1 * rn2 + k2 * rn4 + k3 * rn6
+
+            for i in range(c):
+                img[y, x, i] *= gain
+
+
 def apply_lens_correction(
     img, settings, lens_info=None, scale=1.0, roi_offset=None, full_size=None
 ):
@@ -165,6 +188,7 @@ def apply_lens_correction(
 
     # 3. Add manual slider override
     manual_k1 = settings.get("lens_distortion", 0.0)
+    manual_vig = settings.get("lens_vignette", 0.0)
 
     # 4. Handle Auto Crop
     zoom = 1.0
@@ -196,6 +220,44 @@ def apply_lens_correction(
             map_x, map_y = generate_poly3_map(w, h, k1, cx, cy, fw, fh, zoom)
 
     if map_x is not None:
-        return cv2.remap(img, map_x, map_y, cv2.INTER_CUBIC)
+        img = cv2.remap(img, map_x, map_y, cv2.INTER_CUBIC)
+
+    # 6. Apply Vignette Correction
+    vig_k1 = 0.0
+    vig_k2 = 0.0
+    vig_k3 = 0.0
+
+    if lens_info and "vignetting" in lens_info and lens_info["vignetting"]:
+        vig = lens_info["vignetting"]
+        if vig.get("model") == "pa":
+            vig_k1 = vig.get("k1", 0.0)
+            vig_k2 = vig.get("k2", 0.0)
+            vig_k3 = vig.get("k3", 0.0)
+
+    # Manual override (adds to k1 for simplicity, allowing corrective and creative use)
+    vig_k1 += manual_vig
+
+    if abs(vig_k1) > 1e-6 or abs(vig_k2) > 1e-6 or abs(vig_k3) > 1e-6:
+        # If we didn't remap, we should work on a copy to avoid side effects
+        if map_x is None:
+            img = img.copy()
+
+        t0 = time.perf_counter()
+        vignette_kernel(img, vig_k1, vig_k2, vig_k3, cx, cy, fw, fh)
+        elapsed = (time.perf_counter() - t0) * 1000
+
+        logger.debug(
+            f"Vignette correction: k1={vig_k1:.4f}, k2={vig_k2:.4f}, k3={vig_k3:.4f} ({elapsed:.2f}ms)"
+        )
+
+    if (
+        map_x is not None
+        or abs(vig_k1) > 1e-6
+        or abs(vig_k2) > 1e-6
+        or abs(vig_k3) > 1e-6
+    ):
+        logger.debug(
+            f"Lens Correction applied: model={model}, zoom={zoom:.3f}, manual_dist={manual_k1:.4f}, manual_vig={manual_vig:.4f}"
+        )
 
     return img

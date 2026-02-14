@@ -77,12 +77,13 @@ class PipelineCache:
             self.caches[resolution] = {}
         self.caches[resolution][stage_id] = (params.copy(), array)
 
-    def invalidate(self, stage_id=None):
+    def invalidate(self, stage_id=None, clear_estimated=True):
         """Invalidates stages. If stage_id is None, invalidates everything."""
         if stage_id is None:
             self.caches = {}
             self.spatial_roi_cache = {}
-            self.estimated_params = {}
+            if clear_estimated:
+                self.estimated_params = {}
             self._cached_bg_pixmap = None
 
     def clear(self):

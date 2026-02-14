@@ -156,6 +156,79 @@ class LensDatabase:
 
         return dist_entries[0]
 
+    def get_vignette_params(
+        self,
+        lens: Dict,
+        focal_length: float,
+        aperture: float,
+        distance: float = 1000.0,
+    ) -> Optional[Dict]:
+        """
+        Extract and interpolate vignette parameters.
+        Vignetting depends on focal length, aperture, and focus distance.
+        """
+        element = lens.get("raw_element")
+        if element is None:
+            return None
+
+        calib = element.find("calibration")
+        if calib is None:
+            return None
+
+        entries = []
+        for vig in calib.findall("vignetting"):
+            try:
+                model = vig.get("model", "pa")
+                f = float(vig.get("focal", 0))
+                a = float(vig.get("aperture", 0))
+                d = float(vig.get("distance", 1000.0))
+
+                params = {"model": model, "focal": f, "aperture": a, "distance": d}
+                for key, val in vig.attrib.items():
+                    if key not in ["model", "focal", "aperture", "distance"]:
+                        try:
+                            params[key] = float(val)
+                        except ValueError:
+                            pass
+                entries.append(params)
+            except (ValueError, TypeError):
+                continue
+
+        if not entries:
+            return None
+
+        # Filter and Interpolate
+        # Since 3D interpolation is complex without scipy, we use a tiered approach:
+        # 1. Find entries with nearest focal length
+        # 2. Within those, find entries with nearest aperture
+        # 3. Within those, find entries with nearest distance
+
+        # Simplified: Just find the closest point in 3D space (normalized)
+        # or do a weighted average of K-nearest neighbors.
+        # But for lens data, usually we have a grid.
+
+        # Let's find the 'best' entry by distance in (f, a, log(d)) space
+        # We normalize weights to make them comparable.
+        def get_dist(entry):
+            df = abs(entry["focal"] - focal_length) / max(1.0, focal_length)
+            da = abs(entry["aperture"] - aperture) / max(1.0, aperture)
+            # Distance is often exponential (1, 10, 1000)
+            dd = (
+                abs(np.log10(entry["distance"]) - np.log10(distance))
+                if distance > 0 and entry["distance"] > 0
+                else 0
+            )
+            return df * 10 + da * 5 + dd  # Focal length is most important
+
+        import numpy as np
+
+        entries.sort(key=get_dist)
+
+        # For now, return the best match.
+        # TODO: Implement proper 3D interpolation if needed.
+        # Most Lensfun data only has one or two points per focal length anyway.
+        return entries[0]
+
     def find_lens(
         self,
         camera_maker: str,
