@@ -106,6 +106,9 @@ class ExportProcessor(QtCore.QRunnable):
             saturation=sidecar_settings.get("saturation", 1.0),
         )
 
+        # Apply Defringe
+        img = pynegative.apply_defringe(img, sidecar_settings)
+
         # Apply Geometry (Flip, Rotate, Crop)
         img = pynegative.apply_geometry(
             img,

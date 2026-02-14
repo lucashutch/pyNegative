@@ -340,6 +340,12 @@ class EditorWidget(QtWidgets.QWidget):
     def load_image(self, path):
         path = Path(path)
         logger.info(f"Image selection changed: {path.name}")
+
+        # Ensure previous image settings are saved before switching
+        if self.save_timer.isActive():
+            self.save_timer.stop()
+            self._auto_save_sidecar()
+
         self.raw_path = path
 
         # 1. Clear previous image state immediately
@@ -348,6 +354,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.metadata_panel.clear()
 
         if self._metadata_panel_visible:
+            # We don't have settings yet in load_image, they come in _on_raw_loaded
             self.metadata_panel.load_for_path(path)
 
         self.editing_controls.set_crop_checked(False)
@@ -434,6 +441,14 @@ class EditorWidget(QtWidgets.QWidget):
             else:
                 self.image_processor.set_processing_params(crop=safe_crop)
 
+        if (
+            setting_name in ["lens_name_override", "lens_camera_override"]
+            and self._metadata_panel_visible
+        ):
+            # Refresh metadata panel to show new override
+            current_settings = self.image_processor.get_current_settings()
+            self.metadata_panel.load_for_path(self.raw_path, current_settings)
+
         self._request_update_from_view()
         self.save_timer.start(1000)
         current_settings = self.image_processor.get_current_settings()
@@ -515,6 +530,14 @@ class EditorWidget(QtWidgets.QWidget):
             )
             self.editing_controls.apply_settings(settings)
             all_params = self.editing_controls.get_all_settings()
+
+            # Update Lens Controls info
+            from ..io import lens_resolver
+
+            source, resolved = lens_resolver.resolve_lens_profile(path)
+            self.editing_controls.lens_controls.set_lens_info(source, resolved or {})
+            self.image_processor.set_lens_info(resolved)
+
             loaded_crop = settings.get("crop")
             rotate_val = settings.get("rotation", 0.0)
             if loaded_crop is None and abs(rotate_val) > 0.1:
@@ -538,7 +561,7 @@ class EditorWidget(QtWidgets.QWidget):
                 self.image_processor.get_unedited_pixmap(2048)
             )
         if self._metadata_panel_visible:
-            self.metadata_panel.load_for_path(self.raw_path)
+            self.metadata_panel.load_for_path(self.raw_path, settings)
 
     def _request_update_from_view(self):
         if (
@@ -551,7 +574,11 @@ class EditorWidget(QtWidgets.QWidget):
     def _auto_save_sidecar(self):
         if not self.raw_path:
             return
-        settings = self.image_processor.get_current_settings()
+
+        # Source of truth for settings is the EditingControls widget
+        settings = self.editing_controls.get_all_settings()
+
+        # Add crop from view/processor (special case as it's not a slider)
         if self.editing_controls.geometry_controls.crop_btn.isChecked():
             rect = self.view.get_crop_rect()
             scene_rect = self.view.sceneRect()
@@ -564,6 +591,11 @@ class EditorWidget(QtWidgets.QWidget):
                     max(0.0, min(1.0, rect.bottom() / h)),
                 )
                 settings["crop"] = (c_left, c_top, c_right, c_bottom)
+        else:
+            # Preserve existing crop if not currently editing?
+            # Actually image_processor has the active crop.
+            settings["crop"] = self.image_processor.get_current_settings().get("crop")
+
         self.settings_manager.auto_save_sidecar(
             self.raw_path, settings, self.editing_controls.star_rating_widget.rating()
         )

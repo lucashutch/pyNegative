@@ -408,6 +408,15 @@ do_install() {
 		exit 1
 	fi
 
+	# Download lens database
+	print_info "\nDownloading lens database..."
+	mkdir -p "$INSTALL_DIR/data/lensfun"
+	if uv run --python 3 python3 "$INSTALL_DIR/scripts/download_lens_database.py" --output-dir "$INSTALL_DIR/data/lensfun" --quiet; then
+		print_success "Lens database downloaded successfully!"
+	else
+		print_warning "Failed to download lens database. You can try again later from within the app."
+	fi
+
 	# Copy installer scripts for future updates
 	mkdir -p "$INSTALL_DIR/scripts"
 	cp "$SCRIPT_DIR/install-pynegative.sh" "$INSTALL_DIR/scripts/" 2>/dev/null || true

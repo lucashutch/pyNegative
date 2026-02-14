@@ -96,7 +96,7 @@ def extract_thumbnail(path):
         with rawpy.imread(path_str) as raw:
             try:
                 thumb = raw.extract_thumb()
-            except rawpy.LibRawNoThumbnailError:
+            except (rawpy.LibRawNoThumbnailError, Exception):
                 thumb = None
 
             # If we found a JPEG thumbnail

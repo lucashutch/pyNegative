@@ -2,11 +2,14 @@ import numpy as np
 from PySide6 import QtCore, QtGui
 import time
 import cv2
+import logging
 from .pipeline.cache import PipelineCache
 from .pipeline.worker import (
     ImageProcessorSignals,
     ImageProcessorWorker,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ImageProcessingPipeline(QtCore.QObject):
@@ -36,6 +39,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._view_ref = None
         self.perf_start_time = 0
         self.histogram_enabled = False
+        self.lens_info = None
 
         self._current_request_id = 0
         self._last_processed_id = -1
@@ -135,15 +139,46 @@ class ImageProcessingPipeline(QtCore.QObject):
         if enabled:
             self.request_update()
 
+    def set_lens_info(self, info):
+        if self.lens_info != info:
+            logger.debug("Lens info changed, invalidating pipeline cache")
+            self.lens_info = info
+            self.cache.invalidate(clear_estimated=False)
+
     def set_processing_params(self, **kwargs):
         heavy_keys = {"de_haze", "denoise_luma", "denoise_chroma", "sharpen_value"}
-        for k in kwargs:
-            if k in heavy_keys:
-                self._last_heavy_adjusted = k
-                break
-        self._processing_params.update(kwargs)
-        # Settings changed, so last ROI is invalid
-        self._last_roi_rect = QtCore.QRectF()
+        lens_keys = {
+            "lens_distortion",
+            "lens_vignette",
+            "lens_ca",
+            "lens_enabled",
+            "lens_autocrop",
+            "lens_name_override",
+            "lens_camera_override",
+            "defringe_purple",
+            "defringe_green",
+            "defringe_edge",
+            "defringe_radius",
+        }
+
+        changed = False
+        lens_changed = False
+        for k, v in kwargs.items():
+            if self._processing_params.get(k) != v:
+                self._processing_params[k] = v
+                changed = True
+                if k in heavy_keys:
+                    self._last_heavy_adjusted = k
+                if k in lens_keys:
+                    lens_changed = True
+
+        if lens_changed:
+            logger.debug("Invalidating pipeline cache due to lens parameter changes")
+            self.cache.invalidate(clear_estimated=False)
+
+        if changed:
+            # Settings changed, so last ROI is invalid
+            self._last_roi_rect = QtCore.QRectF()
 
     def get_current_settings(self):
         return self._processing_params.copy()
@@ -174,8 +209,12 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._render_pending = True
         # Reset idle timer on every user interaction
         self.idle_timer.stop()
+
         if not self._is_rendering_locked:
-            self._process_pending_update()
+            # Rate limit/Debounce: wait a few ms to catch rapid slider movements
+            # 16ms = ~60fps, 33ms = ~30fps.
+            if not self.render_timer.isActive():
+                self.render_timer.start(20)
 
     def _on_idle_timeout(self):
         """Triggered when user is idle, to render a larger padded ROI."""
@@ -222,6 +261,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             cache=self.cache,
             last_heavy_adjusted=self._last_heavy_adjusted,
             expand_roi=expand_roi,
+            lens_info=self.lens_info,
         )
         self.thread_pool.start(worker)
 
@@ -234,10 +274,13 @@ class ImageProcessingPipeline(QtCore.QObject):
         self, pix_bg, full_w, full_h, pix_roi, roi_x, roi_y, roi_w, roi_h, request_id
     ):
         self._is_rendering_locked = False
-        if request_id < self._last_processed_id:
+
+        # Drop stale results (a newer request has been started)
+        if request_id < self._current_request_id:
             if self._render_pending:
                 self._process_pending_update()
             return
+
         self._last_processed_id = request_id
 
         # Store the ROI rect in scene coordinates for panning checks
@@ -257,11 +300,14 @@ class ImageProcessingPipeline(QtCore.QObject):
             self.idle_timer.start(300)  # 300ms idle threshold
 
         if self._render_pending:
-            self._process_pending_update()
+            # If there's another update pending, don't start it IMMEDIATELY.
+            # Give the UI thread a tiny slice of time to handle input events.
+            self.render_timer.start(5)
 
     @QtCore.Slot(dict, int)
     def _on_histogram_updated(self, hist_data, request_id):
-        if request_id < self._last_processed_id:
+        # Drop stale results
+        if request_id < self._current_request_id:
             return
         self.histogramUpdated.emit(hist_data)
 

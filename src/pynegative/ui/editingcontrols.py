@@ -8,6 +8,7 @@ from .controls.tone_controls import ToneControls
 from .controls.color_controls import ColorControls
 from .controls.detail_controls import DetailControls
 from .controls.geometry_controls import GeometryControls
+from .controls.lens_controls import LensControls
 
 
 class EditingControls(QtWidgets.QWidget):
@@ -88,11 +89,13 @@ class EditingControls(QtWidgets.QWidget):
         self.color_controls = ColorControls()
         self.detail_controls = DetailControls()
         self.geometry_controls = GeometryControls()
+        self.lens_controls = LensControls()
 
         self.controls_layout.addWidget(self.tone_controls)
         self.controls_layout.addWidget(self.color_controls)
         self.controls_layout.addWidget(self.detail_controls)
         self.controls_layout.addWidget(self.geometry_controls)
+        self.controls_layout.addWidget(self.lens_controls)
 
         # Connect signals
         self.tone_controls.settingChanged.connect(self.settingChanged.emit)
@@ -103,6 +106,7 @@ class EditingControls(QtWidgets.QWidget):
         self.geometry_controls.settingChanged.connect(self.settingChanged.emit)
         self.geometry_controls.cropToggled.connect(self.cropToggled.emit)
         self.geometry_controls.aspectRatioChanged.connect(self.aspectRatioChanged.emit)
+        self.lens_controls.settingChanged.connect(self.settingChanged.emit)
 
         self.controls_layout.addStretch()
 
@@ -178,6 +182,34 @@ class EditingControls(QtWidgets.QWidget):
     def rotation(self):
         return self.geometry_controls.get_value("rotation")
 
+    @property
+    def val_lens_distortion(self):
+        return self.lens_controls.get_value("lens_distortion")
+
+    @property
+    def val_lens_vignette(self):
+        return self.lens_controls.get_value("lens_vignette")
+
+    @property
+    def val_lens_ca(self):
+        return self.lens_controls.get_value("lens_ca")
+
+    @property
+    def val_defringe_purple(self):
+        return self.lens_controls.get_value("defringe_purple")
+
+    @property
+    def val_defringe_green(self):
+        return self.lens_controls.get_value("defringe_green")
+
+    @property
+    def val_defringe_edge(self):
+        return self.lens_controls.get_value("defringe_edge")
+
+    @property
+    def val_defringe_radius(self):
+        return self.lens_controls.get_value("defringe_radius")
+
     # Compatibility for tests
     @property
     def val_sharpen_value_slider(self):
@@ -224,6 +256,16 @@ class EditingControls(QtWidgets.QWidget):
             self.detail_controls.set_slider_value(var_name, value, silent)
         elif var_name == "rotation":
             self.geometry_controls.set_slider_value(var_name, value, silent)
+        elif var_name in [
+            "lens_distortion",
+            "lens_vignette",
+            "lens_ca",
+            "defringe_purple",
+            "defringe_green",
+            "defringe_edge",
+            "defringe_radius",
+        ]:
+            self.lens_controls.set_slider_value(var_name, value, silent)
 
     def set_crop_checked(self, checked):
         self.geometry_controls.crop_btn.setChecked(checked)
@@ -233,6 +275,7 @@ class EditingControls(QtWidgets.QWidget):
         self.color_controls.reset_section()
         self.detail_controls.reset_section()
         self.geometry_controls.reset_section()
+        self.lens_controls.reset_section()
 
     def cycle_denoise_method(self):
         try:
@@ -275,6 +318,23 @@ class EditingControls(QtWidgets.QWidget):
             "rotation": self.rotation,
             "flip_h": self.val_flip_h,
             "flip_v": self.val_flip_v,
+            "lens_distortion": self.val_lens_distortion,
+            "lens_vignette": self.val_lens_vignette,
+            "lens_ca": self.val_lens_ca,
+            "defringe_purple": self.val_defringe_purple,
+            "defringe_green": self.val_defringe_green,
+            "defringe_edge": self.val_defringe_edge,
+            "defringe_radius": self.val_defringe_radius,
+            "lens_camera_override": self.lens_controls.camera_combo.currentText()
+            if self.lens_controls.camera_combo.currentIndex() > 0
+            else None,
+            "lens_name_override": self.lens_controls.lens_combo.currentText()
+            if self.lens_controls.lens_combo.currentIndex() > 0
+            else None,
+            "lens_auto_detect": self.lens_controls.camera_combo.currentIndex() == 0
+            and self.lens_controls.lens_combo.currentIndex() == 0,
+            "lens_enabled": self.lens_controls.enable_check.isChecked(),
+            "lens_autocrop": self.lens_controls.autocrop_check.isChecked(),
         }
 
         # Collect raw slider values
@@ -283,6 +343,7 @@ class EditingControls(QtWidgets.QWidget):
             self.color_controls,
             self.detail_controls,
             self.geometry_controls,
+            self.lens_controls,
         ]:
             for var_name, slider in ctrl.sliders.items():
                 settings[f"raw_{var_name}"] = slider.value()
@@ -321,6 +382,13 @@ class EditingControls(QtWidgets.QWidget):
             "val_denoise_chroma",
             "val_de_haze",
             "rotation",
+            "lens_distortion",
+            "lens_vignette",
+            "lens_ca",
+            "defringe_purple",
+            "defringe_green",
+            "defringe_edge",
+            "defringe_radius",
         ]
 
         controls_map = {
@@ -338,6 +406,13 @@ class EditingControls(QtWidgets.QWidget):
             "val_denoise_chroma": self.detail_controls,
             "val_de_haze": self.detail_controls,
             "rotation": self.geometry_controls,
+            "lens_distortion": self.lens_controls,
+            "lens_vignette": self.lens_controls,
+            "lens_ca": self.lens_controls,
+            "defringe_purple": self.lens_controls,
+            "defringe_green": self.lens_controls,
+            "defringe_edge": self.lens_controls,
+            "defringe_radius": self.lens_controls,
         }
 
         for var in slider_vars:
@@ -370,9 +445,58 @@ class EditingControls(QtWidgets.QWidget):
                     val = min(50.0, val)
                 if var == "val_de_haze":
                     val = min(50.0, val)
+
+                # Special handling for lens settings which don't have val_ prefix in some contexts
+                if var in [
+                    "lens_distortion",
+                    "lens_vignette",
+                    "lens_ca",
+                    "defringe_purple",
+                    "defringe_green",
+                    "defringe_edge",
+                    "defringe_radius",
+                ]:
+                    default = 0.0
+                    if var == "lens_ca":
+                        default = 1.0
+                    elif var == "defringe_edge":
+                        default = 0.05
+                    elif var == "defringe_radius":
+                        default = 1.0
+                    val = settings.get(var, default)
+
                 ctrl.set_slider_value(var, val, silent=True)
 
-        # 3. Special derived parameters
+        if "lens_enabled" in settings:
+            self.lens_controls.enable_check.blockSignals(True)
+            self.lens_controls.enable_check.setChecked(settings["lens_enabled"])
+            self.lens_controls.enable_check.blockSignals(False)
+
+        if "lens_autocrop" in settings:
+            self.lens_controls.autocrop_check.blockSignals(True)
+            self.lens_controls.autocrop_check.setChecked(settings["lens_autocrop"])
+            self.lens_controls.autocrop_check.blockSignals(False)
+
+        # 3. Handle lens overrides
+        self.lens_controls.camera_combo.blockSignals(True)
+        self.lens_controls.lens_combo.blockSignals(True)
+
+        cam_ovr = settings.get("lens_camera_override")
+        if cam_ovr and cam_ovr != "Auto":
+            self.lens_controls.camera_combo.setCurrentText(cam_ovr)
+        else:
+            self.lens_controls.camera_combo.setCurrentIndex(0)
+
+        lens_ovr = settings.get("lens_name_override")
+        if lens_ovr and lens_ovr != "Auto":
+            self.lens_controls.lens_combo.setCurrentText(lens_ovr)
+        else:
+            self.lens_controls.lens_combo.setCurrentIndex(0)
+
+        self.lens_controls.camera_combo.blockSignals(False)
+        self.lens_controls.lens_combo.blockSignals(False)
+
+        # 4. Special derived parameters
         s_val = self.val_sharpen_value
         self.detail_controls.val_sharpen_radius = 0.5 + (s_val / 100.0) * 2.5
         self.detail_controls.val_sharpen_percent = (s_val / 100.0) * 300.0
