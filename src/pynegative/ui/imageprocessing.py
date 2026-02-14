@@ -44,6 +44,9 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._current_request_id = 0
         self._last_processed_id = -1
         self.cache = PipelineCache()
+        self._cache_invalidation_pending = False
+        self._pending_lens_changed = False
+        self._pending_geom_changed = False
 
         self.signals = ImageProcessorSignals()
         self.signals.finished.connect(self._on_worker_finished)
@@ -141,9 +144,11 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     def set_lens_info(self, info):
         if self.lens_info != info:
-            logger.debug("Lens info changed, invalidating pipeline cache")
+            logger.debug("Lens info changed, marking pipeline cache for invalidation")
             self.lens_info = info
-            self.cache.invalidate(clear_estimated=False)
+            self._cache_invalidation_pending = True
+            self._pending_lens_changed = True
+            self._last_roi_rect = QtCore.QRectF()
 
     def set_processing_params(self, **kwargs):
         heavy_keys = {"de_haze", "denoise_luma", "denoise_chroma", "sharpen_value"}
@@ -177,10 +182,9 @@ class ImageProcessingPipeline(QtCore.QObject):
                     geom_changed = True
 
         if lens_changed or geom_changed:
-            logger.debug(
-                f"Invalidating pipeline cache (lens_changed={lens_changed}, geom_changed={geom_changed})"
-            )
-            self.cache.invalidate(clear_estimated=False)
+            self._cache_invalidation_pending = True
+            self._pending_lens_changed |= lens_changed
+            self._pending_geom_changed |= geom_changed
 
         if changed:
             # Settings changed, so last ROI is invalid
@@ -204,6 +208,7 @@ class ImageProcessingPipeline(QtCore.QObject):
                 if (
                     self._last_roi_rect.contains(viewport_rect)
                     and not self._render_pending
+                    and not self._cache_invalidation_pending
                 ):
                     # Still restart idle timer to eventually expand ROI if it wasn't
                     if not self._last_roi_was_expanded:
@@ -251,6 +256,15 @@ class ImageProcessingPipeline(QtCore.QObject):
             self._last_roi_was_expanded = False
         else:
             self._last_roi_was_expanded = True
+
+        if self._cache_invalidation_pending:
+            logger.debug(
+                f"Invalidating pipeline cache (lens_changed={self._pending_lens_changed}, geom_changed={self._pending_geom_changed})"
+            )
+            self.cache.invalidate(clear_estimated=False)
+            self._cache_invalidation_pending = False
+            self._pending_lens_changed = False
+            self._pending_geom_changed = False
 
         self._is_rendering_locked = True
         self.perf_start_time = time.perf_counter()
