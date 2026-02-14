@@ -150,27 +150,38 @@ class LensControls(BaseControlWidget):
         self.lens_combo.blockSignals(False)
 
     def set_lens_info(self, source, info):
-        # Update status label - only show source, not the name
-        if source == lens_resolver.ProfileSource.EMBEDDED:
-            self.status_label.setText("Source: Embedded RAW")
-            self.status_label.setStyleSheet("font-size: 10px; color: #4CAF50;")  # Green
-        elif source == lens_resolver.ProfileSource.LENSFUN_DB:
-            self.status_label.setText("Source: Lensfun Match")
-            self.status_label.setStyleSheet("font-size: 10px; color: #2196F3;")  # Blue
-        elif source == lens_resolver.ProfileSource.MANUAL:
-            self.status_label.setText("Source: Manual Selection")
-            self.status_label.setStyleSheet(
-                "font-size: 10px; color: #FF9800;"
-            )  # Orange
-        else:
-            if not lens_db_xml.is_database_available():
-                self.status_label.setText("Manual Mode (DB Missing)")
+        # Only update status label if we are not manually overriding
+        # Check current combos; if they are not Auto, we are in override mode
+        is_override = (
+            self.camera_combo.currentIndex() > 0 or self.lens_combo.currentIndex() > 0
+        )
+
+        if not is_override:
+            # Update status label - only show source, not the name
+            if source == lens_resolver.ProfileSource.EMBEDDED:
+                self.status_label.setText("Source: Embedded RAW")
                 self.status_label.setStyleSheet(
-                    "font-size: 10px; color: #F44336;"
-                )  # Red
+                    "font-size: 10px; color: #4CAF50;"
+                )  # Green
+            elif source == lens_resolver.ProfileSource.LENSFUN_DB:
+                self.status_label.setText("Source: Lensfun Match")
+                self.status_label.setStyleSheet(
+                    "font-size: 10px; color: #2196F3;"
+                )  # Blue
+            elif source == lens_resolver.ProfileSource.MANUAL:
+                self.status_label.setText("Source: Manual Selection")
+                self.status_label.setStyleSheet(
+                    "font-size: 10px; color: #FF9800;"
+                )  # Orange
             else:
-                self.status_label.setText("No Lens Detected")
-                self.status_label.setStyleSheet("font-size: 10px; color: #aaa;")
+                if not lens_db_xml.is_database_available():
+                    self.status_label.setText("Manual Mode (DB Missing)")
+                    self.status_label.setStyleSheet(
+                        "font-size: 10px; color: #F44336;"
+                    )  # Red
+                else:
+                    self.status_label.setText("No Lens Detected")
+                    self.status_label.setStyleSheet("font-size: 10px; color: #aaa;")
 
         # Update combo box "Auto" labels to show detected info
         exif = info.get("exif", {})
@@ -208,6 +219,13 @@ class LensControls(BaseControlWidget):
         self.camera_combo.blockSignals(False)
         self.lens_combo.blockSignals(False)
 
+        # Update status if overrides are present
+        if self.camera_combo.currentIndex() > 0 or self.lens_combo.currentIndex() > 0:
+            self.status_label.setText("Source: Manual Override")
+            self.status_label.setStyleSheet(
+                "font-size: 10px; color: #FF9800;"
+            )  # Orange
+
     def _on_selection_changed(self):
         # Emit settings for manual override
         cam_idx = self.camera_combo.currentIndex()
@@ -218,6 +236,13 @@ class LensControls(BaseControlWidget):
 
         self.settingChanged.emit("lens_camera_override", cam)
         self.settingChanged.emit("lens_name_override", lens)
+
+        # Update status immediately
+        if cam_idx > 0 or lens_idx > 0:
+            self.status_label.setText("Source: Manual Override")
+            self.status_label.setStyleSheet(
+                "font-size: 10px; color: #FF9800;"
+            )  # Orange
 
     def _on_auto_detect(self):
         self.camera_combo.setCurrentIndex(0)
