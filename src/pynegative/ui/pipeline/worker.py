@@ -153,19 +153,21 @@ class ImageProcessorWorker(QtCore.QRunnable):
         )
         return result
 
-    def _process_heavy_stage(self, img, res_key, heavy_params, zoom_scale):
-        """Processes and caches the heavy effects stage for a full image tier."""
+    def _process_denoise_stage(self, img, res_key, heavy_params, zoom_scale):
+        """Processes and caches the denoising stage early in the pipeline (Linear Denoise)."""
+        l_str = float(heavy_params.get("denoise_luma", 0))
+        c_str = float(heavy_params.get("denoise_chroma", 0))
 
-        # 1. Determine Effective Denoise Method based on Image Tier
+        if l_str <= 0 and c_str <= 0:
+            return img
+
+        # 1. Determine Effective Denoise Method (Tier-based optimization)
         requested_method = heavy_params.get("denoise_method", "NLMeans (Numba Fast+)")
         effective_method = requested_method
 
-        # Only override NLMeans methods (Bilateral is already fast)
         if "NLMeans" in requested_method:
             is_roi = isinstance(res_key, tuple)
-
             if is_roi:
-                # True Quality for ROI (Zoomed-in Detail >= 100%)
                 if zoom_scale < 0.95:
                     if (
                         "High Quality" in requested_method
@@ -185,20 +187,42 @@ class ImageProcessorWorker(QtCore.QRunnable):
             elif res_key in ["tier_0.5", "half"]:
                 effective_method = "NLMeans (Numba Fast+ YUV)"
             elif res_key in ["tier_1.0", "full"]:
-                # Cap Background at Hybrid
                 if "High Quality" in requested_method or "Hybrid" in requested_method:
                     effective_method = "NLMeans (Numba Hybrid YUV)"
                 else:
                     effective_method = requested_method
 
-        # 2. Group parameters by effect
-
-        dehaze_p = {"de_haze": heavy_params["de_haze"]}
         denoise_p = {
-            "denoise_luma": heavy_params.get("denoise_luma", 0),
-            "denoise_chroma": heavy_params.get("denoise_chroma", 0),
+            "denoise_luma": l_str,
+            "denoise_chroma": c_str,
             "denoise_method": effective_method,
         }
+
+        if self.cache:
+            cached = self.cache.get(res_key, "denoise_stage", denoise_p)
+            if cached is not None:
+                return cached
+
+        # Execute Denoise
+        processed = pynegative.de_noise_image(
+            img,
+            luma_strength=l_str,
+            chroma_strength=c_str,
+            method=effective_method,
+            zoom=zoom_scale,
+            tier=res_key,
+        )
+
+        if self.cache:
+            self.cache.put(res_key, "denoise_stage", denoise_p, processed)
+
+        return processed
+
+    def _process_heavy_stage(self, img, res_key, heavy_params, zoom_scale):
+        """Processes and caches the heavy effects stage for a full image tier."""
+
+        # 1. Group parameters by effect
+        dehaze_p = {"de_haze": heavy_params["de_haze"]}
         sharpen_p = {
             "sharpen_value": heavy_params["sharpen_value"],
             "sharpen_radius": heavy_params["sharpen_radius"],
@@ -226,18 +250,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 self.cache.estimated_params["atmospheric_light"] = atmos
             return processed
 
-        def apply_denoise(image):
-            if denoise_p["denoise_luma"] <= 0 and denoise_p["denoise_chroma"] <= 0:
-                return image
-            return pynegative.de_noise_image(
-                image,
-                luma_strength=denoise_p["denoise_luma"],
-                chroma_strength=denoise_p["denoise_chroma"],
-                method=denoise_p["denoise_method"],
-                zoom=zoom_scale,
-                tier=res_key,
-            )
-
         def apply_sharpen(image):
             if sharpen_p["sharpen_value"] <= 0:
                 return image
@@ -248,24 +260,16 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 "High Quality",
             )
 
-        # 3. Determine execution order based on the last adjusted parameter.
+        # 3. Determine execution order (Dehaze vs Sharpen)
         active = self.last_heavy_adjusted
         if active == "de_haze":
             pipeline = [
-                ("denoise", denoise_p, apply_denoise),
                 ("sharpen", sharpen_p, apply_sharpen),
                 ("dehaze", dehaze_p, apply_dehaze),
-            ]
-        elif active in ["denoise_luma", "denoise_chroma"]:
-            pipeline = [
-                ("dehaze", dehaze_p, apply_dehaze),
-                ("sharpen", sharpen_p, apply_sharpen),
-                ("denoise", denoise_p, apply_denoise),
             ]
         else:
             pipeline = [
                 ("dehaze", dehaze_p, apply_dehaze),
-                ("denoise", denoise_p, apply_denoise),
                 ("sharpen", sharpen_p, apply_sharpen),
             ]
 
@@ -273,20 +277,14 @@ class ImageProcessorWorker(QtCore.QRunnable):
         processed = img
         accumulated_params = {}
 
-        # Scale radius-based parameters if processing on a sub-resolution tier
-        # scale_factor is current_tier_width / full_width
+        # Scale radius-based parameters
         img_w = img.shape[1]
         full_w = self.base_img_full.shape[1]
         scale_factor = img_w / full_w
 
-        # Adjust sharpen radius: a 1.0 radius on 0.5 tier should be 0.5 physical pixels
-        # relative to the full image.
         adj_sharpen_p = sharpen_p.copy()
         adj_sharpen_p["sharpen_radius"] *= scale_factor
 
-        # Adjust Dehaze kernel size if it were resolution dependent (it is in our core.py)
-
-        # Override the pipeline functions with scaled versions
         def apply_sharpen_scaled(image):
             if adj_sharpen_p["sharpen_value"] <= 0:
                 return image
@@ -416,15 +414,21 @@ class ImageProcessorWorker(QtCore.QRunnable):
             new_full_w = cached_w
             new_full_h = cached_h
         else:
-            # LENS STAGE (Correction)
+            # 1. DENOISE STAGE (Early, linear)
+            denoised_bg = self._process_denoise_stage(
+                img_render_base, res_key, heavy_params, zoom_scale
+            )
+
+            # 2. LENS STAGE (Correction)
             corrected_bg = self._process_lens_stage(
-                img_render_base,
+                denoised_bg,
                 res_key,
                 selected_scale,
                 roi_offset=(0, 0),
                 full_size=(selected_img.shape[1], selected_img.shape[0]),
             )
 
+            # 3. HEAVY STAGE (Sharpen, Dehaze)
             processed_bg = self._process_heavy_stage(
                 corrected_bg, res_key, heavy_params, zoom_scale
             )
@@ -555,19 +559,23 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     p_x2, p_y2 = min(w_tier, s_x2 + pad), min(h_tier, s_y2 + pad)
 
                     raw_chunk = base_roi_img[p_y1:p_y2, p_x1:p_x2]
+                    roi_res_id = (res_key_roi, p_x1, p_y1, p_x2, p_y2)
 
-                    # LENS STAGE (Correction)
-                    # Note: Correcting a chunk without proper ROI map slicing is an approximation
-                    # but should work for small distortions.
+                    # 1. DENOISE STAGE (Early, linear)
+                    denoised_chunk = self._process_denoise_stage(
+                        raw_chunk, roi_res_id, heavy_params, zoom_scale
+                    )
+
+                    # 2. LENS STAGE (Correction)
                     corrected_chunk = self._process_lens_stage(
-                        raw_chunk,
+                        denoised_chunk,
                         res_key_roi,
                         tier_scale_roi,
                         roi_offset=(p_x1, p_y1),
                         full_size=(w_tier, h_tier),
                     )
 
-                    roi_res_id = (res_key_roi, p_x1, p_y1, p_x2, p_y2)
+                    # 3. HEAVY STAGE (Sharpen, Dehaze)
                     processed_chunk_padded = self._process_heavy_stage(
                         corrected_chunk, roi_res_id, heavy_params, zoom_scale
                     )

@@ -89,12 +89,55 @@ class ExportProcessor(QtCore.QRunnable):
             str(file_path), half_size=False, output_bps=output_bps
         )
 
-        # Get sidecar settings
+        # 2. Get sidecar settings
         sidecar_settings = pynegative.load_sidecar(str(file_path)) or {}
 
-        # Process image with tone mapping
+        # 3. Apply Linear Stages
+        # 3.1 Denoise (Linear)
+        luma_str = sidecar_settings.get("denoise_luma")
+        chroma_str = sidecar_settings.get("denoise_chroma")
+        legacy_str = sidecar_settings.get("de_noise", 0)
+        l_str = float(luma_str if luma_str is not None else legacy_str)
+        c_str = float(chroma_str if chroma_str is not None else legacy_str)
+
+        if l_str > 0 or c_str > 0:
+            full_img = pynegative.de_noise_image(
+                full_img,
+                luma_strength=l_str,
+                chroma_strength=c_str,
+                method=sidecar_settings.get("denoise_method", "NLMeans (Numba Fast+)"),
+                zoom=1.0,
+            )
+
+        # 3.2 Lens Correction (Linear)
+        # Check if lens correction is enabled and we have info
+        from ..io.lens_resolver import resolve_lens_for_file
+
+        lens_info = resolve_lens_for_file(file_path)
+        img = pynegative.apply_lens_correction(
+            full_img, sidecar_settings, lens_info, scale=1.0
+        )
+
+        # 3.3 Dehaze (Linear)
+        dehaze_val = sidecar_settings.get("de_haze", 0)
+        if dehaze_val > 0:
+            # Normalize to 0-1 (UI storage is 0-50) before calling core
+            img, _ = pynegative.de_haze_image(img, dehaze_val / 50.0, zoom=1.0)
+
+        # 3.4 Sharpening (Linear)
+        sharpen_val = sidecar_settings.get("sharpen_value", 0)
+        if sharpen_val > 0:
+            img = pynegative.sharpen_image(
+                img,
+                sidecar_settings.get("sharpen_radius", 0.5),
+                sidecar_settings.get("sharpen_percent", 0.0),
+                method="High Quality",
+            )
+
+        # 4. Apply Non-Linear Stages
+        # 4.1 Tone Mapping (Curves/Gamma)
         img, _ = pynegative.apply_tone_map(
-            full_img,
+            img,
             temperature=sidecar_settings.get("temperature", 0.0),
             tint=sidecar_settings.get("tint", 0.0),
             exposure=sidecar_settings.get("exposure", 0.0),
@@ -106,10 +149,10 @@ class ExportProcessor(QtCore.QRunnable):
             saturation=sidecar_settings.get("saturation", 1.0),
         )
 
-        # Apply Defringe
+        # 4.2 Defringe
         img = pynegative.apply_defringe(img, sidecar_settings)
 
-        # Apply Geometry (Flip, Rotate, Crop)
+        # 4.3 Geometry (Flip, Rotate, Crop)
         img = pynegative.apply_geometry(
             img,
             rotate=sidecar_settings.get("rotation", 0.0),
@@ -117,38 +160,6 @@ class ExportProcessor(QtCore.QRunnable):
             flip_h=sidecar_settings.get("flip_h", False),
             flip_v=sidecar_settings.get("flip_v", False),
         )
-
-        # Apply Dehaze if present in sidecar
-        dehaze_val = sidecar_settings.get("de_haze", 0)
-        if dehaze_val > 0:
-            # Normalize to 0-1 (UI storage is 0-50) before calling core
-            img, _ = pynegative.de_haze_image(img, dehaze_val / 50.0, zoom=1.0)
-
-        # Apply Denoise if present in sidecar
-        luma_str = sidecar_settings.get("denoise_luma")
-        chroma_str = sidecar_settings.get("denoise_chroma")
-        legacy_str = sidecar_settings.get("de_noise", 0)
-        l_str = float(luma_str if luma_str is not None else legacy_str)
-        c_str = float(chroma_str if chroma_str is not None else legacy_str)
-
-        if l_str > 0 or c_str > 0:
-            img = pynegative.de_noise_image(
-                img,
-                luma_strength=l_str,
-                chroma_strength=c_str,
-                method=sidecar_settings.get("denoise_method", "NLMeans (Numba Fast+)"),
-                zoom=1.0,
-            )
-
-        # Apply Sharpening if present in sidecar
-        sharpen_val = sidecar_settings.get("sharpen_value", 0)
-        if sharpen_val > 0:
-            img = pynegative.sharpen_image(
-                img,
-                sidecar_settings.get("sharpen_radius", 0.5),
-                sidecar_settings.get("sharpen_percent", 0.0),
-                method="High Quality",
-            )
 
         # Convert to PIL Image for final steps
         if output_bps == 16:
