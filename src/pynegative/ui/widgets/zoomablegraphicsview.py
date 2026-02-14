@@ -55,6 +55,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self._current_zoom = 1.0
         self._fit_in_view_scale = 1.0
         self._is_fitting = True
+        self._rendered_rotation = 0.0  # The rotation baked into current pixmaps
         self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
 
         # Signal for redraw on pan
@@ -95,8 +96,14 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         roi_y=0,
         roi_w=0,
         roi_h=0,
+        rotation=0.0,
     ):
         """Unified update for both layers to ensure alignment."""
+        self._rendered_rotation = rotation
+        # Reset any temporary item rotation
+        self._bg_item.setRotation(0)
+        self._fg_item.setRotation(0)
+
         if bg_pix is None:
             bg_pix = QtGui.QPixmap()
         if roi_pix is None:
@@ -243,8 +250,27 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self.centerOn(rect.center())
 
     def set_rotation(self, angle: float) -> None:
-        """Set rotation angle on crop item."""
+        """Set rotation angle on crop item and apply temporary visual transform to image."""
         self._crop_item.set_rotation(angle)
+
+        # Apply visual delta rotation to background to bridge the gap before re-render
+        delta = angle - self._rendered_rotation
+        if abs(delta) > 0.01:
+            # Pivot around the crop center
+            pivot = self._crop_item.get_rect().center()
+
+            # Map pivot to bg item local space
+            bg_pivot = self._bg_item.mapFromScene(pivot)
+            self._bg_item.setTransformOriginPoint(bg_pivot)
+            self._bg_item.setRotation(-delta)  # CCW vs CW correction
+
+            # Hide ROI during active rotation to avoid misaligned detail patches
+            self._fg_item.hide()
+        else:
+            self._bg_item.setRotation(0)
+            # Only show foreground if it has a pixmap
+            if not self._fg_item.pixmap().isNull():
+                self._fg_item.show()
 
     def get_rotation(self) -> float:
         """Get rotation angle from crop item."""

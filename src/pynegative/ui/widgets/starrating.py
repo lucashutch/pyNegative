@@ -71,16 +71,23 @@ class StarRatingWidget(QtWidgets.QWidget):
 
             painter.drawPixmap(x, 0, star_icon)
 
+    def _get_event_pos(self, event):
+        """Compatibility helper for Qt6 mouse events."""
+        if hasattr(event, "position"):
+            return event.position()
+        return event.pos()
+
     def mouseMoveEvent(self, event):
         if not self.isEnabled():
             return
 
+        pos = self._get_event_pos(event)
         star_full_width = self.star_empty_pixmap.width() + 4  # Star width + spacing
 
         # Calculate which star is being hovered over
-        # Check if event.position().x() is within the bounds of the 5 stars
-        if 0 <= event.position().x() < (5 * star_full_width):
-            hovered_star_index = int(event.position().x() / star_full_width)
+        # Check if pos.x() is within the bounds of the 5 stars
+        if 0 <= pos.x() < (5 * star_full_width):
+            hovered_star_index = int(pos.x() / star_full_width)
             self._hover_rating = hovered_star_index + 1
         else:
             self._hover_rating = -1  # Outside the star area

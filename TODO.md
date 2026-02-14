@@ -11,6 +11,7 @@ This document tracks planned features, project goals, and areas for technical im
 ## Performance Optimisation
 
 - **High-DPI Awareness**: Detect system screen scale factor (e.g. 200% for Retina) and adjust the Smart Resolution selection to provide appropriate pixel density.
+- **implement point and dimensions classes** instead of passing around raw x ans y or h and w variables instead utilised classes for these (and other common types) so it is more clear what and how these are used.
 
 ## Bugs
 

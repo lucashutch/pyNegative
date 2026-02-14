@@ -15,9 +15,16 @@ class GalleryListWidget(QtWidgets.QListWidget):
         # Connect builtin signal to custom signal
         self.itemSelectionChanged.connect(self.selectionChanged.emit)
 
+    def _get_event_pos(self, event):
+        """Compatibility helper for Qt6 mouse events."""
+        if hasattr(event, "position"):
+            return event.position()
+        return event.pos()
+
     def mousePressEvent(self, event):
         """Handle mouse press with multi-selection support."""
-        item = self.itemAt(event.position().toPoint())
+        pos = self._get_event_pos(event)
+        item = self.itemAt(pos.toPoint())
 
         if item:
             item_rect = self.visualItemRect(item)
@@ -25,9 +32,7 @@ class GalleryListWidget(QtWidgets.QListWidget):
             # Check if click is on the selection circle
             delegate = self.itemDelegate()
             if hasattr(delegate, "is_click_on_circle"):
-                is_circle_click = delegate.is_click_on_circle(
-                    event.position().toPoint(), item_rect
-                )
+                is_circle_click = delegate.is_click_on_circle(pos.toPoint(), item_rect)
 
                 if is_circle_click:
                     # Toggle selection via circle click
@@ -40,7 +45,8 @@ class GalleryListWidget(QtWidgets.QListWidget):
 
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
-        item = self.itemAt(event.position().toPoint())
+        pos = self._get_event_pos(event)
+        item = self.itemAt(pos.toPoint())
         if item != self._hovered_item:
             if self._hovered_item:
                 # Trigger update on old item to remove hover effect
