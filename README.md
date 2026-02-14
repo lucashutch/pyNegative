@@ -19,6 +19,8 @@ Get the most out of your photos with a powerful, non-destructive editing suite.
 - **Fine-Tuned Control** — Precision adjustments for exposure, contrast, shadows, highlights, white balance, and more.
 - **Smart Dehaze, Sharpening & Denoise** — Professional-grade Numba-accelerated algorithms to bring out detail and clarity without the noise.
 - **Geometry Tools** — Crop, rotate, and flip your images with constrained aspect ratios.
+- **Lens Correction** — Auto-correct distortion, vignetting, and chromatic aberration using a built-in lens database.
+- **Manual Defringe** — Targeted desaturation of purple and green fringes on high-contrast edges.
 - **Before/After Comparison** — Drag the split-view handle to compare your edits with the original.
 - **EXIF Metadata** — View camera settings (ISO, shutter speed, aperture, lens, etc.) in a dedicated panel.
 - **Undo/Redo** — Full undo/redo history for all your adjustments.
@@ -118,4 +120,7 @@ See [TODO.md](TODO.md) for planned features and areas of improvement.
 
 ## License
 
-This project is open source. See the [LICENSE](LICENSE) file for details.
+This project is open source under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+### Data Licenses
+The lens database used by pyNegative is sourced from the [Lensfun Project](https://lensfun.github.io/) and is licensed under **CC-BY-SA 3.0**. Attribution for individual lens profiles remains with their respective contributors in the database XML files.

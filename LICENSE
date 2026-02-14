@@ -17,3 +17,10 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+### Third-Party Data
+The lens correction database provided with or downloaded by this software is sourced from the **Lensfun Project** (https://lensfun.github.io/) and is licensed under the **Creative Commons Attribution-ShareAlike 3.0 Unported** license (CC-BY-SA 3.0).
+
+By using the database, you agree to the terms of the CC-BY-SA 3.0 license. Attribution for individual lens profiles is maintained within the database XML files.

@@ -31,15 +31,10 @@ This document tracks planned features, project goals, and areas for technical im
   - **Radial & Linear Gradients**: Apply exposure/contrast/wb to specific areas.
   - **Brush Tool**: Paint-in adjustments.
 - **Spot Removal / Healing**: Basic tool to correct dust spots and skin blemishes.
-- **Lens Corrections**:
-  - Auto-correction for geometric distortion and vignette (via Lensfun).
-  - Manual distortion and vignette controls.
-  - Chromatic aberration auto-correction.
 - **Clipping Warnings**: Visual overlay (e.g. red/blue highlight) to show overexposed or underexposed areas.
 - **Auto-Straighten Tool**: A "Spirit Level" tool to draw a line along the horizon and automatically rotate the image.
 - **White Balance Picker (Eyedropper)**: Click on a neutral grey/white area in the image to instantly set the correct Temperature and Tint.
-- **Defringe Tool**: A specific tool to remove purple/green color fringing (Chromatic Aberration) from high-contrast edges. (Implemented Phase 5)
-  - **Hue Picker for Defringe**: Add an eyedropper to select the exact fringe color to target.
+- **Hue Picker for Defringe**: Add an eyedropper to select the exact fringe color to target.
 
 ### 🗂️ Workflow & DAM (Digital Asset Management)
 - **Versions / Snapshots**: Create "Virtual Copies" of an image to try different edits without duplicating the file.
