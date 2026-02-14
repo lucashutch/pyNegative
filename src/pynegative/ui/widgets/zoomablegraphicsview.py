@@ -250,27 +250,13 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self.centerOn(rect.center())
 
     def set_rotation(self, angle: float) -> None:
-        """Set rotation angle on crop item and apply temporary visual transform to image."""
+        """Set rotation angle on crop item."""
         self._crop_item.set_rotation(angle)
 
-        # Apply visual delta rotation to background to bridge the gap before re-render
-        delta = angle - self._rendered_rotation
-        if abs(delta) > 0.01:
-            # Pivot around the crop center
-            pivot = self._crop_item.get_rect().center()
-
-            # Map pivot to bg item local space
-            bg_pivot = self._bg_item.mapFromScene(pivot)
-            self._bg_item.setTransformOriginPoint(bg_pivot)
-            self._bg_item.setRotation(-delta)  # CCW vs CW correction
-
-            # Hide ROI during active rotation to avoid misaligned detail patches
-            self._fg_item.hide()
-        else:
-            self._bg_item.setRotation(0)
-            # Only show foreground if it has a pixmap
-            if not self._fg_item.pixmap().isNull():
-                self._fg_item.show()
+        # Temporary rotation sync disabled per user request
+        self._bg_item.setRotation(0)
+        if not self._fg_item.pixmap().isNull():
+            self._fg_item.show()
 
     def get_rotation(self) -> float:
         """Get rotation angle from crop item."""
