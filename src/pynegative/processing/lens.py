@@ -311,6 +311,136 @@ def vignette_kernel(img, k1, k2, k3, cx, cy, full_w, full_h):
                 img[y, x, i] *= gain
 
 
+@njit(parallel=True)
+def generate_tca_maps(
+    w, h, model_type, dist_params, tca_red, tca_blue, cx, cy, full_w, full_h, zoom=1.0
+):
+    """
+    Generates 3 sets of maps (Red, Green, Blue) for TCA correction.
+    """
+    map_xr = np.zeros((h, w), dtype=np.float32)
+    map_yr = np.zeros((h, w), dtype=np.float32)
+    map_xg = np.zeros((h, w), dtype=np.float32)
+    map_yg = np.zeros((h, w), dtype=np.float32)
+    map_xb = np.zeros((h, w), dtype=np.float32)
+    map_yb = np.zeros((h, w), dtype=np.float32)
+
+    max_r = np.sqrt((full_w / 2.0) ** 2 + (full_h / 2.0) ** 2)
+    inv_max_r = 1.0 / max_r
+    inv_zoom = 1.0 / zoom
+
+    for y in prange(h):
+        for x in range(w):
+            dx = (x - cx) * inv_zoom
+            dy = (y - cy) * inv_zoom
+
+            r = np.sqrt(dx * dx + dy * dy)
+            rn = r * inv_max_r
+
+            dist_rescale = _get_distortion_rescale(rn, model_type, dist_params)
+            tca_r_rescale = _get_tca_rescale(rn, tca_red)
+            tca_b_rescale = _get_tca_rescale(rn, tca_blue)
+
+            # Green (Reference)
+            map_xg[y, x] = cx + dx * dist_rescale
+            map_yg[y, x] = cy + dy * dist_rescale
+
+            # Red
+            map_xr[y, x] = cx + dx * dist_rescale * tca_r_rescale
+            map_yr[y, x] = cy + dy * dist_rescale * tca_r_rescale
+
+            # Blue
+            map_xb[y, x] = cx + dx * dist_rescale * tca_b_rescale
+            map_yb[y, x] = cy + dy * dist_rescale * tca_b_rescale
+
+    return map_xr, map_yr, map_xg, map_yg, map_xb, map_yb
+
+
+def get_tca_distortion_maps(
+    w: int,
+    h: int,
+    settings: dict,
+    lens_info: dict | None = None,
+    roi_offset: tuple[int, int] | None = None,
+    full_size: tuple[int, int] | None = None,
+) -> tuple[
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float
+]:
+    """
+    Returns 3 sets of maps for TCA + Distortion.
+    """
+    if full_size:
+        fw, fh = full_size
+    else:
+        fw, fh = w, h
+
+    if roi_offset:
+        rx, ry = roi_offset
+    else:
+        rx, ry = 0, 0
+
+    cx = fw / 2.0 - rx
+    cy = fh / 2.0 - ry
+
+    # 1. Resolve model and params
+    model = "manual"
+    params = {}
+    if lens_info:
+        if "distortion" in lens_info and lens_info["distortion"]:
+            dist = lens_info["distortion"]
+            model = dist.get("model", "poly3")
+            params = dist
+        elif "params" in lens_info and lens_info["params"]:
+            params = lens_info["params"]
+            model = params.get("model", "poly3")
+
+    manual_k1 = settings.get("lens_distortion", 0.0)
+    ca_intensity = settings.get("lens_ca", 1.0)
+
+    # 2. TCA Params
+    tca_red = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    tca_blue = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+
+    if lens_info and "tca" in lens_info and lens_info["tca"]:
+        tca = lens_info["tca"]
+        tca_red[0] = 1.0 + (tca.get("vr0", 1.0) - 1.0) * ca_intensity
+        tca_red[1] = tca.get("vr1", 0.0) * ca_intensity
+        tca_red[2] = tca.get("vr2", 0.0) * ca_intensity
+
+        tca_blue[0] = 1.0 + (tca.get("vb0", 1.0) - 1.0) * ca_intensity
+        tca_blue[1] = tca.get("vb1", 0.0) * ca_intensity
+        tca_blue[2] = tca.get("vb2", 0.0) * ca_intensity
+
+    # 3. Autocrop
+    zoom = 1.0
+    if settings.get("lens_autocrop", True):
+        calc_params = params.copy()
+        if model == "ptlens":
+            calc_params["c"] = params.get("c", 0.0) + manual_k1
+        else:
+            calc_params["k1"] = params.get("k1", 0.0) + manual_k1
+        zoom = calculate_autocrop_scale(model, calc_params, fw, fh)
+
+    # 4. Prepare params for kernel
+    dist_p = np.zeros(4, dtype=np.float32)
+    m_type = 0  # ptlens
+    if model == "ptlens":
+        dist_p[0] = params.get("a", 0.0)
+        dist_p[1] = params.get("b", 0.0)
+        dist_p[2] = params.get("c", 0.0) + manual_k1
+        dist_p[3] = 1.0 - dist_p[0] - dist_p[1] - dist_p[2]
+        m_type = 0
+    else:
+        dist_p[0] = params.get("k1", 0.0) + manual_k1
+        m_type = 1  # poly3
+
+    # 5. Generate
+    maps = generate_tca_maps(
+        w, h, m_type, dist_p, tca_red, tca_blue, cx, cy, fw, fh, zoom
+    )
+    return (*maps, zoom)
+
+
 def get_lens_distortion_maps(
     w: int,
     h: int,
