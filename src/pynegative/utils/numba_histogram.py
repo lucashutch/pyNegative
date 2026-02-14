@@ -1,5 +1,6 @@
 from ._numba_base import njit
 import numpy as np
+from ..processing.constants import LUMA_R, LUMA_G, LUMA_B
 
 
 @njit(fastmath=True, cache=True)
@@ -28,12 +29,11 @@ def numba_histogram_kernel(img, stride):
             hist_g[g_val] += 1
             hist_b[b_val] += 1
 
-            # RGB to YUV (simplified integer math for speed)
-            # Y = 0.299R + 0.587G + 0.114B
-            # U = -0.147R - 0.289G + 0.436B + 128
-            # V = 0.615R - 0.515G - 0.100B + 128
+            # RGB to YUV (Standardized Luma Rec. 709)
+            # Y = LUMA_R*R + LUMA_G*G + LUMA_B*B
+            # U/V still use BT.601-like coefficients for now as they are less critical for luma-focused tools
 
-            y = (306 * r_val + 601 * g_val + 117 * b_val) >> 10
+            y = int(LUMA_R * r_val + LUMA_G * g_val + LUMA_B * b_val)
             u = ((-150 * r_val - 296 * g_val + 446 * b_val) >> 10) + 128
             v = ((630 * r_val - 527 * g_val - 102 * b_val) >> 10) + 128
 

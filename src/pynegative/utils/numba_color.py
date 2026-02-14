@@ -1,4 +1,5 @@
 from ._numba_base import njit, prange
+from ..processing.constants import LUMA_R, LUMA_G, LUMA_B
 
 
 @njit(inline="always")
@@ -54,7 +55,7 @@ def tone_map_kernel(
                 b_val = (b_val - 0.18) * contrast + 0.18
 
             # Initial luminance for masks (Rec 709)
-            lum = 0.2126 * r_val + 0.7152 * g_val + 0.0722 * b_val
+            lum = LUMA_R * r_val + LUMA_G * g_val + LUMA_B * b_val
 
             # 3. Levels (Blacks/Whites)
             r_val = (r_val - blacks) * inv_denom
