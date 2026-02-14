@@ -18,7 +18,11 @@ class TestApplyToneMap:
             dtype=np.float32,
         )
 
-        result, stats = pynegative.apply_tone_map(img)
+        # Disable gamma for this test to match input exactly (except for contrast center shift)
+        # Note: even with exposure=0, contrast defaults to 1.0 but now centers at 0.18.
+        # So 0.5 will be shifted if contrast is not 1.0.
+        # But default contrast is 1.0, so it should stay 0.5.
+        result, stats = pynegative.apply_tone_map(img, apply_gamma=False)
 
         # Result should be equal to input (within float precision)
         np.testing.assert_array_almost_equal(result, img)
@@ -28,7 +32,7 @@ class TestApplyToneMap:
         """Test exposure adjustment (+1 stop)"""
         img = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
         # +1 stop should double values
-        result, _ = pynegative.apply_tone_map(img, exposure=1.0)
+        result, _ = pynegative.apply_tone_map(img, exposure=1.0, apply_gamma=False)
         np.testing.assert_array_almost_equal(
             result, np.array([[[1.0, 1.0, 1.0]]], dtype=np.float32)
         )
@@ -41,7 +45,9 @@ class TestApplyToneMap:
         )
 
         # Pull blacks to 0.1, whites to 0.9
-        result, _ = pynegative.apply_tone_map(img, blacks=0.1, whites=0.9)
+        result, _ = pynegative.apply_tone_map(
+            img, blacks=0.1, whites=0.9, apply_gamma=False
+        )
 
         # 0.5 -> (0.5-0.1)/0.8 = 0.4/0.8 = 0.5 (Mid stays mid)
         # 0.0 -> (0.0-0.1)/0.8 = -0.125 -> clipped to 0
@@ -54,7 +60,9 @@ class TestApplyToneMap:
         """Test shadows and highlights tone adjustments"""
         img = np.array([[[0.2, 0.2, 0.2], [0.8, 0.8, 0.8]]], dtype=np.float32)
         # Increase shadows, decrease highlights
-        result, _ = pynegative.apply_tone_map(img, shadows=0.2, highlights=-0.2)
+        result, _ = pynegative.apply_tone_map(
+            img, shadows=0.2, highlights=-0.2, apply_gamma=False
+        )
 
         # Shadows (0.2) should be boosted
         assert result[0, 0, 0] > 0.2
@@ -64,14 +72,14 @@ class TestApplyToneMap:
     def test_clipping_statistics(self):
         """Test that clipping statistics are calculated correctly"""
         img = np.array([[[1.5, -0.5, 0.5]]], dtype=np.float32)
-        _, stats = pynegative.apply_tone_map(img)
+        _, stats = pynegative.apply_tone_map(img, apply_gamma=False)
         assert stats["pct_highlights_clipped"] > 0.0
         assert stats["pct_shadows_clipped"] > 0.0
 
     def test_clipping(self):
         """Test that values are clipped to [0, 1]"""
         img = np.array([[[1.5, -0.5, 0.5]]], dtype=np.float32)
-        result, stats = pynegative.apply_tone_map(img)
+        result, stats = pynegative.apply_tone_map(img, apply_gamma=False)
         assert np.all(result >= 0.0)
         assert np.all(result <= 1.0)
         assert stats["pct_highlights_clipped"] > 0
@@ -83,7 +91,7 @@ class TestApplyToneMap:
         img = np.array([[[0.5, 0.2, 0.2]]], dtype=np.float32)
 
         # Desaturate to 0 (should become grayscale)
-        result, _ = pynegative.apply_tone_map(img, saturation=0.0)
+        result, _ = pynegative.apply_tone_map(img, saturation=0.0, apply_gamma=False)
 
         # Luminance for [0.5, 0.2, 0.2] is 0.5*0.2126 + 0.2*0.7152 + 0.2*0.0722 = 0.26378
         expected_gray = 0.26378
@@ -95,7 +103,7 @@ class TestApplyToneMap:
         )
 
         # Oversaturate
-        result, _ = pynegative.apply_tone_map(img, saturation=2.0)
+        result, _ = pynegative.apply_tone_map(img, saturation=2.0, apply_gamma=False)
         # Manual check: lum + (img-lum)*2 = 0.26378 + (0.5-0.26378)*2 = 0.26378 + 0.23622*2 = 0.73622
         expected_r = 0.73622
         assert result[0, 0, 0] == pytest.approx(expected_r)
