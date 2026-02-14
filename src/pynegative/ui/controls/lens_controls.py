@@ -125,7 +125,25 @@ class LensControls(BaseControlWidget):
             "Vignette", -1.0, 1.0, 0.0, "lens_vignette", 0.01, self.section
         )
         self.ca_slider = self._add_slider(
-            "CA Correction", 0.0, 1.0, 0.0, "lens_ca", 0.01, self.section
+            "CA Correction", 0.0, 2.0, 1.0, "lens_ca", 0.01, self.section
+        )
+
+        # Defringe Section
+        self.section.content_layout.addSpacing(10)
+        defringe_lbl = QtWidgets.QLabel("Defringe")
+        defringe_lbl.setStyleSheet("font-weight: bold; font-size: 11px; color: #ccc;")
+        self.section.add_widget(defringe_lbl)
+        self._add_slider(
+            "Purple Amount", 0.0, 1.0, 0.0, "defringe_purple", 0.01, self.section
+        )
+        self._add_slider(
+            "Green Amount", 0.0, 1.0, 0.0, "defringe_green", 0.01, self.section
+        )
+        self._add_slider(
+            "Edge Threshold", 0.0, 0.5, 0.05, "defringe_edge", 0.01, self.section
+        )
+        self._add_slider(
+            "Defringe Radius", 0.0, 5.0, 1.0, "defringe_radius", 1.0, self.section
         )
 
         # Wire up signals
@@ -153,7 +171,11 @@ class LensControls(BaseControlWidget):
 
         self.set_slider_value("lens_distortion", 0.0)
         self.set_slider_value("lens_vignette", 0.0)
-        self.set_slider_value("lens_ca", 0.0)
+        self.set_slider_value("lens_ca", 1.0)
+        self.set_slider_value("defringe_purple", 0.0)
+        self.set_slider_value("defringe_green", 0.0)
+        self.set_slider_value("defringe_edge", 0.05)
+        self.set_slider_value("defringe_radius", 1.0)
 
         self.settingChanged.emit("lens_camera_override", None)
         self.settingChanged.emit("lens_name_override", None)
@@ -161,7 +183,11 @@ class LensControls(BaseControlWidget):
         self.settingChanged.emit("lens_autocrop", True)
         self.settingChanged.emit("lens_distortion", 0.0)
         self.settingChanged.emit("lens_vignette", 0.0)
-        self.settingChanged.emit("lens_ca", 0.0)
+        self.settingChanged.emit("lens_ca", 1.0)
+        self.settingChanged.emit("defringe_purple", 0.0)
+        self.settingChanged.emit("defringe_green", 0.0)
+        self.settingChanged.emit("defringe_edge", 0.05)
+        self.settingChanged.emit("defringe_radius", 1.0)
         self.settingChanged.emit("lens_auto_detect", True)
 
     def _populate_combos(self):

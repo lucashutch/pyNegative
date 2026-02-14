@@ -70,8 +70,10 @@ def resolve_lens_profile(
             # Get distortion params if available
             distortion = None
             vignetting = None
+            tca = None
             if focal_length is not None:
                 distortion = db.get_distortion_params(matched_lens, focal_length)
+                tca = db.get_tca_params(matched_lens, focal_length)
                 if aperture is not None:
                     vignetting = db.get_vignette_params(
                         matched_lens, focal_length, aperture
@@ -82,6 +84,7 @@ def resolve_lens_profile(
                 "lens_data": matched_lens,
                 "distortion": distortion,
                 "vignetting": vignetting,
+                "tca": tca,
                 "exif": exif_info,
             }
 

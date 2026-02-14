@@ -156,6 +156,70 @@ class LensDatabase:
 
         return dist_entries[0]
 
+    def get_tca_params(self, lens: Dict, focal_length: float) -> Optional[Dict]:
+        """
+        Extract and interpolate TCA (Transverse Chromatic Aberration) parameters.
+        Returns coefficients for Red and Blue channels.
+        """
+        element = lens.get("raw_element")
+        if element is None:
+            return None
+
+        calib = element.find("calibration")
+        if calib is None:
+            return None
+
+        tca_entries = []
+        for tca in calib.findall("tca"):
+            try:
+                model = tca.get("model")
+                f = float(tca.get("focal", 0))
+                # Collect all attributes (vr0, vr1, vr2, vb0, vb1, vb2)
+                params = {"model": model, "focal": f}
+                for key, val in tca.attrib.items():
+                    if key not in ["model", "focal"]:
+                        try:
+                            params[key] = float(val)
+                        except ValueError:
+                            pass
+                tca_entries.append(params)
+            except (ValueError, TypeError):
+                continue
+
+        if not tca_entries:
+            return None
+
+        # Sort by focal length
+        tca_entries.sort(key=lambda x: x["focal"])
+
+        # Interpolate
+        if focal_length <= tca_entries[0]["focal"]:
+            return tca_entries[0]
+        if focal_length >= tca_entries[-1]["focal"]:
+            return tca_entries[-1]
+
+        # Linear interpolation between nearest points
+        for i in range(len(tca_entries) - 1):
+            t1 = tca_entries[i]
+            t2 = tca_entries[i + 1]
+            if t1["focal"] <= focal_length <= t2["focal"]:
+                if t1["model"] != t2["model"]:
+                    return (
+                        t1
+                        if abs(focal_length - t1["focal"])
+                        < abs(focal_length - t2["focal"])
+                        else t2
+                    )
+
+                s = (focal_length - t1["focal"]) / (t2["focal"] - t1["focal"])
+                result = {"model": t1["model"], "focal": focal_length}
+                for key in t1:
+                    if key not in ["model", "focal"]:
+                        result[key] = t1[key] + s * (t2[key] - t1[key])
+                return result
+
+        return tca_entries[0]
+
     def get_vignette_params(
         self,
         lens: Dict,

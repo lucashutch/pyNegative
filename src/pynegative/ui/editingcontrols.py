@@ -194,6 +194,22 @@ class EditingControls(QtWidgets.QWidget):
     def val_lens_ca(self):
         return self.lens_controls.get_value("lens_ca")
 
+    @property
+    def val_defringe_purple(self):
+        return self.lens_controls.get_value("defringe_purple")
+
+    @property
+    def val_defringe_green(self):
+        return self.lens_controls.get_value("defringe_green")
+
+    @property
+    def val_defringe_edge(self):
+        return self.lens_controls.get_value("defringe_edge")
+
+    @property
+    def val_defringe_radius(self):
+        return self.lens_controls.get_value("defringe_radius")
+
     # Compatibility for tests
     @property
     def val_sharpen_value_slider(self):
@@ -240,7 +256,15 @@ class EditingControls(QtWidgets.QWidget):
             self.detail_controls.set_slider_value(var_name, value, silent)
         elif var_name == "rotation":
             self.geometry_controls.set_slider_value(var_name, value, silent)
-        elif var_name in ["lens_distortion", "lens_vignette", "lens_ca"]:
+        elif var_name in [
+            "lens_distortion",
+            "lens_vignette",
+            "lens_ca",
+            "defringe_purple",
+            "defringe_green",
+            "defringe_edge",
+            "defringe_radius",
+        ]:
             self.lens_controls.set_slider_value(var_name, value, silent)
 
     def set_crop_checked(self, checked):
@@ -297,6 +321,10 @@ class EditingControls(QtWidgets.QWidget):
             "lens_distortion": self.val_lens_distortion,
             "lens_vignette": self.val_lens_vignette,
             "lens_ca": self.val_lens_ca,
+            "defringe_purple": self.val_defringe_purple,
+            "defringe_green": self.val_defringe_green,
+            "defringe_edge": self.val_defringe_edge,
+            "defringe_radius": self.val_defringe_radius,
             "lens_camera_override": self.lens_controls.camera_combo.currentText()
             if self.lens_controls.camera_combo.currentIndex() > 0
             else None,
@@ -357,6 +385,10 @@ class EditingControls(QtWidgets.QWidget):
             "lens_distortion",
             "lens_vignette",
             "lens_ca",
+            "defringe_purple",
+            "defringe_green",
+            "defringe_edge",
+            "defringe_radius",
         ]
 
         controls_map = {
@@ -377,6 +409,10 @@ class EditingControls(QtWidgets.QWidget):
             "lens_distortion": self.lens_controls,
             "lens_vignette": self.lens_controls,
             "lens_ca": self.lens_controls,
+            "defringe_purple": self.lens_controls,
+            "defringe_green": self.lens_controls,
+            "defringe_edge": self.lens_controls,
+            "defringe_radius": self.lens_controls,
         }
 
         for var in slider_vars:
@@ -411,8 +447,23 @@ class EditingControls(QtWidgets.QWidget):
                     val = min(50.0, val)
 
                 # Special handling for lens settings which don't have val_ prefix in some contexts
-                if var in ["lens_distortion", "lens_vignette", "lens_ca"]:
-                    val = settings.get(var, 0.0)
+                if var in [
+                    "lens_distortion",
+                    "lens_vignette",
+                    "lens_ca",
+                    "defringe_purple",
+                    "defringe_green",
+                    "defringe_edge",
+                    "defringe_radius",
+                ]:
+                    default = 0.0
+                    if var == "lens_ca":
+                        default = 1.0
+                    elif var == "defringe_edge":
+                        default = 0.05
+                    elif var == "defringe_radius":
+                        default = 1.0
+                    val = settings.get(var, default)
 
                 ctrl.set_slider_value(var, val, silent=True)
 

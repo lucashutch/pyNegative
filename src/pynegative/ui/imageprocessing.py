@@ -150,13 +150,19 @@ class ImageProcessingPipeline(QtCore.QObject):
         lens_keys = {
             "lens_distortion",
             "lens_vignette",
+            "lens_ca",
             "lens_enabled",
             "lens_autocrop",
             "lens_name_override",
             "lens_camera_override",
+            "defringe_purple",
+            "defringe_green",
+            "defringe_edge",
+            "defringe_radius",
         }
 
         changed = False
+        lens_changed = False
         for k, v in kwargs.items():
             if self._processing_params.get(k) != v:
                 self._processing_params[k] = v
@@ -164,10 +170,11 @@ class ImageProcessingPipeline(QtCore.QObject):
                 if k in heavy_keys:
                     self._last_heavy_adjusted = k
                 if k in lens_keys:
-                    logger.debug(
-                        f"Invalidating pipeline cache due to lens parameter change: {k}"
-                    )
-                    self.cache.invalidate(clear_estimated=False)
+                    lens_changed = True
+
+        if lens_changed:
+            logger.debug("Invalidating pipeline cache due to lens parameter changes")
+            self.cache.invalidate(clear_estimated=False)
 
         if changed:
             # Settings changed, so last ROI is invalid
@@ -202,8 +209,12 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._render_pending = True
         # Reset idle timer on every user interaction
         self.idle_timer.stop()
+
         if not self._is_rendering_locked:
-            self._process_pending_update()
+            # Rate limit/Debounce: wait a few ms to catch rapid slider movements
+            # 16ms = ~60fps, 33ms = ~30fps.
+            if not self.render_timer.isActive():
+                self.render_timer.start(20)
 
     def _on_idle_timeout(self):
         """Triggered when user is idle, to render a larger padded ROI."""
@@ -289,7 +300,9 @@ class ImageProcessingPipeline(QtCore.QObject):
             self.idle_timer.start(300)  # 300ms idle threshold
 
         if self._render_pending:
-            self._process_pending_update()
+            # If there's another update pending, don't start it IMMEDIATELY.
+            # Give the UI thread a tiny slice of time to handle input events.
+            self.render_timer.start(5)
 
     @QtCore.Slot(dict, int)
     def _on_histogram_updated(self, hist_data, request_id):

@@ -9,3 +9,4 @@ from .effects import (
     sharpen_image as sharpen_image,
 )
 from .lens import apply_lens_correction as apply_lens_correction
+from .defringe import apply_defringe as apply_defringe

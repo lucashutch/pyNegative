@@ -431,6 +431,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
             bg_output, _ = pynegative.apply_tone_map(
                 processed_bg, **tone_map_settings, calculate_stats=False
             )
+            bg_output = pynegative.apply_defringe(bg_output, self.settings)
             bg_output = pynegative.apply_geometry(
                 bg_output,
                 rotate=rotate_val,
@@ -590,6 +591,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 processed_roi, _ = pynegative.apply_tone_map(
                     crop_chunk, **tone_map_settings, calculate_stats=False
                 )
+                processed_roi = pynegative.apply_defringe(processed_roi, self.settings)
                 roi_uint8 = (np.clip(processed_roi, 0, 1) * 255).astype(np.uint8)
                 h_r, w_r, c_r = roi_uint8.shape
                 qimg_roi = QtGui.QImage(
