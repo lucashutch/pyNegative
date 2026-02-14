@@ -110,6 +110,36 @@ class GeometryResolver:
         """Returns the 2x3 affine matrix for OpenCV."""
         return self.matrix[:2, :]
 
+    def get_fused_maps(
+        self, lens_map_x: np.ndarray, lens_map_y: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Fuses the provided lens distortion maps with the current affine transformation.
+        Returns (map_x, map_y) suitable for cv2.remap().
+        Pillar B: Unified Geometry Engine (Task 2.2)
+        """
+        out_w, out_h = self.get_output_size()
+        M = self.get_matrix_2x3()
+
+        # Warp the maps themselves. Since the maps contain source coordinates,
+        # we interpolate them linearly to get the fused mapping.
+        fused_x = cv2.warpAffine(
+            lens_map_x,
+            M,
+            (out_w, out_h),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+        fused_y = cv2.warpAffine(
+            lens_map_y,
+            M,
+            (out_w, out_h),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+
+        return fused_x, fused_y
+
     def resolve(self, rotate=0.0, crop=None, flip_h=False, flip_v=False, expand=True):
         """
         Composes all transforms into the internal matrix.
