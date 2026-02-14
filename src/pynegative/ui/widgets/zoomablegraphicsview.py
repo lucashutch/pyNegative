@@ -11,6 +11,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
     doubleClicked = Signal()
     cropRectChanged = Signal(QRectF)
     rotationChanged = Signal(float)  # Forward rotation changes from crop item
+    interactionFinished = Signal()
 
     ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0]
 
@@ -51,6 +52,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self._crop_item.cropChanged.connect(self.cropRectChanged.emit)
         self._crop_item.cropChanged.connect(self._on_crop_rect_changed)
         self._crop_item.rotationChanged.connect(self.rotationChanged.emit)
+        self._crop_item.interactionFinished.connect(self.interactionFinished.emit)
 
         self._current_zoom = 1.0
         self._fit_in_view_scale = 1.0
@@ -250,27 +252,13 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self.centerOn(rect.center())
 
     def set_rotation(self, angle: float) -> None:
-        """Set rotation angle on crop item and apply temporary visual transform to image."""
+        """Set rotation angle on crop item."""
         self._crop_item.set_rotation(angle)
 
-        # Apply visual delta rotation to background to bridge the gap before re-render
-        delta = angle - self._rendered_rotation
-        if abs(delta) > 0.01:
-            # Pivot around the crop center
-            pivot = self._crop_item.get_rect().center()
-
-            # Map pivot to bg item local space
-            bg_pivot = self._bg_item.mapFromScene(pivot)
-            self._bg_item.setTransformOriginPoint(bg_pivot)
-            self._bg_item.setRotation(-delta)  # CCW vs CW correction
-
-            # Hide ROI during active rotation to avoid misaligned detail patches
-            self._fg_item.hide()
-        else:
-            self._bg_item.setRotation(0)
-            # Only show foreground if it has a pixmap
-            if not self._fg_item.pixmap().isNull():
-                self._fg_item.show()
+        # Temporary rotation sync disabled per user request
+        self._bg_item.setRotation(0)
+        if not self._fg_item.pixmap().isNull():
+            self._fg_item.show()
 
     def get_rotation(self) -> float:
         """Get rotation angle from crop item."""

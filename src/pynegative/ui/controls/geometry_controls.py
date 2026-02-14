@@ -226,4 +226,5 @@ class GeometryControls(BaseControlWidget):
         self.settingChanged.emit("rotation", 0.0)
         self.btn_flip_h.setChecked(False)
         self.btn_flip_v.setChecked(False)
+        self.aspect_ratio_combo.setCurrentIndex(0)  # Reset to "Unlocked"
         self.settingChanged.emit("crop", None)

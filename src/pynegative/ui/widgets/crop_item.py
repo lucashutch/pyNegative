@@ -9,6 +9,9 @@ class CropRectItem(QtWidgets.QGraphicsObject):
 
     cropChanged = QtCore.Signal(QtCore.QRectF)
     rotationChanged = QtCore.Signal(float)  # Emit rotation angle in degrees
+    interactionFinished = (
+        QtCore.Signal()
+    )  # Emitted when mouse is released after move/resize/rotate
 
     def __init__(self, rect=QtCore.QRectF(0, 0, 100, 100), parent=None):
         super().__init__(parent)
@@ -425,6 +428,7 @@ class CropRectItem(QtWidgets.QGraphicsObject):
         self._active_handle = None
         self._mouse_press_pos = None
         self._mouse_press_rect = None
+        self.interactionFinished.emit()
         super().mouseReleaseEvent(event)
 
     def _update_geometry(self, handle, diff):

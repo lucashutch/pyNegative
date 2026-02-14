@@ -108,45 +108,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
             logger.error(f"Image processing worker failed: {e}", exc_info=True)
             self.signals.error.emit(str(e), self.request_id)
 
-    def _process_lens_stage(self, img, res_key, scale, roi_offset=None, full_size=None):
-        """Processes lens correction stage."""
-        if not self.settings.get("lens_enabled", True):
-            return img
-
-        k1 = self.settings.get("lens_distortion", 0.0)
-        vignette = self.settings.get("lens_vignette", 0.0)
-
-        has_auto_dist = False
-        has_auto_vig = False
-        if self.lens_info:
-            has_auto_dist = (
-                "distortion" in self.lens_info
-                and self.lens_info["distortion"] is not None
-            )
-            has_auto_vig = (
-                "vignetting" in self.lens_info
-                and self.lens_info["vignetting"] is not None
-            )
-
-        if (
-            abs(k1) < 1e-5
-            and abs(vignette) < 1e-5
-            and not has_auto_dist
-            and not has_auto_vig
-        ):
-            return img
-
-        t0 = time.perf_counter()
-        result = pynegative.apply_lens_correction(
-            img, self.settings, self.lens_info, scale, roi_offset, full_size
-        )
-        elapsed = (time.perf_counter() - t0) * 1000
-
-        logger.debug(
-            f"Lens Correction ({res_key}): k1={k1:.4f}, vig={vignette:.4f} ({elapsed:.2f}ms)"
-        )
-        return result
-
     def _process_denoise_stage(self, img, res_key, heavy_params, zoom_scale):
         """Processes and caches the denoising stage."""
         l_str = float(heavy_params.get("denoise_luma", 0))
@@ -302,6 +263,184 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         return processed
 
+    def _get_fused_geometry(
+        self,
+        w_src,
+        h_src,
+        rotate_val,
+        crop_val,
+        flip_h,
+        flip_v,
+        ts_roi=1.0,
+        roi_offset=None,
+        full_size=None,
+        M_override=None,
+        out_size_override=None,
+    ):
+        """
+        Calculates fused maps for lens correction and affine transforms.
+        Returns (list_of_maps, out_w, out_h, zoom_factor).
+        Each element in list_of_maps is (map_x, map_y).
+        If no maps, list_of_maps contains only [M].
+        """
+        # 1. Setup Resolver
+        resolver = GeometryResolver(w_src, h_src)
+        if M_override is not None:
+            if M_override.shape == (2, 3):
+                m33 = np.eye(3, dtype=np.float32)
+                m33[:2, :] = M_override
+                resolver.matrix = m33
+            else:
+                resolver.matrix = M_override.copy()
+
+            if out_size_override:
+                resolver.full_w, resolver.full_h = out_size_override
+        else:
+            resolver.resolve(
+                rotate=rotate_val,
+                crop=crop_val,
+                flip_h=flip_h,
+                flip_v=flip_v,
+                expand=True,
+            )
+
+        M = resolver.get_matrix_2x3()
+        out_w, out_h = resolver.get_output_size()
+        out_w, out_h = int(round(out_w)), int(round(out_h))
+
+        # 2. Get Lens Maps (TCA aware)
+        zoom_factor = 1.0
+        fused_maps = []
+
+        if self.settings.get("lens_enabled", True):
+            ca_intensity = self.settings.get("lens_ca", 1.0)
+            has_tca = (
+                self.lens_info and "tca" in self.lens_info and abs(ca_intensity) > 1e-3
+            )
+
+            from ...processing.lens import (
+                get_lens_distortion_maps,
+                get_tca_distortion_maps,
+            )
+
+            if has_tca:
+                xr, yr, xg, yg, xb, yb, zoom_factor = get_tca_distortion_maps(
+                    w_src, h_src, self.settings, self.lens_info, roi_offset, full_size
+                )
+                # Fuse each channel's map
+                fused_maps.append(resolver.get_fused_maps(xr, yr))
+                fused_maps.append(resolver.get_fused_maps(xg, yg))
+                fused_maps.append(resolver.get_fused_maps(xb, yb))
+            else:
+                mx, my, zoom_factor = get_lens_distortion_maps(
+                    w_src, h_src, self.settings, self.lens_info, roi_offset, full_size
+                )
+                if mx is not None:
+                    fused_maps.append(resolver.get_fused_maps(mx, my))
+
+        if not fused_maps:
+            # Fallback to affine only
+            fused_maps = [M]
+
+        return fused_maps, out_w, out_h, zoom_factor
+
+    def _process_lens_vignette(self, img, scale, roi_offset=None, full_size=None):
+        if not self.settings.get("lens_enabled", True):
+            return img
+
+        vignette = self.settings.get("lens_vignette", 0.0)
+        has_auto_vig = False
+        if self.lens_info:
+            has_auto_vig = (
+                "vignetting" in self.lens_info
+                and self.lens_info["vignetting"] is not None
+            )
+
+        if abs(vignette) < 1e-5 and not has_auto_vig:
+            return img
+
+        from ...processing.lens import vignette_kernel
+
+        # Resolve center
+        if full_size:
+            fw, fh = full_size
+        else:
+            fh, fw = img.shape[:2]
+
+        if roi_offset:
+            rx, ry = roi_offset
+        else:
+            rx, ry = 0, 0
+
+        cx = fw / 2.0 - rx
+        cy = fh / 2.0 - ry
+
+        vig_k1 = vignette
+        vig_k2 = 0.0
+        vig_k3 = 0.0
+
+        if (
+            self.lens_info
+            and "vignetting" in self.lens_info
+            and self.lens_info["vignetting"]
+        ):
+            vig = self.lens_info["vignetting"]
+            if vig.get("model") == "pa":
+                vig_k1 += vig.get("k1", 0.0)
+                vig_k2 = vig.get("k2", 0.0)
+                vig_k3 = vig.get("k3", 0.0)
+
+        if abs(vig_k1) > 1e-6 or abs(vig_k2) > 1e-6 or abs(vig_k3) > 1e-6:
+            img = img.copy()  # Avoid modifying source
+            vignette_kernel(img, vig_k1, vig_k2, vig_k3, cx, cy, fw, fh)
+
+        return img
+
+    def _apply_fused_remap(
+        self, img, fused_maps, out_w, out_h, interpolation=cv2.INTER_CUBIC
+    ):
+        """Applies one or more fused maps to an image."""
+        if len(fused_maps) == 3:
+            # TCA case
+            channels = cv2.split(img)
+            remapped_channels = []
+            for i in range(3):
+                mx, my = fused_maps[i]
+                remapped_channels.append(
+                    cv2.remap(
+                        channels[i],
+                        mx,
+                        my,
+                        interpolation,
+                        borderMode=cv2.BORDER_CONSTANT,
+                        borderValue=0,
+                    )
+                )
+            return cv2.merge(remapped_channels)
+        elif len(fused_maps) == 1:
+            m = fused_maps[0]
+            if isinstance(m, tuple):
+                # Distortion map
+                return cv2.remap(
+                    img,
+                    m[0],
+                    m[1],
+                    interpolation,
+                    borderMode=cv2.BORDER_CONSTANT,
+                    borderValue=0,
+                )
+            else:
+                # Affine matrix
+                return cv2.warpAffine(
+                    img,
+                    m,
+                    (out_w, out_h),
+                    flags=interpolation,
+                    borderMode=cv2.BORDER_CONSTANT,
+                    borderValue=0,
+                )
+        return img
+
     def _update_preview(self):
         if self.base_img_full is None or self._view_ref is None:
             return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0, 0.0
@@ -384,17 +523,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
         res_key = f"tier_{selected_scale}"
         h_src, w_src = selected_img.shape[:2]
 
-        tier_resolver = GeometryResolver(w_src, h_src)
-        tier_resolver.resolve(
-            rotate=rotate_val,
-            crop=crop_val,
-            flip_h=flip_h,
-            flip_v=flip_v,
-            expand=True,
-        )
-        M_tier = tier_resolver.get_matrix_2x3()
-        out_w_tier, out_h_tier = tier_resolver.get_output_size()
-
         cached_bg, cached_w, cached_h = (None, 0, 0)
         if self.cache:
             cached_bg, cached_w, cached_h = self.cache.get_cached_bg_pixmap()
@@ -410,38 +538,68 @@ class ImageProcessorWorker(QtCore.QRunnable):
             # Render background (potentially low-res if zoomed in)
             if is_zoomed_in:
                 # OPTIMIZATION: Skip heavy effects for background when zoomed in.
-                # The background is just context/blur, so we don't need expensive effects.
                 processed_bg = selected_img
-                # Still need lens correction for geometry alignment
-                corrected_bg = self._process_lens_stage(
-                    processed_bg, res_key, selected_scale, (0, 0), (w_src, h_src)
+                # Still need lens correction and geometry for alignment
+                fused_maps, o_w, o_h, _ = self._get_fused_geometry(
+                    w_src,
+                    h_src,
+                    rotate_val,
+                    crop_val,
+                    flip_h,
+                    flip_v,
+                    ts_roi=selected_scale,
+                    roi_offset=(0, 0),
+                    full_size=(w_src, h_src),
                 )
+
+                # Vignette (spatial-only remap doesn't handle it)
+                processed_bg = self._process_lens_vignette(
+                    processed_bg, selected_scale, (0, 0), (w_src, h_src)
+                )
+
+                img_dest = self._apply_fused_remap(
+                    processed_bg, fused_maps, o_w, o_h, cv2.INTER_LINEAR
+                )
+
                 bg_output, _ = pynegative.apply_tone_map(
-                    corrected_bg, **tone_map_settings, calculate_stats=False
+                    img_dest, **tone_map_settings, calculate_stats=False
                 )
                 bg_output = pynegative.apply_defringe(bg_output, self.settings)
             else:
                 denoised_bg = self._process_denoise_stage(
                     selected_img, res_key, heavy_params, zoom_scale
                 )
-                corrected_bg = self._process_lens_stage(
-                    denoised_bg, res_key, selected_scale, (0, 0), (w_src, h_src)
+
+                fused_maps, o_w, o_h, _ = self._get_fused_geometry(
+                    w_src,
+                    h_src,
+                    rotate_val,
+                    crop_val,
+                    flip_h,
+                    flip_v,
+                    ts_roi=selected_scale,
+                    roi_offset=(0, 0),
+                    full_size=(w_src, h_src),
                 )
+
+                # Vignette
+                denoised_bg = self._process_lens_vignette(
+                    denoised_bg, selected_scale, (0, 0), (w_src, h_src)
+                )
+
+                img_dest = self._apply_fused_remap(
+                    denoised_bg, fused_maps, o_w, o_h, cv2.INTER_CUBIC
+                )
+
                 processed_bg = self._process_heavy_stage(
-                    corrected_bg, res_key, heavy_params, zoom_scale
+                    img_dest, res_key, heavy_params, zoom_scale
                 )
                 bg_output, _ = pynegative.apply_tone_map(
                     processed_bg, **tone_map_settings, calculate_stats=False
                 )
                 bg_output = pynegative.apply_defringe(bg_output, self.settings)
 
-            img_dest = cv2.warpAffine(
-                bg_output,
-                M_tier,
-                (int(round(out_w_tier)), int(round(out_h_tier))),
-                flags=cv2.INTER_LINEAR,
-            )
-            img_uint8 = (np.clip(img_dest, 0, 1) * 255).astype(np.uint8)
+            img_uint8 = (np.clip(bg_output, 0, 1) * 255).astype(np.uint8)
 
             if self.calculate_histogram:
                 try:
@@ -527,32 +685,38 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 raw_chunk = base_roi_img[s_ymin:s_ymax, s_xmin:s_xmax]
                 if raw_chunk.size > 0:
                     roi_res_id = (res_key_roi, s_xmin, s_ymin, s_xmax, s_ymax)
-                    chunk_processed = (
-                        self.cache.get_spatial_roi(
-                            res_key_roi, (s_xmin, s_ymin, s_xmax, s_ymax), heavy_params
-                        )
+
+                    # 2. Process Stage: Denoise and Vignette on source chunk
+                    # We cache this part as it's the most expensive and doesn't change with rotation
+                    denoise_p = {
+                        "denoise_luma": heavy_params["denoise_luma"],
+                        "denoise_chroma": heavy_params["denoise_chroma"],
+                        "denoise_method": heavy_params["denoise_method"],
+                    }
+
+                    denoised_chunk = (
+                        self.cache.get(res_key_roi, "denoise_chunk", denoise_p)
                         if self.cache
                         else None
                     )
 
-                    if chunk_processed is None:
-                        c = self._process_denoise_stage(
+                    if denoised_chunk is None:
+                        denoised_chunk = self._process_denoise_stage(
                             raw_chunk, roi_res_id, heavy_params, zoom_scale
                         )
-                        c = self._process_lens_stage(
-                            c, res_key_roi, ts_roi, (s_xmin, s_ymin), (w_rs, h_rs)
-                        )
-                        chunk_processed = self._process_heavy_stage(
-                            c, roi_res_id, heavy_params, zoom_scale
+                        # Apply vignette on source
+                        denoised_chunk = self._process_lens_vignette(
+                            denoised_chunk, ts_roi, (s_xmin, s_ymin), (w_rs, h_rs)
                         )
                         if self.cache:
-                            self.cache.put_spatial_roi(
-                                res_key_roi,
-                                (s_xmin, s_ymin, s_xmax, s_ymax),
-                                heavy_params,
-                                chunk_processed,
+                            self.cache.put(
+                                res_key_roi, "denoise_chunk", denoise_p, denoised_chunk
                             )
 
+                    # 3. Mega-Remap: Lens + Affine in one go
+                    h_chunk, w_chunk = denoised_chunk.shape[:2]
+
+                    # Calculate M_local for this chunk
                     resolver_roi = GeometryResolver(w_rs, h_rs)
                     resolver_roi.resolve(
                         rotate=rotate_val,
@@ -575,15 +739,37 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     M_local[1, 2] -= ry
 
                     rw_i, rh_i = int(round(rw)), int(round(rh))
+
+                    fused_maps, o_w, o_h, _ = self._get_fused_geometry(
+                        w_chunk,
+                        h_chunk,
+                        rotate_val,
+                        crop_val,
+                        flip_h,
+                        flip_v,
+                        ts_roi=ts_roi,
+                        roi_offset=(s_xmin, s_ymin),
+                        full_size=(w_rs, h_rs),
+                        M_override=M_local,
+                        out_size_override=(rw_i, rh_i),
+                    )
+
+                    remapped_roi = self._apply_fused_remap(
+                        denoised_chunk, fused_maps, rw_i, rh_i, cv2.INTER_CUBIC
+                    )
+
+                    # 4. Final Processing on visible pixels
+                    # We can still cache this if needed, but since it's on a small ROI it's fast.
+                    chunk_processed = self._process_heavy_stage(
+                        remapped_roi, "roi_final", heavy_params, zoom_scale
+                    )
+
                     roi_output, _ = pynegative.apply_tone_map(
                         chunk_processed, **tone_map_settings, calculate_stats=False
                     )
                     roi_output = pynegative.apply_defringe(roi_output, self.settings)
-                    roi_dest = cv2.warpAffine(
-                        roi_output, M_local, (rw_i, rh_i), flags=cv2.INTER_LINEAR
-                    )
 
-                    roi_uint8 = (np.clip(roi_dest, 0, 1) * 255).astype(np.uint8)
+                    roi_uint8 = (np.clip(roi_output, 0, 1) * 255).astype(np.uint8)
                     qimg_roi = QtGui.QImage(
                         roi_uint8.data, rw_i, rh_i, 3 * rw_i, QtGui.QImage.Format_RGB888
                     )
