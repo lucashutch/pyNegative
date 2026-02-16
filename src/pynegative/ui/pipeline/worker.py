@@ -724,9 +724,12 @@ class ImageProcessorWorker(QtCore.QRunnable):
             p_w, p_h = rw * pad_ratio, rh * pad_ratio
             rx, ry, rw, rh = rx - p_w, ry - p_h, rw + 2 * p_w, rh + 2 * p_h
 
-            # Clamp
+            # Clamp and round to ensure consistent integer dimensions
             rx, ry = max(0, rx), max(0, ry)
             rw, rh = min(new_full_w - rx, rw), min(new_full_h - ry, rh)
+            # Round early to ensure consistent dimensions throughout processing
+            rx, ry = int(round(rx)), int(round(ry))
+            rw, rh = int(round(rw)), int(round(rh))
 
             if rw > 10 and rh > 10:
                 req_display_w = full_w * zoom_scale
@@ -942,8 +945,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     M_local[0, 2] -= rx
                     M_local[1, 2] -= ry
 
-                    rw_i, rh_i = int(round(rw)), int(round(rh))
-
+                    # Use pre-rounded dimensions
                     fused_maps, o_w, o_h, _ = self._get_fused_geometry(
                         w_chunk,
                         h_chunk,
@@ -955,11 +957,11 @@ class ImageProcessorWorker(QtCore.QRunnable):
                         roi_offset=(s_xmin, s_ymin),
                         full_size=(w_rs, h_rs),
                         M_override=M_local,
-                        out_size_override=(rw_i, rh_i),
+                        out_size_override=(rw, rh),
                     )
 
                     remapped_roi = self._apply_fused_remap(
-                        denoised_chunk, fused_maps, rw_i, rh_i, cv2.INTER_CUBIC
+                        denoised_chunk, fused_maps, rw, rh, cv2.INTER_CUBIC
                     )
 
                     chunk_processed = self._process_heavy_stage(
@@ -973,7 +975,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
                     roi_uint8 = (np.clip(roi_output, 0, 1) * 255).astype(np.uint8)
                     qimg_roi = QtGui.QImage(
-                        roi_uint8.data, rw_i, rh_i, 3 * rw_i, QtGui.QImage.Format_RGB888
+                        roi_uint8.data, rw, rh, 3 * rw, QtGui.QImage.Format_RGB888
                     )
                     pix_roi = QtGui.QPixmap.fromImage(qimg_roi)
                     roi_x, roi_y, roi_w, roi_h = rx, ry, rw, rh
