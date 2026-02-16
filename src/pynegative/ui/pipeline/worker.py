@@ -76,11 +76,14 @@ class ImageProcessorWorker(QtCore.QRunnable):
     def __init__(
         self,
         signals,
-        view_ref,
         base_img_full,
         tiers,
         settings,
         request_id,
+        zoom_scale=1.0,
+        roi_scene_rect=None,
+        viewport_size=None,
+        is_fitting=True,
         calculate_histogram=False,
         cache=None,
         last_heavy_adjusted="de_haze",
@@ -89,11 +92,14 @@ class ImageProcessorWorker(QtCore.QRunnable):
     ):
         super().__init__()
         self.signals = signals
-        self._view_ref = view_ref
         self.base_img_full = base_img_full
         self.tiers = tiers
         self.settings = settings
         self.request_id = request_id
+        self.zoom_scale = zoom_scale
+        self.roi_scene_rect = roi_scene_rect
+        self.viewport_size = viewport_size
+        self.is_fitting = is_fitting
         self.calculate_histogram = calculate_histogram
         self.cache = cache
         self.last_heavy_adjusted = last_heavy_adjusted
@@ -485,7 +491,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         return img
 
     def _update_preview(self):
-        if self.base_img_full is None or self._view_ref is None:
+        if self.base_img_full is None:
             return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0, 0.0
 
         full_h, full_w = self.base_img_full.shape[:2]
@@ -528,13 +534,15 @@ class ImageProcessorWorker(QtCore.QRunnable):
         )
 
         # --- STEP 1: RESOLUTION SELECTION ---
-        try:
-            zoom_scale = self._view_ref.transform().m11()
-            view_rect = self._view_ref.viewport().rect()
-            v_w = view_rect.width()
-            is_fitting = getattr(self._view_ref, "_is_fitting", False)
-        except (AttributeError, RuntimeError):
+        zoom_scale = self.zoom_scale
+        roi_scene_rect = self.roi_scene_rect
+        is_fitting = self.is_fitting
+        v_size = self.viewport_size
+
+        if roi_scene_rect is None or v_size is None:
             return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0, 0.0
+
+        v_w = v_size.width()
 
         # Optimization: ROI logic
         is_zoomed_in = not is_fitting and zoom_scale > 0.5
@@ -709,14 +717,11 @@ class ImageProcessorWorker(QtCore.QRunnable):
         pix_roi, roi_x, roi_y, roi_w, roi_h = QtGui.QPixmap(), 0, 0, 0, 0
 
         if is_zoomed_in:
-            roi_scene = self._view_ref.mapToScene(
-                self._view_ref.viewport().rect()
-            ).boundingRect()
             rx, ry, rw, rh = (
-                roi_scene.x(),
-                roi_scene.y(),
-                roi_scene.width(),
-                roi_scene.height(),
+                roi_scene_rect.x(),
+                roi_scene_rect.y(),
+                roi_scene_rect.width(),
+                roi_scene_rect.height(),
             )
 
             # ROI PADDING
