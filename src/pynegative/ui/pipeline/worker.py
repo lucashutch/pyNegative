@@ -610,7 +610,15 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     roi_offset=None, full_size=(w_src, h_src)
                 )
                 vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = bg_vig_params
-                processed_bg = pynegative.apply_preprocess(
+                preprocess_key = (
+                    preprocess_settings["temperature"],
+                    preprocess_settings["tint"],
+                    preprocess_settings["exposure"],
+                    vig_k1,
+                    vig_k2,
+                    vig_k3,
+                )
+                preprocessed_bg = pynegative.apply_preprocess(
                     selected_img,
                     temperature=preprocess_settings["temperature"],
                     tint=preprocess_settings["tint"],
@@ -622,6 +630,10 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     vignette_cy=vig_cy,
                     full_width=vig_fw,
                     full_height=vig_fh,
+                )
+
+                denoised_bg = self._process_denoise_stage(
+                    preprocessed_bg, res_key, heavy_params, zoom_scale, preprocess_key
                 )
 
                 fused_maps, o_w, o_h, _ = self._get_fused_geometry(
@@ -637,7 +649,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 )
 
                 img_dest = self._apply_fused_remap(
-                    processed_bg, fused_maps, o_w, o_h, cv2.INTER_LINEAR
+                    denoised_bg, fused_maps, o_w, o_h, cv2.INTER_LINEAR
                 )
 
                 bg_output, _ = pynegative.apply_tone_map(
