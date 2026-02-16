@@ -102,14 +102,12 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
     ):
         """Unified update for both layers to ensure alignment."""
         self._rendered_rotation = rotation
-        # Reset any temporary item rotation
-        self._bg_item.setRotation(0)
-        self._fg_item.setRotation(0)
 
         if bg_pix is None:
             bg_pix = QtGui.QPixmap()
         if roi_pix is None:
             roi_pix = QtGui.QPixmap()
+
         # 1. Update Background
         self._bg_item.setPixmap(bg_pix)
         if not bg_pix.isNull() and bg_pix.width() > 0:
@@ -135,6 +133,19 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
             self._fg_item.show()
         else:
             self._fg_item.hide()
+
+        # 4. Sync interactive rotation
+        # If the user is rotating, they expect to see (current_angle - rendered_rotation)
+        # applied via GPU rotation on top of the rendered pixmaps.
+        current_angle = self._crop_item.get_rotation()
+        rel_rotation = current_angle - self._rendered_rotation
+        center = self._scene.sceneRect().center()
+
+        self._bg_item.setTransformOriginPoint(self._bg_item.mapFromScene(center))
+        self._bg_item.setRotation(rel_rotation)
+
+        self._fg_item.setTransformOriginPoint(self._fg_item.mapFromScene(center))
+        self._fg_item.setRotation(rel_rotation)
 
     def reset_zoom(self):
         bg_pixmap = self._bg_item.pixmap()
@@ -255,8 +266,18 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         """Set rotation angle on crop item."""
         self._crop_item.set_rotation(angle)
 
-        # Temporary rotation sync disabled per user request
-        self._bg_item.setRotation(0)
+        # Immediate visual feedback via GPU rotation
+        rel_rotation = angle - self._rendered_rotation
+
+        # Rotate around scene center to maintain alignment with GeometryResolver
+        center = self._scene.sceneRect().center()
+
+        self._bg_item.setTransformOriginPoint(self._bg_item.mapFromScene(center))
+        self._bg_item.setRotation(rel_rotation)
+
+        self._fg_item.setTransformOriginPoint(self._fg_item.mapFromScene(center))
+        self._fg_item.setRotation(rel_rotation)
+
         if not self._fg_item.pixmap().isNull():
             self._fg_item.show()
 
