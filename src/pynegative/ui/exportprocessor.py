@@ -92,8 +92,42 @@ class ExportProcessor(QtCore.QRunnable):
         # 2. Get sidecar settings
         sidecar_settings = pynegative.load_sidecar(str(file_path)) or {}
 
+        from ..io.lens_resolver import resolve_lens_for_file
+
+        lens_info = resolve_lens_for_file(file_path)
+
+        # Resolve vignette params for preprocess
+        vig_k1, vig_k2, vig_k3 = 0.0, 0.0, 0.0
+        if sidecar_settings.get("lens_enabled", True):
+            vignette = sidecar_settings.get("lens_vignette", 0.0)
+            vig_k1 = vignette
+            if lens_info and "vignetting" in lens_info and lens_info["vignetting"]:
+                vig = lens_info["vignetting"]
+                if vig.get("model") == "pa":
+                    vig_k1 += vig.get("k1", 0.0)
+                    vig_k2 = vig.get("k2", 0.0)
+                    vig_k3 = vig.get("k3", 0.0)
+
+        h_full, w_full = full_img.shape[:2]
+        vig_cx, vig_cy = w_full / 2.0, h_full / 2.0
+
         # 3. Apply Linear Stages
-        # 3.1 Denoise (Linear)
+        # 3.1 Preprocess (WB + Exposure + Vignette) - BEFORE denoise
+        img = pynegative.apply_preprocess(
+            full_img,
+            temperature=sidecar_settings.get("temperature", 0.0),
+            tint=sidecar_settings.get("tint", 0.0),
+            exposure=sidecar_settings.get("exposure", 0.0),
+            vignette_k1=vig_k1,
+            vignette_k2=vig_k2,
+            vignette_k3=vig_k3,
+            vignette_cx=vig_cx,
+            vignette_cy=vig_cy,
+            full_width=float(w_full),
+            full_height=float(h_full),
+        )
+
+        # 3.2 Denoise (Linear, after exposure)
         luma_str = sidecar_settings.get("denoise_luma")
         chroma_str = sidecar_settings.get("denoise_chroma")
         legacy_str = sidecar_settings.get("de_noise", 0)
@@ -101,30 +135,25 @@ class ExportProcessor(QtCore.QRunnable):
         c_str = float(chroma_str if chroma_str is not None else legacy_str)
 
         if l_str > 0 or c_str > 0:
-            full_img = pynegative.de_noise_image(
-                full_img,
+            img = pynegative.de_noise_image(
+                img,
                 luma_strength=l_str,
                 chroma_strength=c_str,
                 method=sidecar_settings.get("denoise_method", "NLMeans (Numba Fast+)"),
                 zoom=1.0,
             )
 
-        # 3.2 Lens Correction (Linear)
-        # Check if lens correction is enabled and we have info
-        from ..io.lens_resolver import resolve_lens_for_file
-
-        lens_info = resolve_lens_for_file(file_path)
+        # 3.3 Lens Correction (Linear, distortion only)
         img = pynegative.apply_lens_correction(
-            full_img, sidecar_settings, lens_info, scale=1.0
+            img, sidecar_settings, lens_info, scale=1.0, skip_vignette=True
         )
 
-        # 3.3 Dehaze (Linear)
+        # 3.4 Dehaze (Linear)
         dehaze_val = sidecar_settings.get("de_haze", 0)
         if dehaze_val > 0:
-            # Normalize to 0-1 (UI storage is 0-50) before calling core
             img, _ = pynegative.de_haze_image(img, dehaze_val / 50.0, zoom=1.0)
 
-        # 3.4 Sharpening (Linear)
+        # 3.5 Sharpening (Linear)
         sharpen_val = sidecar_settings.get("sharpen_value", 0)
         if sharpen_val > 0:
             img = pynegative.sharpen_image(
@@ -135,12 +164,9 @@ class ExportProcessor(QtCore.QRunnable):
             )
 
         # 4. Apply Non-Linear Stages
-        # 4.1 Tone Mapping (Curves/Gamma)
+        # 4.1 Tone Mapping (Contrast, Levels, Saturation, Gamma)
         img, _ = pynegative.apply_tone_map(
             img,
-            temperature=sidecar_settings.get("temperature", 0.0),
-            tint=sidecar_settings.get("tint", 0.0),
-            exposure=sidecar_settings.get("exposure", 0.0),
             contrast=sidecar_settings.get("contrast", 1.0),
             blacks=sidecar_settings.get("blacks", 0.0),
             whites=sidecar_settings.get("whites", 1.0),

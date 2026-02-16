@@ -27,25 +27,18 @@ def test_tone_map_gamma():
     """Verify that tone_map_kernel applies gamma (implicitly by checking output values)."""
     from pynegative.processing.tonemap import apply_tone_map
 
-    # Create a linear ramp
     img = np.linspace(0, 1, 100).reshape(1, 100, 1)
     img = np.repeat(img, 3, axis=2).astype(np.float32)
 
-    # Apply tone map with neutral settings (no exposure, no contrast change, etc.)
-    # Note: contrast center is 0.18 now, so 1.0 contrast means no change.
-    # We need to set contrast to 1.0 and blacks=0, whites=1.
     out, _ = apply_tone_map(
-        img, exposure=0.0, contrast=1.0, blacks=0.0, whites=1.0, calculate_stats=False
+        img, contrast=1.0, blacks=0.0, whites=1.0, calculate_stats=False
     )
 
-    # In linear to sRGB, 0.18 should become ~0.46
-    # (0.18 is roughly the 18% gray)
     mid_idx = 18
     linear_val = img[0, mid_idx, 0]
     gamma_val = out[0, mid_idx, 0]
 
     assert gamma_val > linear_val
-    # 0.18 sRGB is approx 0.46
     assert 0.45 < out[0, 18, 0] < 0.48
 
 

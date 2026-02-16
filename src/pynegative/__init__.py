@@ -22,6 +22,7 @@ _setup_opencv_cache()
 
 from .core import (  # noqa: E402
     apply_tone_map,
+    apply_preprocess,
     open_raw,
     extract_thumbnail,
     calculate_auto_exposure,
@@ -39,6 +40,7 @@ from .core import (  # noqa: E402
 
 __all__ = [
     "apply_tone_map",
+    "apply_preprocess",
     "open_raw",
     "extract_thumbnail",
     "calculate_auto_exposure",
