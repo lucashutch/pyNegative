@@ -85,6 +85,7 @@ class PipelineCache:
             if clear_estimated:
                 self.estimated_params = {}
             self._cached_bg_pixmap = None
+            self._cached_bg_preprocess_key = None
 
     def clear(self):
         self.caches = {}
