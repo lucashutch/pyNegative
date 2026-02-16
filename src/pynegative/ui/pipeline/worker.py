@@ -606,7 +606,10 @@ class ImageProcessorWorker(QtCore.QRunnable):
         else:
             # Render background (potentially low-res if zoomed in)
             if is_zoomed_in:
-                vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = full_vig_params
+                bg_vig_params = self._resolve_vignette_params(
+                    roi_offset=None, full_size=(w_src, h_src)
+                )
+                vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = bg_vig_params
                 processed_bg = pynegative.apply_preprocess(
                     selected_img,
                     temperature=preprocess_settings["temperature"],
@@ -642,7 +645,10 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 )
                 bg_output = pynegative.apply_defringe(bg_output, self.settings)
             else:
-                vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = full_vig_params
+                bg_vig_params = self._resolve_vignette_params(
+                    roi_offset=None, full_size=(w_src, h_src)
+                )
+                vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = bg_vig_params
                 preprocess_key = (
                     preprocess_settings["temperature"],
                     preprocess_settings["tint"],
