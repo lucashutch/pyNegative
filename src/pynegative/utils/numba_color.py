@@ -2,6 +2,56 @@ from ._numba_base import njit, prange
 from ..processing.constants import LUMA_R, LUMA_G, LUMA_B
 
 
+@njit(fastmath=True, cache=True, parallel=True)
+def preprocess_kernel(
+    img,
+    r_mult,
+    g_mult,
+    b_mult,
+    exposure,
+    vig_k1=0.0,
+    vig_k2=0.0,
+    vig_k3=0.0,
+    vig_cx=0.0,
+    vig_cy=0.0,
+    full_w=1.0,
+    full_h=1.0,
+):
+    """
+    Apply vignette, WB multipliers, and exposure in linear space.
+    Operates in-place on the input image.
+    Vignette is applied first, then WB+Exposure.
+    """
+    rows, cols, _ = img.shape
+    exp_mult = 2.0**exposure
+
+    has_vignette = abs(vig_k1) > 1e-6 or abs(vig_k2) > 1e-6 or abs(vig_k3) > 1e-6
+    if has_vignette:
+        inv_max_r2 = 1.0 / ((full_w / 2.0) ** 2 + (full_h / 2.0) ** 2)
+
+    for r in prange(rows):
+        for c in range(cols):
+            r_val = img[r, c, 0]
+            g_val = img[r, c, 1]
+            b_val = img[r, c, 2]
+
+            if has_vignette:
+                dx = c - vig_cx
+                dy = r - vig_cy
+                r2 = dx * dx + dy * dy
+                rn2 = r2 * inv_max_r2
+                rn4 = rn2 * rn2
+                rn6 = rn4 * rn2
+                vignette_gain = 1.0 + vig_k1 * rn2 + vig_k2 * rn4 + vig_k3 * rn6
+                r_val *= vignette_gain
+                g_val *= vignette_gain
+                b_val *= vignette_gain
+
+            img[r, c, 0] = r_val * r_mult * exp_mult
+            img[r, c, 1] = g_val * g_mult * exp_mult
+            img[r, c, 2] = b_val * b_mult * exp_mult
+
+
 @njit(inline="always")
 def _linear_to_srgb(x):
     """Applies sRGB gamma curve."""
@@ -12,59 +62,48 @@ def _linear_to_srgb(x):
 
 @njit(fastmath=True, cache=True, parallel=True)
 def tone_map_kernel(
-    img,  # float32 array (H, W, 3) - MODIFIED IN PLACE
-    exposure,  # float
-    contrast,  # float
-    blacks,  # float (offset)
-    whites,  # float (scale)
-    shadows,  # float
-    highlights,  # float
-    saturation,  # float
-    r_mult,  # float
-    g_mult,  # float
-    b_mult,  # float
-    apply_gamma,  # boolean (Pillar A)
+    img,
+    contrast,
+    blacks,
+    whites,
+    shadows,
+    highlights,
+    saturation,
+    apply_gamma,
 ):
     """
     Highly optimized fused kernel for tone mapping.
-    Uses analytical luminance tracking to avoid redundant calculations.
-    Now includes an optional final sRGB gamma stage (Pillar A).
+    Operates on pre-processed data (WB, exposure, vignette already applied).
+    Applies: Contrast → Levels → Shadows/Highlights → Saturation → Gamma
     """
     rows, cols, _ = img.shape
 
-    # Pre-calculate constants
     inv_denom = 1.0 / (whites - blacks) if abs(whites - blacks) > 1e-6 else 1000000.0
     abs_h = abs(highlights)
 
-    # Statistics tracking
     clipped_shadows = 0
     clipped_highlights = 0
     pixel_sum = 0.0
 
     for r in prange(rows):
         for c in range(cols):
-            # 1. White Balance & Exposure
-            r_val = img[r, c, 0] * r_mult * exposure
-            g_val = img[r, c, 1] * g_mult * exposure
-            b_val = img[r, c, 2] * b_mult * exposure
+            r_val = img[r, c, 0]
+            g_val = img[r, c, 1]
+            b_val = img[r, c, 2]
 
-            # 2. Linear Contrast (centered at middle gray ~0.18 for linear data)
             if contrast != 1.0:
                 r_val = (r_val - 0.18) * contrast + 0.18
                 g_val = (g_val - 0.18) * contrast + 0.18
                 b_val = (b_val - 0.18) * contrast + 0.18
 
-            # Initial luminance for masks (Rec 709)
             lum = LUMA_R * r_val + LUMA_G * g_val + LUMA_B * b_val
 
-            # 3. Levels (Blacks/Whites)
             r_val = (r_val - blacks) * inv_denom
             g_val = (g_val - blacks) * inv_denom
             b_val = (b_val - blacks) * inv_denom
             lum = (lum - blacks) * inv_denom
 
             if shadows != 0.0 or highlights != 0.0 or saturation != 1.0:
-                # 4. Shadows
                 if shadows != 0.0:
                     clim = max(0.0, min(1.0, lum))
                     s_mask = (1.0 - clim) * (1.0 - clim)
@@ -74,10 +113,8 @@ def tone_map_kernel(
                     b_val *= factor
                     lum *= factor
 
-                # 5. Highlights
                 if highlights != 0.0:
                     if highlights < 0.0:
-                        # Recovery (Division)
                         h_mask = max(0.0, lum) ** 2
                         factor = 1.0 + abs_h * h_mask
                         inv_f = 1.0 / factor
@@ -86,7 +123,6 @@ def tone_map_kernel(
                         b_val *= inv_f
                         lum *= inv_f
                     else:
-                        # Boost (Blend)
                         clim = max(0.0, min(1.0, lum))
                         h_term = highlights * clim * clim
                         inv_h = 1.0 - h_term
@@ -95,14 +131,12 @@ def tone_map_kernel(
                         b_val = b_val * inv_h + h_term
                         lum = lum * inv_h + h_term
 
-                # 6. Saturation (uses tracked 'lum' directly)
                 if saturation != 1.0:
                     c_lum = max(0.0, min(1.0, lum))
                     r_val = c_lum + (r_val - c_lum) * saturation
                     g_val = c_lum + (g_val - c_lum) * saturation
                     b_val = c_lum + (b_val - c_lum) * saturation
 
-            # Clipping & Stats (Calculate BEFORE gamma for accuracy)
             if r_val < 0.0:
                 clipped_shadows += 1
             elif r_val > 1.0:
@@ -116,7 +150,6 @@ def tone_map_kernel(
             elif b_val > 1.0:
                 clipped_highlights += 1
 
-            # 7. Final sRGB Gamma (Pillar A)
             if apply_gamma:
                 r_val = _linear_to_srgb(max(0.0, r_val))
                 g_val = _linear_to_srgb(max(0.0, g_val))

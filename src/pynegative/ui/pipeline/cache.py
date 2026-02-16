@@ -91,18 +91,25 @@ class PipelineCache:
         self.spatial_roi_cache = {}
         self.estimated_params = {}
         self._cached_bg_pixmap = None
+        self._cached_bg_preprocess_key = None
 
-    def get_cached_bg_pixmap(self):
-        """Returns cached background pixmap if it exists (no param check).
+    def get_cached_bg_pixmap(self, preprocess_key=None):
+        """Returns cached background pixmap if it exists and preprocess_key matches.
 
         When ROI is active, we use any cached background since it's not visible.
         """
         if self._cached_bg_pixmap is None:
             return None, 0, 0
+        if (
+            preprocess_key is not None
+            and self._cached_bg_preprocess_key != preprocess_key
+        ):
+            return None, 0, 0
         return self._cached_bg_pixmap, self._cached_bg_full_w, self._cached_bg_full_h
 
-    def set_cached_bg_pixmap(self, pixmap, full_w, full_h):
+    def set_cached_bg_pixmap(self, pixmap, full_w, full_h, preprocess_key=None):
         """Store the cached background pixmap."""
         self._cached_bg_pixmap = pixmap
         self._cached_bg_full_w = full_w
         self._cached_bg_full_h = full_h
+        self._cached_bg_preprocess_key = preprocess_key

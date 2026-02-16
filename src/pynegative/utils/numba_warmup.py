@@ -27,7 +27,7 @@ def warmup_kernels() -> tuple[bool, float]:
     elapsed_ms : float
         Wall-clock time spent warming up, in milliseconds.
     """
-    from .numba_color import tone_map_kernel
+    from .numba_color import tone_map_kernel, preprocess_kernel
     from .numba_detail import sharpen_kernel
     from .numba_denoise import (
         bilateral_kernel_yuv,
@@ -38,16 +38,15 @@ def warmup_kernels() -> tuple[bool, float]:
 
     start = time.perf_counter()
 
-    # --- tiny dummy arrays, just enough to satisfy each kernel's shape ---
     img3 = np.zeros((4, 4, 3), dtype=np.float32)
     img2d = np.zeros((30, 30), dtype=np.float32)
     img3_mc = np.zeros((30, 30, 3), dtype=np.float32)
     transmission = np.full((4, 4), 0.5, dtype=np.float32)
     atmospheric = np.array([0.5, 0.5, 0.5], dtype=np.float32)
 
-    # 1. tone_map_kernel(img, exposure, contrast, blacks, whites,
-    #                    shadows, highlights, saturation, r, g, b, apply_gamma)
-    tone_map_kernel(img3.copy(), 1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, True)
+    preprocess_kernel(img3.copy(), 1.0, 1.0, 1.0, 0.0)
+
+    tone_map_kernel(img3.copy(), 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, True)
 
     # 2. sharpen_kernel(img, blurred, percent)
     sharpen_kernel(img3.copy(), img3.copy(), 50.0)
