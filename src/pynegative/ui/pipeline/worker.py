@@ -862,13 +862,12 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     M_roi_full_tier = resolver_roi.get_matrix_2x3()
 
                     M_local = M_roi_full_tier.copy()
-                    M_local[0, 2] += (
-                        M_roi_full_tier[0, 0] * s_xmin + M_roi_full_tier[0, 1] * s_ymin
-                    )
-                    M_local[1, 2] += (
-                        M_roi_full_tier[1, 0] * s_xmin + M_roi_full_tier[1, 1] * s_ymin
-                    )
+                    # Scale the matrix first to work in tier-scale coordinates
                     M_local[:2, :] /= ts_roi
+                    # Apply translation using the scaled matrix
+                    M_local[0, 2] += M_local[0, 0] * s_xmin + M_local[0, 1] * s_ymin
+                    M_local[1, 2] += M_local[1, 0] * s_xmin + M_local[1, 1] * s_ymin
+                    # Adjust for ROI offset in destination
                     M_local[0, 2] -= rx
                     M_local[1, 2] -= ry
 
