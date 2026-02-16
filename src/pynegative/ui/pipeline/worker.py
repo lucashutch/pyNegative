@@ -558,6 +558,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
             expand=True,
         )
         new_full_w, new_full_h = full_resolver.get_output_size()
+        M_full = full_resolver.get_matrix_2x3()
 
         # --- Part 1: Global Background ---
         # Optimization: Cap background resolution when zoomed in to keep interaction fast
@@ -636,6 +637,11 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     preprocessed_bg, res_key, heavy_params, zoom_scale, preprocess_key
                 )
 
+                # Scale full-res matrix for tier-scale source to ensure
+                # output dimensions match the scene rect exactly
+                M_tier = M_full.copy()
+                M_tier[:2, :2] /= selected_scale
+
                 fused_maps, o_w, o_h, _ = self._get_fused_geometry(
                     w_src,
                     h_src,
@@ -646,6 +652,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     ts_roi=selected_scale,
                     roi_offset=(0, 0),
                     full_size=(w_src, h_src),
+                    M_override=M_tier,
+                    out_size_override=(new_full_w, new_full_h),
                 )
 
                 img_dest = self._apply_fused_remap(
@@ -687,6 +695,11 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     preprocessed_bg, res_key, heavy_params, zoom_scale, preprocess_key
                 )
 
+                # Scale full-res matrix for tier-scale source to ensure
+                # output dimensions match the scene rect exactly
+                M_tier = M_full.copy()
+                M_tier[:2, :2] /= selected_scale
+
                 fused_maps, o_w, o_h, _ = self._get_fused_geometry(
                     w_src,
                     h_src,
@@ -697,6 +710,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     ts_roi=selected_scale,
                     roi_offset=(0, 0),
                     full_size=(w_src, h_src),
+                    M_override=M_tier,
+                    out_size_override=(new_full_w, new_full_h),
                 )
 
                 img_dest = self._apply_fused_remap(
