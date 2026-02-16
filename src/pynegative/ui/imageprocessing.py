@@ -269,14 +269,25 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._is_rendering_locked = True
         self.perf_start_time = time.perf_counter()
 
+        # Capture viewport state in UI thread
+        zoom_scale = self._view_ref.transform().m11()
+        viewport_size = self._view_ref.viewport().size()
+        roi_scene_rect = self._view_ref.mapToScene(
+            self._view_ref.viewport().rect()
+        ).boundingRect()
+        is_fitting = getattr(self._view_ref, "_is_fitting", False)
+
         self._current_request_id += 1
         worker = ImageProcessorWorker(
             self.signals,
-            self._view_ref,
             self.base_img_full,
             self.tiers,
             self.get_current_settings(),
             self._current_request_id,
+            zoom_scale=zoom_scale,
+            roi_scene_rect=roi_scene_rect,
+            viewport_size=viewport_size,
+            is_fitting=is_fitting,
             calculate_histogram=self.histogram_enabled,
             cache=self.cache,
             last_heavy_adjusted=self._last_heavy_adjusted,
