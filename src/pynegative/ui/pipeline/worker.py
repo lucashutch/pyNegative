@@ -764,14 +764,58 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 ).astype(int)
 
                 h_rs, w_rs = base_roi_img.shape[:2]
-                pad_src = 16
-                s_xmin, s_ymin = max(0, s_xmin - pad_src), max(0, s_ymin - pad_src)
-                s_xmax, s_ymax = (
-                    min(w_rs, s_xmax + pad_src),
-                    min(h_rs, s_ymax + pad_src),
-                )
 
-                raw_chunk = base_roi_img[s_ymin:s_ymax, s_xmin:s_xmax]
+                # Calculate expanded bounds for spatial caching (3x visible area)
+                # This enables smooth panning within the cached region
+                spatial_pad_x = (
+                    s_xmax - s_xmin
+                ) * 2  # 2x additional padding on each side
+                spatial_pad_y = (s_ymax - s_ymin) * 2
+                cache_xmin = max(0, s_xmin - spatial_pad_x)
+                cache_ymin = max(0, s_ymin - spatial_pad_y)
+                cache_xmax = min(w_rs, s_xmax + spatial_pad_x)
+                cache_ymax = min(h_rs, s_ymax + spatial_pad_y)
+
+                # Check spatial cache for denoised data
+                requested_denoise_rect = (s_xmin, s_ymin, s_xmax, s_ymax)
+                denoise_spatial_key = {
+                    "denoise_luma": heavy_params["denoise_luma"],
+                    "denoise_chroma": heavy_params["denoise_chroma"],
+                    "denoise_method": heavy_params["denoise_method"],
+                }
+
+                denoised_chunk = None
+                if self.cache:
+                    denoised_chunk = self.cache.get_spatial_roi(
+                        f"{res_key_roi}_denoise",
+                        requested_denoise_rect,
+                        denoise_spatial_key,
+                    )
+                    if denoised_chunk is not None:
+                        logger.debug(
+                            f"Spatial denoise cache HIT for tier {res_key_roi}"
+                        )
+
+                # Use expanded bounds for extraction to enable spatial caching
+                extract_xmin, extract_ymin = cache_xmin, cache_ymin
+                extract_xmax, extract_ymax = cache_xmax, cache_ymax
+
+                # Add small padding for processing
+                pad_src = 16
+                extract_xmin = max(0, extract_xmin - pad_src)
+                extract_ymin = max(0, extract_ymin - pad_src)
+                extract_xmax = min(w_rs, extract_xmax + pad_src)
+                extract_ymax = min(h_rs, extract_ymax + pad_src)
+
+                # Adjust coordinates for the extracted chunk
+                s_xmin_adj = s_xmin - extract_xmin
+                s_ymin_adj = s_ymin - extract_ymin
+                s_xmax_adj = s_xmax - extract_xmin
+                s_ymax_adj = s_ymax - extract_ymin
+
+                raw_chunk = base_roi_img[
+                    extract_ymin:extract_ymax, extract_xmin:extract_xmax
+                ]
                 if raw_chunk.size > 0:
                     roi_res_id = (res_key_roi, s_xmin, s_ymin, s_xmax, s_ymax)
 
@@ -832,20 +876,43 @@ class ImageProcessorWorker(QtCore.QRunnable):
                                 preprocessed_chunk,
                             )
 
-                    denoised_chunk = (
-                        self.cache.get(res_key_roi, "denoise_chunk", denoise_p)
-                        if self.cache
-                        else None
-                    )
-
+                    # Only process denoise if we don't have spatial cache hit
                     if denoised_chunk is None:
-                        denoised_chunk = self._process_denoise_stage(
-                            preprocessed_chunk, roi_res_id, heavy_params, zoom_scale
+                        denoised_full_chunk = (
+                            self.cache.get(res_key_roi, "denoise_chunk", denoise_p)
+                            if self.cache
+                            else None
                         )
-                        if self.cache:
-                            self.cache.put(
-                                res_key_roi, "denoise_chunk", denoise_p, denoised_chunk
+
+                        if denoised_full_chunk is None:
+                            denoised_full_chunk = self._process_denoise_stage(
+                                preprocessed_chunk, roi_res_id, heavy_params, zoom_scale
                             )
+                            if self.cache:
+                                self.cache.put(
+                                    res_key_roi,
+                                    "denoise_chunk",
+                                    denoise_p,
+                                    denoised_full_chunk,
+                                )
+                                # Also store in spatial cache for panning
+                                cache_rect = (
+                                    extract_xmin,
+                                    extract_ymin,
+                                    extract_xmax,
+                                    extract_ymax,
+                                )
+                                self.cache.put_spatial_roi(
+                                    f"{res_key_roi}_denoise",
+                                    cache_rect,
+                                    denoise_spatial_key,
+                                    denoised_full_chunk,
+                                )
+
+                        # Extract the region we need from the full processed chunk
+                        denoised_chunk = denoised_full_chunk[
+                            s_ymin_adj:s_ymax_adj, s_xmin_adj:s_xmax_adj
+                        ]
 
                     # 3. Mega-Remap: Lens + Affine in one go
                     h_chunk, w_chunk = denoised_chunk.shape[:2]
@@ -864,9 +931,13 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     M_local = M_roi_full_tier.copy()
                     # Scale the matrix first to work in tier-scale coordinates
                     M_local[:2, :] /= ts_roi
-                    # Apply translation using the scaled matrix
-                    M_local[0, 2] += M_local[0, 0] * s_xmin + M_local[0, 1] * s_ymin
-                    M_local[1, 2] += M_local[1, 0] * s_xmin + M_local[1, 1] * s_ymin
+                    # Apply translation using the scaled matrix with adjusted chunk coordinates
+                    M_local[0, 2] += M_local[0, 0] * (
+                        s_xmin_adj + extract_xmin
+                    ) + M_local[0, 1] * (s_ymin_adj + extract_ymin)
+                    M_local[1, 2] += M_local[1, 0] * (
+                        s_xmin_adj + extract_xmin
+                    ) + M_local[1, 1] * (s_ymin_adj + extract_ymin)
                     # Adjust for ROI offset in destination
                     M_local[0, 2] -= rx
                     M_local[1, 2] -= ry
