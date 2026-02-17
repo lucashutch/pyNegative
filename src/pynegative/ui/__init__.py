@@ -33,6 +33,13 @@ def main():
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"pyNegative {__version__}",
+        help="Show the application version and exit",
+    )
+    parser.add_argument(
         "path", nargs="?", help="Path to an image file or directory to open"
     )
     args, unknown = parser.parse_known_args()
