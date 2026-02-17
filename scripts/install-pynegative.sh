@@ -244,11 +244,18 @@ EOF
 create_macos_app() {
 	print_info "\nCreating macOS app bundle..."
 
-	# Extract version from pyproject.toml
-	VERSION="0.1.4"
+	# Extract version from pyproject.toml or package metadata
+	VERSION="0.0.0"
 	if [ -f "$INSTALL_DIR/pyproject.toml" ]; then
-		# Simple grep/sed extraction assuming standard formatting: version = "x.y.z"
-		VERSION=$(grep '^version' "$INSTALL_DIR/pyproject.toml" | sed -E 's/version[[:space:]]*=[[:space:]]*"(.*)"/\1/')
+		# Try to get version from package metadata first (dynamic versioning)
+		if command -v uv &>/dev/null; then
+			VERSION=$(cd "$INSTALL_DIR" && uv run python3 -c "from importlib.metadata import version; print(version('pynegative'))" 2>/dev/null || echo "0.0.0")
+		fi
+
+		# Fallback to grep if metadata fails or uv is not available
+		if [ "$VERSION" = "0.0.0" ]; then
+			VERSION=$(grep '^version' "$INSTALL_DIR/pyproject.toml" | sed -E 's/version[[:space:]]*=[[:space:]]*"(.*)"/\1/')
+		fi
 	fi
 
 	APP_BUNDLE="$HOME/Applications/pyNegative.app"
