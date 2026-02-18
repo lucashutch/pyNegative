@@ -37,6 +37,7 @@ test = [
 
 [project.scripts]
 pynegative-debug = "pynegative.ui:main"
+download-lens-db = "pynegative.cli.download_lens_database:main"
 
 [project.gui-scripts]
 pynegative = "pynegative.ui:main"

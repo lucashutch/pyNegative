@@ -25,18 +25,11 @@ def download_file(file_info, output_dir):
         return False
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Download lensfun database XML files")
-    parser.add_argument(
-        "--output-dir", required=True, help="Directory to save XML files"
-    )
-    parser.add_argument("--quiet", action="store_true", help="Suppress output")
-    args = parser.parse_args()
-
-    output_dir = Path(args.output_dir).expanduser().resolve()
+def run_download(output_dir: str | Path, quiet: bool = False):
+    output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if not args.quiet:
+    if not quiet:
         print(f"Downloading lensfun database to {output_dir}...")
 
     try:
@@ -67,11 +60,23 @@ def main():
 
     success_count = sum(1 for r in results if r)
 
-    if not args.quiet:
+    if not quiet:
         print(f"Successfully downloaded {success_count} database files.")
 
     # Save a version file
     (output_dir / ".lensdb_version").write_text("latest")
+    return success_count
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Download lensfun database XML files")
+    parser.add_argument(
+        "--output-dir", required=True, help="Directory to save XML files"
+    )
+    parser.add_argument("--quiet", action="store_true", help="Suppress output")
+    args = parser.parse_args()
+
+    run_download(args.output_dir, args.quiet)
 
 
 if __name__ == "__main__":
