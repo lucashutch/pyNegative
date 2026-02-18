@@ -28,20 +28,17 @@ Or manually download `scripts/install-pynegative.sh` and run: `bash install-pyne
 ## What It Does
 
 1. Installs uv (Python package manager) if needed
-2. Downloads latest pyNegative release (or main branch)
-3. Installs dependencies with `uv sync`
-4. Generates platform-specific icons from source
+2. Resolves latest tagged release from GitHub
+3. Installs pyNegative using `uv tool install`
+4. Downloads lens database using `download-lens-db` command
 5. Creates Start Menu/Desktop shortcuts
-
-Installations are tracked in a `.version` file - re-running the installer only downloads new versions when available.
 
 ## Files
 
-- `install-pynegative.bat` - Windows installer (all-in-one)
-- `install-pynegative.sh` - macOS/Linux installer (all-in-one)
-- `generate_icons.py` - Icon generation (run automatically during install)
-- `download_release.py` - Download helper (fetched automatically by installers)
-- `icons/` - Generated icons directory (created during install, in `.gitignore`)
+- `install-pynegative.bat` - Windows installer
+- `install-pynegative.sh` - macOS/Linux installer
+- `generate_icons.py` - Icon generation tool
+- `run_all_benchmarks.py` - Performance testing suite
 
 ## Requirements
 

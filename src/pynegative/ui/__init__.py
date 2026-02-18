@@ -135,12 +135,32 @@ def main():
     # Load lens database
     update_splash_status("Loading lens database...")
     from ..io import lens_db_xml
+    from platformdirs import user_data_dir
 
-    db_path = Path.home() / ".local" / "share" / "pyNegative" / "data" / "lensfun"
-    # Fallback to local data dir if not in standard location (for dev)
+    # 1. Standard platform-specific data dir (used by installers)
+    db_path = Path(user_data_dir("pyNegative")) / "data" / "lensfun"
+
+    # 2. Legacy/Simple fallback (old Linux path)
     if not db_path.exists():
-        db_path = Path(__file__).parent.parent.parent.parent / "data" / "lensfun"
+        legacy_path = (
+            Path.home() / ".local" / "share" / "pyNegative" / "data" / "lensfun"
+        )
+        if legacy_path.exists():
+            db_path = legacy_path
+
+    # 3. Development fallback (local data dir in project root)
+    if not db_path.exists():
+        dev_path = Path(__file__).parent.parent.parent.parent / "data" / "lensfun"
+        if dev_path.exists():
+            db_path = dev_path
+
+    logger.debug(f"Using lens database path: {db_path}")
     lens_db_xml.load_database(db_path)
+
+    if not lens_db_xml.is_database_available():
+        logger.warning("Lens database not found. Lens corrections will be limited.")
+        # We could trigger an auto-download here if desired,
+        # but for now we just log a warning.
 
     window = MainWindow(initial_path=args.path)
     window.showMaximized()
