@@ -76,11 +76,14 @@ class ImageProcessorWorker(QtCore.QRunnable):
     def __init__(
         self,
         signals,
-        view_ref,
         base_img_full,
         tiers,
         settings,
         request_id,
+        zoom_scale=1.0,
+        roi_scene_rect=None,
+        viewport_size=None,
+        is_fitting=True,
         calculate_histogram=False,
         cache=None,
         last_heavy_adjusted="de_haze",
@@ -89,11 +92,14 @@ class ImageProcessorWorker(QtCore.QRunnable):
     ):
         super().__init__()
         self.signals = signals
-        self._view_ref = view_ref
         self.base_img_full = base_img_full
         self.tiers = tiers
         self.settings = settings
         self.request_id = request_id
+        self.zoom_scale = zoom_scale
+        self.roi_scene_rect = roi_scene_rect
+        self.viewport_size = viewport_size
+        self.is_fitting = is_fitting
         self.calculate_histogram = calculate_histogram
         self.cache = cache
         self.last_heavy_adjusted = last_heavy_adjusted
@@ -108,7 +114,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
             logger.error(f"Image processing worker failed: {e}", exc_info=True)
             self.signals.error.emit(str(e), self.request_id)
 
-    def _process_denoise_stage(self, img, res_key, heavy_params, zoom_scale):
+    def _process_denoise_stage(
+        self, img, res_key, heavy_params, zoom_scale, preprocess_key=None
+    ):
         """Processes and caches the denoising stage."""
         l_str = float(heavy_params.get("denoise_luma", 0))
         c_str = float(heavy_params.get("denoise_chroma", 0))
@@ -151,6 +159,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "denoise_chroma": c_str,
             "denoise_method": effective_method,
         }
+        if preprocess_key:
+            denoise_p["_preprocess_key"] = preprocess_key
 
         if self.cache:
             cached = self.cache.get(res_key, "denoise_stage", denoise_p)
@@ -344,6 +354,45 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         return fused_maps, out_w, out_h, zoom_factor
 
+    def _resolve_vignette_params(self, roi_offset=None, full_size=None):
+        """Resolve vignette parameters from settings and lens_info."""
+        if not self.settings.get("lens_enabled", True):
+            return 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0
+
+        vignette = self.settings.get("lens_vignette", 0.0)
+        vig_k1 = vignette
+        vig_k2 = 0.0
+        vig_k3 = 0.0
+
+        if (
+            self.lens_info
+            and "vignetting" in self.lens_info
+            and self.lens_info["vignetting"]
+        ):
+            vig = self.lens_info["vignetting"]
+            if vig.get("model") == "pa":
+                vig_k1 += vig.get("k1", 0.0)
+                vig_k2 = vig.get("k2", 0.0)
+                vig_k3 = vig.get("k3", 0.0)
+
+        if abs(vig_k1) < 1e-6 and abs(vig_k2) < 1e-6 and abs(vig_k3) < 1e-6:
+            return 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0
+
+        if full_size:
+            fw, fh = full_size
+        else:
+            fh, fw = 0, 0
+
+        if roi_offset:
+            rx, ry = roi_offset
+        else:
+            rx, ry = 0, 0
+
+        cx = fw / 2.0 - rx
+        cy = fh / 2.0 - ry
+
+        return vig_k1, vig_k2, vig_k3, cx, cy, float(fw), float(fh)
+
     def _process_lens_vignette(self, img, scale, roi_offset=None, full_size=None):
         if not self.settings.get("lens_enabled", True):
             return img
@@ -442,7 +491,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         return img
 
     def _update_preview(self):
-        if self.base_img_full is None or self._view_ref is None:
+        if self.base_img_full is None:
             return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0, 0.0
 
         full_h, full_w = self.base_img_full.shape[:2]
@@ -465,10 +514,13 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "sharpen_percent": self.settings.get("sharpen_percent", 0.0),
         }
 
-        tone_map_settings = {
+        preprocess_settings = {
             "temperature": self.settings.get("temperature", 0.0),
             "tint": self.settings.get("tint", 0.0),
             "exposure": self.settings.get("exposure", 0.0),
+        }
+
+        tone_map_settings = {
             "contrast": self.settings.get("contrast", 1.0),
             "blacks": self.settings.get("blacks", 0.0),
             "whites": self.settings.get("whites", 1.0),
@@ -477,14 +529,20 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "saturation": self.settings.get("saturation", 1.0),
         }
 
+        full_vig_params = self._resolve_vignette_params(
+            roi_offset=None, full_size=(full_w, full_h)
+        )
+
         # --- STEP 1: RESOLUTION SELECTION ---
-        try:
-            zoom_scale = self._view_ref.transform().m11()
-            view_rect = self._view_ref.viewport().rect()
-            v_w = view_rect.width()
-            is_fitting = getattr(self._view_ref, "_is_fitting", False)
-        except (AttributeError, RuntimeError):
+        zoom_scale = self.zoom_scale
+        roi_scene_rect = self.roi_scene_rect
+        is_fitting = self.is_fitting
+        v_size = self.viewport_size
+
+        if roi_scene_rect is None or v_size is None:
             return QtGui.QPixmap(), 0, 0, QtGui.QPixmap(), 0, 0, 0, 0, 0.0
+
+        v_w = v_size.width()
 
         # Optimization: ROI logic
         is_zoomed_in = not is_fitting and zoom_scale > 0.5
@@ -523,9 +581,20 @@ class ImageProcessorWorker(QtCore.QRunnable):
         res_key = f"tier_{selected_scale}"
         h_src, w_src = selected_img.shape[:2]
 
+        preprocess_key = (
+            preprocess_settings["temperature"],
+            preprocess_settings["tint"],
+            preprocess_settings["exposure"],
+            full_vig_params[0],
+            full_vig_params[1],
+            full_vig_params[2],
+        )
+
         cached_bg, cached_w, cached_h = (None, 0, 0)
         if self.cache:
-            cached_bg, cached_w, cached_h = self.cache.get_cached_bg_pixmap()
+            cached_bg, cached_w, cached_h = self.cache.get_cached_bg_pixmap(
+                preprocess_key
+            )
 
         if (
             is_zoomed_in
@@ -537,9 +606,24 @@ class ImageProcessorWorker(QtCore.QRunnable):
         else:
             # Render background (potentially low-res if zoomed in)
             if is_zoomed_in:
-                # OPTIMIZATION: Skip heavy effects for background when zoomed in.
-                processed_bg = selected_img
-                # Still need lens correction and geometry for alignment
+                bg_vig_params = self._resolve_vignette_params(
+                    roi_offset=None, full_size=(w_src, h_src)
+                )
+                vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = bg_vig_params
+                processed_bg = pynegative.apply_preprocess(
+                    selected_img,
+                    temperature=preprocess_settings["temperature"],
+                    tint=preprocess_settings["tint"],
+                    exposure=preprocess_settings["exposure"],
+                    vignette_k1=vig_k1,
+                    vignette_k2=vig_k2,
+                    vignette_k3=vig_k3,
+                    vignette_cx=vig_cx,
+                    vignette_cy=vig_cy,
+                    full_width=vig_fw,
+                    full_height=vig_fh,
+                )
+
                 fused_maps, o_w, o_h, _ = self._get_fused_geometry(
                     w_src,
                     h_src,
@@ -550,11 +634,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     ts_roi=selected_scale,
                     roi_offset=(0, 0),
                     full_size=(w_src, h_src),
-                )
-
-                # Vignette (spatial-only remap doesn't handle it)
-                processed_bg = self._process_lens_vignette(
-                    processed_bg, selected_scale, (0, 0), (w_src, h_src)
                 )
 
                 img_dest = self._apply_fused_remap(
@@ -566,8 +645,34 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 )
                 bg_output = pynegative.apply_defringe(bg_output, self.settings)
             else:
+                bg_vig_params = self._resolve_vignette_params(
+                    roi_offset=None, full_size=(w_src, h_src)
+                )
+                vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = bg_vig_params
+                preprocess_key = (
+                    preprocess_settings["temperature"],
+                    preprocess_settings["tint"],
+                    preprocess_settings["exposure"],
+                    vig_k1,
+                    vig_k2,
+                    vig_k3,
+                )
+                preprocessed_bg = pynegative.apply_preprocess(
+                    selected_img,
+                    temperature=preprocess_settings["temperature"],
+                    tint=preprocess_settings["tint"],
+                    exposure=preprocess_settings["exposure"],
+                    vignette_k1=vig_k1,
+                    vignette_k2=vig_k2,
+                    vignette_k3=vig_k3,
+                    vignette_cx=vig_cx,
+                    vignette_cy=vig_cy,
+                    full_width=vig_fw,
+                    full_height=vig_fh,
+                )
+
                 denoised_bg = self._process_denoise_stage(
-                    selected_img, res_key, heavy_params, zoom_scale
+                    preprocessed_bg, res_key, heavy_params, zoom_scale, preprocess_key
                 )
 
                 fused_maps, o_w, o_h, _ = self._get_fused_geometry(
@@ -582,11 +687,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     full_size=(w_src, h_src),
                 )
 
-                # Vignette
-                denoised_bg = self._process_lens_vignette(
-                    denoised_bg, selected_scale, (0, 0), (w_src, h_src)
-                )
-
                 img_dest = self._apply_fused_remap(
                     denoised_bg, fused_maps, o_w, o_h, cv2.INTER_CUBIC
                 )
@@ -594,6 +694,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 processed_bg = self._process_heavy_stage(
                     img_dest, res_key, heavy_params, zoom_scale
                 )
+
                 bg_output, _ = pynegative.apply_tone_map(
                     processed_bg, **tone_map_settings, calculate_stats=False
                 )
@@ -614,20 +715,19 @@ class ImageProcessorWorker(QtCore.QRunnable):
             )
             pix_bg = QtGui.QPixmap.fromImage(qimg_bg)
             if self.cache:
-                self.cache.set_cached_bg_pixmap(pix_bg, new_full_w, new_full_h)
+                self.cache.set_cached_bg_pixmap(
+                    pix_bg, new_full_w, new_full_h, preprocess_key
+                )
 
         # --- Part 2: Detail ROI ---
         pix_roi, roi_x, roi_y, roi_w, roi_h = QtGui.QPixmap(), 0, 0, 0, 0
 
         if is_zoomed_in:
-            roi_scene = self._view_ref.mapToScene(
-                self._view_ref.viewport().rect()
-            ).boundingRect()
             rx, ry, rw, rh = (
-                roi_scene.x(),
-                roi_scene.y(),
-                roi_scene.width(),
-                roi_scene.height(),
+                roi_scene_rect.x(),
+                roi_scene_rect.y(),
+                roi_scene_rect.width(),
+                roi_scene_rect.height(),
             )
 
             # ROI PADDING
@@ -635,9 +735,12 @@ class ImageProcessorWorker(QtCore.QRunnable):
             p_w, p_h = rw * pad_ratio, rh * pad_ratio
             rx, ry, rw, rh = rx - p_w, ry - p_h, rw + 2 * p_w, rh + 2 * p_h
 
-            # Clamp
+            # Clamp and round to ensure consistent integer dimensions
             rx, ry = max(0, rx), max(0, ry)
             rw, rh = min(new_full_w - rx, rw), min(new_full_h - ry, rh)
+            # Round early to ensure consistent dimensions throughout processing
+            rx, ry = int(round(rx)), int(round(ry))
+            rw, rh = int(round(rw)), int(round(rh))
 
             if rw > 10 and rh > 10:
                 req_display_w = full_w * zoom_scale
@@ -675,43 +778,155 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 ).astype(int)
 
                 h_rs, w_rs = base_roi_img.shape[:2]
-                pad_src = 16
-                s_xmin, s_ymin = max(0, s_xmin - pad_src), max(0, s_ymin - pad_src)
-                s_xmax, s_ymax = (
-                    min(w_rs, s_xmax + pad_src),
-                    min(h_rs, s_ymax + pad_src),
-                )
 
-                raw_chunk = base_roi_img[s_ymin:s_ymax, s_xmin:s_xmax]
+                # Calculate expanded bounds for spatial caching (3x visible area)
+                # This enables smooth panning within the cached region
+                spatial_pad_x = (
+                    s_xmax - s_xmin
+                ) * 2  # 2x additional padding on each side
+                spatial_pad_y = (s_ymax - s_ymin) * 2
+                cache_xmin = max(0, s_xmin - spatial_pad_x)
+                cache_ymin = max(0, s_ymin - spatial_pad_y)
+                cache_xmax = min(w_rs, s_xmax + spatial_pad_x)
+                cache_ymax = min(h_rs, s_ymax + spatial_pad_y)
+
+                # Check spatial cache for denoised data
+                requested_denoise_rect = (s_xmin, s_ymin, s_xmax, s_ymax)
+                denoise_spatial_key = {
+                    "denoise_luma": heavy_params["denoise_luma"],
+                    "denoise_chroma": heavy_params["denoise_chroma"],
+                    "denoise_method": heavy_params["denoise_method"],
+                }
+
+                denoised_chunk = None
+                if self.cache:
+                    denoised_chunk = self.cache.get_spatial_roi(
+                        f"{res_key_roi}_denoise",
+                        requested_denoise_rect,
+                        denoise_spatial_key,
+                    )
+                    if denoised_chunk is not None:
+                        logger.debug(
+                            f"Spatial denoise cache HIT for tier {res_key_roi}"
+                        )
+
+                # Use expanded bounds for extraction to enable spatial caching
+                extract_xmin, extract_ymin = cache_xmin, cache_ymin
+                extract_xmax, extract_ymax = cache_xmax, cache_ymax
+
+                # Add small padding for processing
+                pad_src = 16
+                extract_xmin = max(0, extract_xmin - pad_src)
+                extract_ymin = max(0, extract_ymin - pad_src)
+                extract_xmax = min(w_rs, extract_xmax + pad_src)
+                extract_ymax = min(h_rs, extract_ymax + pad_src)
+
+                # Adjust coordinates for the extracted chunk
+                s_xmin_adj = s_xmin - extract_xmin
+                s_ymin_adj = s_ymin - extract_ymin
+                s_xmax_adj = s_xmax - extract_xmin
+                s_ymax_adj = s_ymax - extract_ymin
+
+                raw_chunk = base_roi_img[
+                    extract_ymin:extract_ymax, extract_xmin:extract_xmax
+                ]
                 if raw_chunk.size > 0:
                     roi_res_id = (res_key_roi, s_xmin, s_ymin, s_xmax, s_ymax)
 
-                    # 2. Process Stage: Denoise and Vignette on source chunk
-                    # We cache this part as it's the most expensive and doesn't change with rotation
+                    roi_vig_params = self._resolve_vignette_params(
+                        roi_offset=(s_xmin, s_ymin), full_size=(w_rs, h_rs)
+                    )
+                    vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = (
+                        roi_vig_params
+                    )
+
+                    preprocess_p = {
+                        "temperature": preprocess_settings["temperature"],
+                        "tint": preprocess_settings["tint"],
+                        "exposure": preprocess_settings["exposure"],
+                        "vig_k1": vig_k1,
+                        "vig_k2": vig_k2,
+                        "vig_k3": vig_k3,
+                    }
                     denoise_p = {
                         "denoise_luma": heavy_params["denoise_luma"],
                         "denoise_chroma": heavy_params["denoise_chroma"],
                         "denoise_method": heavy_params["denoise_method"],
+                        "_preprocess_key": (
+                            preprocess_settings["temperature"],
+                            preprocess_settings["tint"],
+                            preprocess_settings["exposure"],
+                            vig_k1,
+                            vig_k2,
+                            vig_k3,
+                        ),
                     }
 
-                    denoised_chunk = (
-                        self.cache.get(res_key_roi, "denoise_chunk", denoise_p)
+                    preprocessed_chunk = (
+                        self.cache.get(res_key_roi, "preprocess_chunk", preprocess_p)
                         if self.cache
                         else None
                     )
 
-                    if denoised_chunk is None:
-                        denoised_chunk = self._process_denoise_stage(
-                            raw_chunk, roi_res_id, heavy_params, zoom_scale
-                        )
-                        # Apply vignette on source
-                        denoised_chunk = self._process_lens_vignette(
-                            denoised_chunk, ts_roi, (s_xmin, s_ymin), (w_rs, h_rs)
+                    if preprocessed_chunk is None:
+                        preprocessed_chunk = pynegative.apply_preprocess(
+                            raw_chunk,
+                            temperature=preprocess_settings["temperature"],
+                            tint=preprocess_settings["tint"],
+                            exposure=preprocess_settings["exposure"],
+                            vignette_k1=vig_k1,
+                            vignette_k2=vig_k2,
+                            vignette_k3=vig_k3,
+                            vignette_cx=vig_cx,
+                            vignette_cy=vig_cy,
+                            full_width=vig_fw,
+                            full_height=vig_fh,
                         )
                         if self.cache:
                             self.cache.put(
-                                res_key_roi, "denoise_chunk", denoise_p, denoised_chunk
+                                res_key_roi,
+                                "preprocess_chunk",
+                                preprocess_p,
+                                preprocessed_chunk,
                             )
+
+                    # Only process denoise if we don't have spatial cache hit
+                    if denoised_chunk is None:
+                        denoised_full_chunk = (
+                            self.cache.get(res_key_roi, "denoise_chunk", denoise_p)
+                            if self.cache
+                            else None
+                        )
+
+                        if denoised_full_chunk is None:
+                            denoised_full_chunk = self._process_denoise_stage(
+                                preprocessed_chunk, roi_res_id, heavy_params, zoom_scale
+                            )
+                            if self.cache:
+                                self.cache.put(
+                                    res_key_roi,
+                                    "denoise_chunk",
+                                    denoise_p,
+                                    denoised_full_chunk,
+                                )
+                                # Also store in spatial cache for panning
+                                cache_rect = (
+                                    extract_xmin,
+                                    extract_ymin,
+                                    extract_xmax,
+                                    extract_ymax,
+                                )
+                                self.cache.put_spatial_roi(
+                                    f"{res_key_roi}_denoise",
+                                    cache_rect,
+                                    denoise_spatial_key,
+                                    denoised_full_chunk,
+                                )
+
+                        # Extract the region we need from the full processed chunk
+                        denoised_chunk = denoised_full_chunk[
+                            s_ymin_adj:s_ymax_adj, s_xmin_adj:s_xmax_adj
+                        ]
 
                     # 3. Mega-Remap: Lens + Affine in one go
                     h_chunk, w_chunk = denoised_chunk.shape[:2]
@@ -728,18 +943,20 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     M_roi_full_tier = resolver_roi.get_matrix_2x3()
 
                     M_local = M_roi_full_tier.copy()
-                    M_local[0, 2] += (
-                        M_roi_full_tier[0, 0] * s_xmin + M_roi_full_tier[0, 1] * s_ymin
-                    )
-                    M_local[1, 2] += (
-                        M_roi_full_tier[1, 0] * s_xmin + M_roi_full_tier[1, 1] * s_ymin
-                    )
+                    # Scale the matrix first to work in tier-scale coordinates
                     M_local[:2, :] /= ts_roi
+                    # Apply translation using the scaled matrix with adjusted chunk coordinates
+                    M_local[0, 2] += M_local[0, 0] * (
+                        s_xmin_adj + extract_xmin
+                    ) + M_local[0, 1] * (s_ymin_adj + extract_ymin)
+                    M_local[1, 2] += M_local[1, 0] * (
+                        s_xmin_adj + extract_xmin
+                    ) + M_local[1, 1] * (s_ymin_adj + extract_ymin)
+                    # Adjust for ROI offset in destination
                     M_local[0, 2] -= rx
                     M_local[1, 2] -= ry
 
-                    rw_i, rh_i = int(round(rw)), int(round(rh))
-
+                    # Use pre-rounded dimensions
                     fused_maps, o_w, o_h, _ = self._get_fused_geometry(
                         w_chunk,
                         h_chunk,
@@ -751,15 +968,13 @@ class ImageProcessorWorker(QtCore.QRunnable):
                         roi_offset=(s_xmin, s_ymin),
                         full_size=(w_rs, h_rs),
                         M_override=M_local,
-                        out_size_override=(rw_i, rh_i),
+                        out_size_override=(rw, rh),
                     )
 
                     remapped_roi = self._apply_fused_remap(
-                        denoised_chunk, fused_maps, rw_i, rh_i, cv2.INTER_CUBIC
+                        denoised_chunk, fused_maps, rw, rh, cv2.INTER_CUBIC
                     )
 
-                    # 4. Final Processing on visible pixels
-                    # We can still cache this if needed, but since it's on a small ROI it's fast.
                     chunk_processed = self._process_heavy_stage(
                         remapped_roi, "roi_final", heavy_params, zoom_scale
                     )
@@ -771,7 +986,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
                     roi_uint8 = (np.clip(roi_output, 0, 1) * 255).astype(np.uint8)
                     qimg_roi = QtGui.QImage(
-                        roi_uint8.data, rw_i, rh_i, 3 * rw_i, QtGui.QImage.Format_RGB888
+                        roi_uint8.data, rw, rh, 3 * rw, QtGui.QImage.Format_RGB888
                     )
                     pix_roi = QtGui.QPixmap.fromImage(qimg_roi)
                     roi_x, roi_y, roi_w, roi_h = rx, ry, rw, rh

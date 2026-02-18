@@ -22,6 +22,7 @@ from .io.sidecar import (
 from .io.metadata import get_exif_capture_date, format_date
 from .processing.tonemap import (
     apply_tone_map,
+    apply_preprocess,
     calculate_auto_exposure,
     calculate_auto_wb,
 )
@@ -52,6 +53,7 @@ __all__ = [
     "get_exif_capture_date",
     "format_date",
     "apply_tone_map",
+    "apply_preprocess",
     "calculate_auto_exposure",
     "calculate_auto_wb",
     "apply_geometry",

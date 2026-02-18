@@ -3,6 +3,7 @@ import numpy as np
 import logging
 import time
 import threading
+from collections import OrderedDict
 from numba import njit, prange
 
 logger = logging.getLogger(__name__)
@@ -11,11 +12,11 @@ logger = logging.getLogger(__name__)
 class LensMapCache:
     """
     Cache for lens distortion maps to avoid expensive re-generation.
-    Pillar B: Unified Geometry Engine (Task 2.3)
+    Uses LRU (Least Recently Used) eviction policy.
     """
 
     def __init__(self, max_entries: int = 8):
-        self._cache = {}
+        self._cache = OrderedDict()
         self._lock = threading.Lock()
         self._max_entries = max_entries
 
@@ -31,15 +32,14 @@ class LensMapCache:
         fh: int,
         zoom: float,
     ) -> tuple[np.ndarray | None, np.ndarray | None]:
-        # Create a stable hashable key from parameters
         params_tuple = tuple(sorted(params.items()))
         key = (w, h, model, params_tuple, cx, cy, fw, fh, zoom)
 
         with self._lock:
             if key in self._cache:
+                self._cache.move_to_end(key)
                 return self._cache[key]
 
-        # Generate maps if not in cache
         map_x, map_y = None, None
         if model == "ptlens":
             a = params.get("a", 0.0)
@@ -53,8 +53,7 @@ class LensMapCache:
         if map_x is not None:
             with self._lock:
                 if len(self._cache) >= self._max_entries:
-                    # Simple FIFO eviction: remove the first key
-                    self._cache.pop(next(iter(self._cache)))
+                    self._cache.popitem(last=False)
                 self._cache[key] = (map_x, map_y)
 
         return map_x, map_y
@@ -516,10 +515,17 @@ def get_lens_distortion_maps(
 
 
 def apply_lens_correction(
-    img, settings, lens_info=None, scale=1.0, roi_offset=None, full_size=None
+    img,
+    settings,
+    lens_info=None,
+    scale=1.0,
+    roi_offset=None,
+    full_size=None,
+    skip_vignette=False,
 ):
     """
     Main entry point for lens correction in the pipeline.
+    If skip_vignette is True, vignette is not applied (caller handles it).
     """
     if img is None:
         return None
@@ -635,15 +641,16 @@ def apply_lens_correction(
     vig_k2 = 0.0
     vig_k3 = 0.0
 
-    if lens_info and "vignetting" in lens_info and lens_info["vignetting"]:
-        vig = lens_info["vignetting"]
-        if vig.get("model") == "pa":
-            vig_k1 = vig.get("k1", 0.0)
-            vig_k2 = vig.get("k2", 0.0)
-            vig_k3 = vig.get("k3", 0.0)
+    if not skip_vignette:
+        if lens_info and "vignetting" in lens_info and lens_info["vignetting"]:
+            vig = lens_info["vignetting"]
+            if vig.get("model") == "pa":
+                vig_k1 = vig.get("k1", 0.0)
+                vig_k2 = vig.get("k2", 0.0)
+                vig_k3 = vig.get("k3", 0.0)
 
-    # Manual override (adds to k1 for simplicity, allowing corrective and creative use)
-    vig_k1 += manual_vig
+        manual_vig = settings.get("lens_vignette", 0.0)
+        vig_k1 += manual_vig
 
     if abs(vig_k1) > 1e-6 or abs(vig_k2) > 1e-6 or abs(vig_k3) > 1e-6:
         # If we didn't remap, we should work on a copy to avoid side effects
@@ -666,7 +673,7 @@ def apply_lens_correction(
         or abs(vig_k3) > 1e-6
     ):
         logger.debug(
-            f"Lens Correction applied: model={model}, zoom={zoom:.3f}, manual_dist={manual_k1:.4f}, manual_vig={manual_vig:.4f}, tca={do_tca}"
+            f"Lens Correction applied: model={model}, zoom={zoom:.3f}, manual_dist={manual_k1:.4f}, vignette={vig_k1:.4f}, tca={do_tca}"
         )
 
     return img

@@ -43,6 +43,8 @@ class ImageProcessingPipeline(QtCore.QObject):
 
         self._current_request_id = 0
         self._last_processed_id = -1
+        self._last_zoom_scale = 1.0
+        self._last_requested_zoom = 1.0
         self.cache = PipelineCache()
         self._cache_invalidation_pending = False
         self._pending_lens_changed = False
@@ -112,15 +114,17 @@ class ImageProcessingPipeline(QtCore.QObject):
         if self._unedited_img_full is None:
             return QtGui.QPixmap()
         try:
-            # OPTIMIZATION: pick the best tier if max_width is specified
+            # OPTIMIZATION: pick the best tier if max_width is specified, or cap if 0
+            if max_width <= 0:
+                max_width = 2048  # Default cap for unedited preview
+
             source = self._unedited_img_full
-            if max_width > 0:
-                available_scales = sorted(self.tiers.keys())
-                for s in available_scales:
-                    tier = self.tiers[s]
-                    if tier.shape[1] >= max_width:
-                        source = tier
-                        break
+            available_scales = sorted(self.tiers.keys())
+            for s in available_scales:
+                tier = self.tiers[s]
+                if tier.shape[1] >= max_width:
+                    source = tier
+                    break
 
             # We know the pipeline uses float32 0-1 range by convention
             img_uint8 = (np.clip(source, 0, 1) * 255).astype(np.uint8)
@@ -204,9 +208,13 @@ class ImageProcessingPipeline(QtCore.QObject):
                 viewport_rect = self._view_ref.mapToScene(
                     self._view_ref.viewport().rect()
                 ).boundingRect()
-                # If viewport is inside last ROI and no settings changed, skip update
+
+                zoom_scale = self._view_ref.transform().m11()
+
+                # If viewport is inside last ROI and no settings changed, and zoom is same, skip update
                 if (
                     self._last_roi_rect.contains(viewport_rect)
+                    and abs(zoom_scale - self._last_zoom_scale) < 1e-4
                     and not self._render_pending
                     and not self._cache_invalidation_pending
                 ):
@@ -269,14 +277,27 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._is_rendering_locked = True
         self.perf_start_time = time.perf_counter()
 
+        # Capture viewport state in UI thread
+        zoom_scale = self._view_ref.transform().m11()
+        self._last_requested_zoom = zoom_scale
+
+        viewport_size = self._view_ref.viewport().size()
+        roi_scene_rect = self._view_ref.mapToScene(
+            self._view_ref.viewport().rect()
+        ).boundingRect()
+        is_fitting = getattr(self._view_ref, "_is_fitting", False)
+
         self._current_request_id += 1
         worker = ImageProcessorWorker(
             self.signals,
-            self._view_ref,
             self.base_img_full,
             self.tiers,
             self.get_current_settings(),
             self._current_request_id,
+            zoom_scale=zoom_scale,
+            roi_scene_rect=roi_scene_rect,
+            viewport_size=viewport_size,
+            is_fitting=is_fitting,
             calculate_histogram=self.histogram_enabled,
             cache=self.cache,
             last_heavy_adjusted=self._last_heavy_adjusted,
@@ -312,6 +333,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             return
 
         self._last_processed_id = request_id
+        self._last_zoom_scale = self._last_requested_zoom
 
         # Store the ROI rect in scene coordinates for panning checks
         if not pix_roi.isNull():

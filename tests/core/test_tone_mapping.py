@@ -13,30 +13,43 @@ class TestApplyToneMap:
 
     def test_no_adjustments(self):
         """Test with default parameters (no adjustments)"""
-        # Create a simple 2x2 RGB image
         img = np.array(
             [[[0.5, 0.5, 0.5], [0.7, 0.7, 0.7]], [[0.3, 0.3, 0.3], [0.9, 0.9, 0.9]]],
             dtype=np.float32,
         )
 
-        # Disable gamma for this test to match input exactly (except for contrast center shift)
-        # Note: even with exposure=0, contrast defaults to 1.0 but now centers at 0.18.
-        # So 0.5 will be shifted if contrast is not 1.0.
-        # But default contrast is 1.0, so it should stay 0.5.
         result, stats = pynegative.apply_tone_map(img, apply_gamma=False)
 
-        # Result should be equal to input (within float precision)
         np.testing.assert_array_almost_equal(result, img)
         assert stats["mean"] == pytest.approx(0.6)
 
     def test_exposure_adjustment(self):
         """Test exposure adjustment (+1 stop)"""
         img = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
-        # +1 stop should double values
-        result, _ = pynegative.apply_tone_map(img, exposure=1.0, apply_gamma=False)
+        preprocessed = pynegative.apply_preprocess(img, exposure=1.0)
+        result, _ = pynegative.apply_tone_map(preprocessed, apply_gamma=False)
         np.testing.assert_array_almost_equal(
             result, np.array([[[1.0, 1.0, 1.0]]], dtype=np.float32)
         )
+
+    def test_preprocess_vignette(self):
+        """Test vignette application in preprocess"""
+        img = np.ones((10, 10, 3), dtype=np.float32) * 0.5
+        result = pynegative.apply_preprocess(
+            img,
+            vignette_k1=0.5,
+            vignette_cx=5.0,
+            vignette_cy=5.0,
+            full_width=10.0,
+            full_height=10.0,
+        )
+        assert result[5, 5, 0] < result[0, 0, 0]
+
+    def test_preprocess_white_balance(self):
+        """Test white balance in preprocess"""
+        img = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
+        result = pynegative.apply_preprocess(img, temperature=0.5)
+        assert result[0, 0, 0] != result[0, 0, 2]
 
     def test_blacks_whites_adjustment(self):
         """Test blacks and whites level adjustments"""
