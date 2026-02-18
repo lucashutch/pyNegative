@@ -21,9 +21,9 @@ Or manually download `scripts/install-pynegative.sh` and run: `bash install-pyne
 
 ## Silent Mode
 
-**Windows:** `install-pynegative.bat --silent`
+**Windows:** `install-pynegative.bat --silent` (or `--unattended`, `-y`)
 
-**macOS/Linux:** `bash install-pynegative.sh --silent` (or `-s`, `--yes`)
+**macOS/Linux:** `bash install-pynegative.sh --silent` (or `-s`, `--yes`, `--unattended`)
 
 ## What It Does
 
