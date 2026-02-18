@@ -30,7 +30,7 @@ NC='\033[0m' # No Color
 SILENT=false
 for arg in "$@"; do
 	case $arg in
-	--silent | -silent | --yes | -yes | -s)
+	--silent | -silent | --yes | -yes | -s | --unattended | -y)
 		SILENT=true
 		;;
 	esac

@@ -3,6 +3,16 @@ setlocal EnableDelayedExpansion
 
 title pyNegative Installer
 
+set SILENT=0
+for %%a in (%*) do (
+    if "%%a"=="--silent" set SILENT=1
+    if "%%a"=="--unattended" set SILENT=1
+    if "%%a"=="/silent" set SILENT=1
+    if "%%a"=="-y" set SILENT=1
+    if "%%a"=="--yes" set SILENT=1
+    if "%%a"=="/y" set SILENT=1
+)
+
 set REPO=lucashutch/pyNegative
 set GITHUB_URL=https://github.com/%REPO%.git
 
@@ -31,6 +41,7 @@ uv tool list | findstr /C:"pynegative" >nul
 if %ERRORLEVEL% EQU 0 (
     echo pyNegative is already installed.
     echo.
+    if !SILENT! EQU 1 goto :do_install
     echo What would you like to do?
     echo   1) Update to the latest version
     echo   2) Reinstall pyNegative
@@ -44,6 +55,8 @@ if %ERRORLEVEL% EQU 0 (
     echo Operation cancelled.
     exit /b 0
 )
+
+if !SILENT! EQU 1 goto :do_install
 
 set /p CONFIRM="Continue with installation? (y/n): "
 if /I not "!CONFIRM!"=="y" (
@@ -84,7 +97,7 @@ echo ============================================================
 echo     pyNegative installed successfully!
 echo ============================================================
 echo You can launch it from the Start Menu or by running 'pynegative'.
-pause
+if !SILENT! EQU 0 pause
 exit /b 0
 
 :do_uninstall
@@ -95,5 +108,5 @@ if exist "%APPDATA%\Microsoft\Windows\Start Menu\Programs\pyNegative" (
     rmdir /s /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\pyNegative"
 )
 echo pyNegative has been uninstalled.
-pause
+if !SILENT! EQU 0 pause
 exit /b 0
