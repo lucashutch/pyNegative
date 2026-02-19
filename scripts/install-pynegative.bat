@@ -43,10 +43,10 @@ if %ERRORLEVEL% EQU 0 (
     echo.
     if !SILENT! EQU 1 goto :do_install
     echo What would you like to do?
-    echo   1) Update to the latest version
-    echo   2) Reinstall pyNegative
-    echo   3) Uninstall pyNegative
-    echo   4) Cancel
+    echo   1^) Update to the latest version
+    echo   2^) Reinstall pyNegative
+    echo   3^) Uninstall pyNegative
+    echo   4^) Cancel
     echo.
     set /p CHOICE="Enter your choice (1-4): "
     if "!CHOICE!"=="1" goto :do_install
