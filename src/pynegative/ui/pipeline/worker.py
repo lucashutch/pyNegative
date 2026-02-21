@@ -13,10 +13,10 @@ class ImageProcessorSignals(QtCore.QObject):
     """Signals for the image processing worker."""
 
     finished = QtCore.Signal(
-        QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int, int, float
+        QtGui.QPixmap, int, int, QtGui.QPixmap, int, int, int, int, float, int
     )
     histogramUpdated = QtCore.Signal(dict, int)
-    tierGenerated = QtCore.Signal(float, np.ndarray)  # scale, array
+    tierGenerated = QtCore.Signal(float, object)  # scale, array
     uneditedPixmapGenerated = QtCore.Signal(QtGui.QPixmap)
     error = QtCore.Signal(str, int)
 
@@ -181,7 +181,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         return processed
 
-    def _process_heavy_stage(self, img, res_key, heavy_params, zoom_scale):
+    def _process_heavy_stage(
+        self, img, res_key, heavy_params, zoom_scale, preprocess_key=None
+    ):
         """Processes and caches the heavy effects stage."""
         dehaze_p = {"de_haze": heavy_params["de_haze"]}
         sharpen_p = {
@@ -232,6 +234,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         processed = img
         accumulated_params = {}
+        if preprocess_key is not None:
+            accumulated_params["_preprocess_key"] = preprocess_key
 
         img_w = img.shape[1]
         full_w = self.base_img_full.shape[1]
@@ -590,10 +594,19 @@ class ImageProcessorWorker(QtCore.QRunnable):
             full_vig_params[2],
         )
 
+        # We need a complete key for the completely rendered background pixmap.
+        # This includes preprocessing, tone mapping, and defringe.
+        tone_map_key = tuple(tone_map_settings.items())
+        defringe_key = (
+            self.settings.get("defringe_purple", False),
+            self.settings.get("defringe_green", False),
+        )
+        bg_render_key = (preprocess_key, tone_map_key, defringe_key)
+
         cached_bg, cached_w, cached_h = (None, 0, 0)
         if self.cache:
             cached_bg, cached_w, cached_h = self.cache.get_cached_bg_pixmap(
-                preprocess_key
+                bg_render_key
             )
 
         if (
@@ -692,7 +705,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 )
 
                 processed_bg = self._process_heavy_stage(
-                    img_dest, res_key, heavy_params, zoom_scale
+                    img_dest, res_key, heavy_params, zoom_scale, preprocess_key
                 )
 
                 bg_output, _ = pynegative.apply_tone_map(
@@ -716,7 +729,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
             pix_bg = QtGui.QPixmap.fromImage(qimg_bg)
             if self.cache:
                 self.cache.set_cached_bg_pixmap(
-                    pix_bg, new_full_w, new_full_h, preprocess_key
+                    pix_bg, new_full_w, new_full_h, bg_render_key
                 )
 
         # --- Part 2: Detail ROI ---
@@ -792,10 +805,25 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
                 # Check spatial cache for denoised data
                 requested_denoise_rect = (s_xmin, s_ymin, s_xmax, s_ymax)
+
+                roi_vig_params = self._resolve_vignette_params(
+                    roi_offset=(s_xmin, s_ymin), full_size=(w_rs, h_rs)
+                )
+                vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = roi_vig_params
+
+                roi_preprocess_key = (
+                    preprocess_settings["temperature"],
+                    preprocess_settings["tint"],
+                    preprocess_settings["exposure"],
+                    vig_k1,
+                    vig_k2,
+                    vig_k3,
+                )
                 denoise_spatial_key = {
                     "denoise_luma": heavy_params["denoise_luma"],
                     "denoise_chroma": heavy_params["denoise_chroma"],
                     "denoise_method": heavy_params["denoise_method"],
+                    "_preprocess_key": roi_preprocess_key,
                 }
 
                 denoised_chunk = None
@@ -832,13 +860,6 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 ]
                 if raw_chunk.size > 0:
                     roi_res_id = (res_key_roi, s_xmin, s_ymin, s_xmax, s_ymax)
-
-                    roi_vig_params = self._resolve_vignette_params(
-                        roi_offset=(s_xmin, s_ymin), full_size=(w_rs, h_rs)
-                    )
-                    vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = (
-                        roi_vig_params
-                    )
 
                     preprocess_p = {
                         "temperature": preprocess_settings["temperature"],
@@ -976,7 +997,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     )
 
                     chunk_processed = self._process_heavy_stage(
-                        remapped_roi, "roi_final", heavy_params, zoom_scale
+                        remapped_roi, "roi_final", heavy_params, zoom_scale,
+                        roi_preprocess_key
                     )
 
                     roi_output, _ = pynegative.apply_tone_map(
@@ -1007,10 +1029,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         start_time = time.perf_counter()
         h, w = img_array.shape[:2]
         stride = max(1, int(np.sqrt((h * w) / 65536)))
-        if img_array.shape[2] == 4:
-            img_rgb = cv2.cvtColor(img_array, cv2.COLOR_RGBA2RGB)
-        else:
-            img_rgb = img_array
+        img_rgb = img_array
         hr, hg, hb, hy, hu, hv = pynegative.numba_histogram_kernel(img_rgb, stride)
 
         def smooth(h):
