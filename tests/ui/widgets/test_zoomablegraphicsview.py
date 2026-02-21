@@ -40,35 +40,18 @@ class TestZoomableGraphicsView:
         assert zoom_view.horizontalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
         assert zoom_view.frameShape() == QtWidgets.QFrame.NoFrame
 
-    def test_background_and_foreground_items(self, zoom_view):
-        """Test that background and foreground items are created."""
+    def test_background_item(self, zoom_view):
+        """Test that background item is created."""
         assert zoom_view._bg_item is not None
-        assert zoom_view._fg_item is not None
         assert zoom_view._bg_item.zValue() == 0
-        assert zoom_view._fg_item.zValue() == 1
 
-    def test_set_pixmaps_background_only(self, zoom_view, sample_pixmap):
-        """Test setting background pixmap only."""
+    def test_set_pixmaps(self, zoom_view, sample_pixmap):
+        """Test setting background pixmap."""
         zoom_view.set_pixmaps(sample_pixmap, 100, 100)
 
         assert not zoom_view._bg_item.pixmap().isNull()
         assert zoom_view._bg_item.pixmap().width() == 100
         assert zoom_view._bg_item.pixmap().height() == 100
-        assert (
-            not zoom_view._fg_item.isVisible()
-        )  # Foreground should be hidden when no ROI
-
-    def test_set_pixmaps_with_roi(self, zoom_view, sample_pixmap, sample_roi_pixmap):
-        """Test setting background and ROI pixmaps."""
-        zoom_view.set_pixmaps(
-            sample_pixmap, 100, 100, sample_roi_pixmap, 10, 20, 50, 50
-        )
-
-        assert not zoom_view._bg_item.pixmap().isNull()
-        assert not zoom_view._fg_item.pixmap().isNull()
-        assert zoom_view._fg_item.isVisible()
-        assert zoom_view._fg_item.pos() == QtCore.QPointF(10, 20)
-        assert zoom_view._scene.sceneRect() == QtCore.QRectF(0, 0, 100, 100)
 
     def test_reset_zoom_with_no_content(self, zoom_view):
         """Test reset_zoom when there's no content."""

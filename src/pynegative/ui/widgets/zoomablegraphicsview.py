@@ -38,10 +38,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self._scene.addItem(self._bg_item)
         self._bg_item.setZValue(0)
 
-        # Foreground item (High-res ROI patch)
-        self._fg_item = QtWidgets.QGraphicsPixmapItem()
-        self._scene.addItem(self._fg_item)
-        self._fg_item.setZValue(1)
+
 
         # Crop Item (Overlay)
         self._crop_item = CropRectItem()
@@ -93,11 +90,6 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         bg_pix,
         full_w,
         full_h,
-        roi_pix=None,
-        roi_x=0,
-        roi_y=0,
-        roi_w=0,
-        roi_h=0,
         rotation=0.0,
     ):
         """Unified update for both layers to ensure alignment."""
@@ -105,8 +97,6 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
         if bg_pix is None:
             bg_pix = QtGui.QPixmap()
-        if roi_pix is None:
-            roi_pix = QtGui.QPixmap()
 
         # 1. Update Background
         self._bg_item.setPixmap(bg_pix)
@@ -119,22 +109,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self._scene.setSceneRect(0, 0, full_w, full_h)
         self._update_fit_in_view_scale()
 
-        # 3. Update ROI
-        if not roi_pix.isNull():
-            self._fg_item.setPixmap(roi_pix)
-            self._fg_item.setPos(roi_x, roi_y)
-            # GPU Scale ROI if it was processed at lower resolution for performance
-            if roi_w > 0 and roi_pix.width() > 0:
-                rs_w = roi_w / roi_pix.width()
-                rs_h = roi_h / roi_pix.height()
-                self._fg_item.setTransform(QtGui.QTransform.fromScale(rs_w, rs_h))
-            else:
-                self._fg_item.setTransform(QtGui.QTransform())
-            self._fg_item.show()
-        else:
-            self._fg_item.hide()
-
-        # 4. Sync interactive rotation
+        # 3. Sync interactive rotation
         # If the user is rotating, they expect to see (current_angle - rendered_rotation)
         # applied via GPU rotation on top of the rendered pixmaps.
         current_angle = self._crop_item.get_rotation()
@@ -143,9 +118,6 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
         self._bg_item.setTransformOriginPoint(self._bg_item.mapFromScene(center))
         self._bg_item.setRotation(rel_rotation)
-
-        self._fg_item.setTransformOriginPoint(self._fg_item.mapFromScene(center))
-        self._fg_item.setRotation(rel_rotation)
 
     def reset_zoom(self):
         bg_pixmap = self._bg_item.pixmap()
@@ -274,12 +246,6 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
         self._bg_item.setTransformOriginPoint(self._bg_item.mapFromScene(center))
         self._bg_item.setRotation(rel_rotation)
-
-        self._fg_item.setTransformOriginPoint(self._fg_item.mapFromScene(center))
-        self._fg_item.setRotation(rel_rotation)
-
-        if not self._fg_item.pixmap().isNull():
-            self._fg_item.show()
 
     def get_rotation(self) -> float:
         """Get rotation angle from crop item."""
