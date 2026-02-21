@@ -10,6 +10,7 @@ class PipelineCache:
         self._cached_bg_pixmap = None
         self._cached_bg_full_w = 0
         self._cached_bg_full_h = 0
+        self._cached_bg_preprocess_key = None
 
         # Spatial ROI cache: most recent processed large ROI per tier
         # spatial_roi_cache[tier_name] = {rect: (x1, y1, x2, y2), params: {...}, array: np.ndarray}

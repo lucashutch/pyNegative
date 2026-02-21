@@ -39,7 +39,7 @@ def sharpen_image(img, radius, percent, method="High Quality"):
     try:
         # Setup: Blur and Edges (CPU)
         blur = cv2.GaussianBlur(img, (0, 0), radius)
-        gray = cv2.cvtColor((img * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
+        gray = (cv2.cvtColor(img, cv2.COLOR_RGB2GRAY) * 255).astype(np.uint8)
         edges = cv2.Canny(gray, 50, 150)
         kernel = np.ones((3, 3), np.uint8)
         edges = cv2.dilate(edges, kernel, iterations=1)

@@ -7,6 +7,7 @@ from .pipeline.cache import PipelineCache
 from .pipeline.worker import (
     ImageProcessorSignals,
     ImageProcessorWorker,
+    TierGeneratorWorker,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,38 +75,22 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.tiers = {}
 
         if img_array is not None:
-            # Synchronous HQ Pyramid Generation
-            # Even for 64MP, this takes ~40ms total, which is acceptable for set_image.
-            h, w = img_array.shape[:2]
-
-            # Use area-based downsampling for high quality
-            # 1:2
-            self.tiers[0.5] = cv2.resize(
-                img_array, (w // 2, h // 2), interpolation=cv2.INTER_AREA
-            )
-            # 1:4
-            self.tiers[0.25] = cv2.resize(
-                self.tiers[0.5], (w // 4, h // 4), interpolation=cv2.INTER_AREA
-            )
-            # 1:8
-            self.tiers[0.125] = cv2.resize(
-                self.tiers[0.25], (w // 8, h // 8), interpolation=cv2.INTER_AREA
-            )
-            # 1:16
-            self.tiers[0.0625] = cv2.resize(
-                self.tiers[0.125], (w // 16, h // 16), interpolation=cv2.INTER_AREA
-            )
-
-            # Emit initial unedited pixmap from 1:4 or 1:8 tier for fast display
-            # (get_unedited_pixmap uses _unedited_img_full fallback but we've optimized it)
-            self.uneditedPixmapUpdated.emit(self.get_unedited_pixmap(2048))
+            # Asynchronous Pyramid Generation
+            # Start background worker to generate tiers so UI isn't blocked
+            worker = TierGeneratorWorker(self.signals, img_array)
+            self.thread_pool.start(worker)
         else:
             self.uneditedPixmapUpdated.emit(QtGui.QPixmap())
 
-    @QtCore.Slot(float, np.ndarray)
+    @QtCore.Slot(float, object)
     def _on_tier_generated(self, scale, array):
-        # Deprecated: tier generation is now synchronous in set_image
-        pass
+        self.tiers[scale] = array
+        # Once we have the 1:4 tier (0.25) or better, we can request a high-quality preview update
+        if scale == 0.25:
+            # We don't emit uneditedPixmapUpdated here because TierGeneratorWorker
+            # already emitted a fast 1:16 unedited pixmap.
+            # We just request a full update so the background renderer uses the new better tier.
+            self.request_update()
 
     def set_view_reference(self, view):
         self._view_ref = view
@@ -128,10 +113,7 @@ class ImageProcessingPipeline(QtCore.QObject):
 
             # We know the pipeline uses float32 0-1 range by convention
             img_uint8 = (np.clip(source, 0, 1) * 255).astype(np.uint8)
-            if img_uint8.shape[2] == 4:
-                img_rgb = cv2.cvtColor(img_uint8, cv2.COLOR_RGBA2RGB)
-            else:
-                img_rgb = img_uint8
+            img_rgb = img_uint8
             h, w, c = img_rgb.shape
             bytes_per_line = c * w
             qimage = QtGui.QImage(
@@ -193,6 +175,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         if changed:
             # Settings changed, so last ROI is invalid
             self._last_roi_rect = QtCore.QRectF()
+            self.request_update()
 
     def get_current_settings(self):
         return self._processing_params.copy()

@@ -4,6 +4,7 @@ from pathlib import Path
 from functools import partial
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
+import numpy as np
 
 from .loaders import RawLoader
 from .widgets import (
@@ -351,9 +352,38 @@ class EditorWidget(QtWidgets.QWidget):
 
         self.raw_path = path
 
-        # 1. Clear previous image state immediately
+        # 1. Clear previous image state, but instantly show cached thumbnail
         self.image_processor.set_image(None)
-        self.view.set_pixmaps(None, 0, 0)
+
+        # Load and show thumbnail instantly
+        try:
+            # We skip the memory cache here because it requires mtime and size.
+            # load_cached_thumbnail is fast enough (reads from disk cache).
+            thumb_img, _ = pynegative.load_cached_thumbnail(str(path), size=400)
+            if thumb_img is not None:
+                # Convert PIL Image or numpy array to QPixmap
+                if hasattr(thumb_img, 'mode'):
+                    if thumb_img.mode == 'RGB':
+                        img_data = np.array(thumb_img)
+                        h, w, c = img_data.shape
+                        qimg = QtGui.QImage(img_data.data, w, h, w * c, QtGui.QImage.Format_RGB888)
+                        pixmap = QtGui.QPixmap.fromImage(qimg)
+                        self.view.set_pixmaps(pixmap, w, h)
+                elif isinstance(thumb_img, np.ndarray):
+                    if thumb_img.dtype == np.float32:
+                        img_uint8 = (np.clip(thumb_img, 0, 1) * 255).astype(np.uint8)
+                    else:
+                        img_uint8 = thumb_img
+                    h, w, c = img_uint8.shape
+                    qimg = QtGui.QImage(img_uint8.data, w, h, w * c, QtGui.QImage.Format_RGB888)
+                    pixmap = QtGui.QPixmap.fromImage(qimg)
+                    self.view.set_pixmaps(pixmap, w, h)
+            else:
+                self.view.set_pixmaps(None, 0, 0)
+        except Exception as e:
+            logger.warning(f"Could not load thumbnail for instant preview: {e}")
+            self.view.set_pixmaps(None, 0, 0)
+
         self.metadata_panel.clear()
 
         if self._metadata_panel_visible:
