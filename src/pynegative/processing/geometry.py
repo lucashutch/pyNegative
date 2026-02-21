@@ -238,8 +238,8 @@ def calculate_max_safe_crop(w, h, angle_deg, aspect_ratio=None):
 
     # Clamp to safe range just in case of float errors
     return (
-        float(max(0.0, min(1.0, c_left))),
-        float(max(0.0, min(1.0, c_top))),
-        float(max(0.0, min(1.0, c_right))),
-        float(max(0.0, min(1.0, c_bottom))),
+        float(np.clip(c_left, 0.0, 1.0)),
+        float(np.clip(c_top, 0.0, 1.0)),
+        float(np.clip(c_right, 0.0, 1.0)),
+        float(np.clip(c_bottom, 0.0, 1.0)),
     )

@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class ImageProcessingPipeline(QtCore.QObject):
-    previewUpdated = QtCore.Signal(QtGui.QPixmap, int, int, float)
+    previewUpdated = QtCore.Signal(QtGui.QPixmap, int, int, float, object, object)
     histogramUpdated = QtCore.Signal(dict)
     performanceMeasured = QtCore.Signal(float)
     uneditedPixmapUpdated = QtCore.Signal(QtGui.QPixmap)
@@ -169,7 +169,30 @@ class ImageProcessingPipeline(QtCore.QObject):
         v_w = viewport_size.width()
         is_fitting = getattr(self._view_ref, "_is_fitting", False)
 
+        is_cropping = self._view_ref._crop_item.isVisible()
+
         target_w = self.base_img_full.shape[1] * zoom_scale if not is_fitting else v_w
+
+        visible_scene_rect = None
+        if not is_fitting and not is_cropping:
+            viewport_rect = self._view_ref.viewport().rect()
+            visible_poly = self._view_ref.mapToScene(viewport_rect)
+            visible_rect = visible_poly.boundingRect()
+
+            # Use smaller boundaries safely
+            buf_w = visible_rect.width() * 0.05
+            buf_h = visible_rect.height() * 0.05
+            visible_rect.adjust(-buf_w, -buf_h, buf_w, buf_h)
+
+            scene_rect = self._view_ref.sceneRect()
+            visible_rect = visible_rect.intersected(scene_rect)
+
+            visible_scene_rect = (
+                int(visible_rect.x()),
+                int(visible_rect.y()),
+                int(visible_rect.width()),
+                int(visible_rect.height())
+            )
 
         self._current_request_id += 1
         worker = ImageProcessorWorker(
@@ -184,6 +207,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             last_heavy_adjusted=self._last_heavy_adjusted,
             lens_info=self.lens_info,
             target_on_screen_width=target_w,
+            visible_scene_rect=visible_scene_rect,
         )
         self.thread_pool.start(worker)
 
@@ -191,13 +215,15 @@ class ImageProcessingPipeline(QtCore.QObject):
         elapsed_ms = (time.perf_counter() - self.perf_start_time) * 1000
         self.performanceMeasured.emit(elapsed_ms)
 
-    @QtCore.Slot(QtGui.QPixmap, int, int, float, int)
+    @QtCore.Slot(QtGui.QPixmap, int, int, float, object, object, int)
     def _on_worker_finished(
         self,
         pix_bg,
         full_w,
         full_h,
         rotation,
+        visible_scene_rect,
+        bg_lowres_pix,
         request_id,
     ):
         self._is_rendering_locked = False
@@ -211,7 +237,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._last_processed_id = request_id
         self._last_zoom_scale = self._last_requested_zoom
 
-        self.previewUpdated.emit(pix_bg, full_w, full_h, rotation)
+        self.previewUpdated.emit(pix_bg, full_w, full_h, rotation, visible_scene_rect, bg_lowres_pix)
         self.editedPixmapUpdated.emit(pix_bg)
         self._measure_and_emit_perf()
 

@@ -16,6 +16,7 @@ This document tracks planned features, project goals, and areas for technical im
 
 ## Bugs
 
+- **Crop UI Sync with Viewport Rendering**: If the UI needs to support active zooming/panning while cropping, we might need to improve the floating pixmap coordinate translation (currently viewport rendering is paused while cropping).
 
 ## Testing Improvement Areas
 
