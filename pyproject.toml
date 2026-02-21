@@ -26,6 +26,7 @@ dependencies = [
 ]
 
 [dependency-groups]
+dev = []
 lint = [
     "ruff",
 ]
@@ -33,6 +34,7 @@ lint = [
 test = [
     "pytest",
     "pytest-qt",
+    "pytest-sugar>=1.1.1",
 ]
 
 [project.scripts]
