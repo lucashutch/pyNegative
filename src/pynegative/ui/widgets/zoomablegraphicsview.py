@@ -143,7 +143,9 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self._bg_item.setTransformOriginPoint(self._bg_item.mapFromScene(center))
         self._bg_item.setRotation(rel_rotation)
 
-        self._bg_low_item.setTransformOriginPoint(self._bg_low_item.mapFromScene(center))
+        self._bg_low_item.setTransformOriginPoint(
+            self._bg_low_item.mapFromScene(center)
+        )
         self._bg_low_item.setRotation(rel_rotation)
 
     def reset_zoom(self):
@@ -274,7 +276,9 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self._bg_item.setTransformOriginPoint(self._bg_item.mapFromScene(center))
         self._bg_item.setRotation(rel_rotation)
 
-        self._bg_low_item.setTransformOriginPoint(self._bg_low_item.mapFromScene(center))
+        self._bg_low_item.setTransformOriginPoint(
+            self._bg_low_item.mapFromScene(center)
+        )
         self._bg_low_item.setRotation(rel_rotation)
 
     def get_rotation(self) -> float:

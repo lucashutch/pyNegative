@@ -191,7 +191,7 @@ class ImageProcessingPipeline(QtCore.QObject):
                 int(visible_rect.x()),
                 int(visible_rect.y()),
                 int(visible_rect.width()),
-                int(visible_rect.height())
+                int(visible_rect.height()),
             )
 
         self._current_request_id += 1
@@ -237,7 +237,9 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._last_processed_id = request_id
         self._last_zoom_scale = self._last_requested_zoom
 
-        self.previewUpdated.emit(pix_bg, full_w, full_h, rotation, visible_scene_rect, bg_lowres_pix)
+        self.previewUpdated.emit(
+            pix_bg, full_w, full_h, rotation, visible_scene_rect, bg_lowres_pix
+        )
         self.editedPixmapUpdated.emit(pix_bg)
         self._measure_and_emit_perf()
 

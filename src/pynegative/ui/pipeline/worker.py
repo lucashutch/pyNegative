@@ -416,8 +416,14 @@ class ImageProcessorWorker(QtCore.QRunnable):
         return img
 
     def _apply_fused_remap(
-        self, img, fused_maps, out_w, out_h, interpolation=cv2.INTER_CUBIC,
-        crop_offset=(0, 0), dest_roi=None
+        self,
+        img,
+        fused_maps,
+        out_w,
+        out_h,
+        interpolation=cv2.INTER_CUBIC,
+        crop_offset=(0, 0),
+        dest_roi=None,
     ):
         """Applies one or more fused maps to an image, optionally localized to a ROI."""
         crop_x, crop_y = crop_offset
@@ -434,8 +440,12 @@ class ImageProcessorWorker(QtCore.QRunnable):
             for i in range(3):
                 mx, my = fused_maps[i]
                 if dest_roi is not None:
-                    mx_patch = mx[out_vy:out_vy+out_vh, out_vx:out_vx+out_vw] - crop_x
-                    my_patch = my[out_vy:out_vy+out_vh, out_vx:out_vx+out_vw] - crop_y
+                    mx_patch = (
+                        mx[out_vy : out_vy + out_vh, out_vx : out_vx + out_vw] - crop_x
+                    )
+                    my_patch = (
+                        my[out_vy : out_vy + out_vh, out_vx : out_vx + out_vw] - crop_y
+                    )
                 else:
                     mx_patch = mx
                     my_patch = my
@@ -456,8 +466,12 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 # Distortion map
                 mx, my = m
                 if dest_roi is not None:
-                    mx_patch = mx[out_vy:out_vy+out_vh, out_vx:out_vx+out_vw] - crop_x
-                    my_patch = my[out_vy:out_vy+out_vh, out_vx:out_vx+out_vw] - crop_y
+                    mx_patch = (
+                        mx[out_vy : out_vy + out_vh, out_vx : out_vx + out_vw] - crop_x
+                    )
+                    my_patch = (
+                        my[out_vy : out_vy + out_vh, out_vx : out_vx + out_vw] - crop_y
+                    )
                 else:
                     mx_patch = mx
                     my_patch = my
@@ -473,8 +487,12 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 # Affine matrix
                 if dest_roi is not None:
                     Hom_M_full = np.vstack([m, [0, 0, 1]])
-                    T_src = np.array([[1, 0, crop_x], [0, 1, crop_y], [0, 0, 1]], dtype=np.float32)
-                    T_dst_inv = np.array([[1, 0, -out_vx], [0, 1, -out_vy], [0, 0, 1]], dtype=np.float32)
+                    T_src = np.array(
+                        [[1, 0, crop_x], [0, 1, crop_y], [0, 0, 1]], dtype=np.float32
+                    )
+                    T_dst_inv = np.array(
+                        [[1, 0, -out_vx], [0, 1, -out_vy], [0, 0, 1]], dtype=np.float32
+                    )
                     Hom_M_new = T_dst_inv @ Hom_M_full @ T_src
                     M_new = Hom_M_new[:2, :]
                     return cv2.warpAffine(
@@ -511,7 +529,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
         heavy_params = {
             "de_haze": self.settings.get("de_haze", 0) / 50.0,
             "denoise_luma": self.settings.get("denoise_luma", 0),
-            "denoise_chroma": self.settings.get("denoise_chroma", 0) * 2,  # Scale up max power
+            "denoise_chroma": self.settings.get("denoise_chroma", 0)
+            * 2,  # Scale up max power
             "denoise_method": self.settings.get(
                 "denoise_method", "NLMeans (Numba Fast+)"
             ),
@@ -572,12 +591,15 @@ class ImageProcessorWorker(QtCore.QRunnable):
             out_vx, out_vy, out_vw, out_vh = self.visible_scene_rect
 
             # Map viewport back to source image to find raw crop bounds
-            corners_processed = np.array([
-                [out_vx, out_vy],
-                [out_vx + out_vw, out_vy],
-                [out_vx + out_vw, out_vy + out_vh],
-                [out_vx, out_vy + out_vh]
-            ], dtype=np.float32).reshape(-1, 1, 2)
+            corners_processed = np.array(
+                [
+                    [out_vx, out_vy],
+                    [out_vx + out_vw, out_vy],
+                    [out_vx + out_vw, out_vy + out_vh],
+                    [out_vx, out_vy + out_vh],
+                ],
+                dtype=np.float32,
+            ).reshape(-1, 1, 2)
 
             M_full = full_resolver.get_matrix_2x3()
             hom_M = np.vstack([M_full, [0, 0, 1]])
@@ -603,12 +625,16 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         vig_params = self._resolve_vignette_params(
             roi_offset=(crop_x, crop_y) if is_viewport_only else None,
-            full_size=(w_src, h_src)
+            full_size=(w_src, h_src),
         )
         vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = vig_params
 
         # --- STEP 2: PROCESSING ---
-        source_for_preprocess = selected_img[crop_y:crop_y+crop_h, crop_x:crop_x+crop_w] if is_viewport_only else selected_img
+        source_for_preprocess = (
+            selected_img[crop_y : crop_y + crop_h, crop_x : crop_x + crop_w]
+            if is_viewport_only
+            else selected_img
+        )
 
         preprocessed_bg = pynegative.apply_preprocess(
             source_for_preprocess,
@@ -654,9 +680,13 @@ class ImageProcessorWorker(QtCore.QRunnable):
             dest_roi_scaled = None
 
         img_dest = self._apply_fused_remap(
-            denoised_bg, fused_maps, o_w, o_h, cv2.INTER_CUBIC,
+            denoised_bg,
+            fused_maps,
+            o_w,
+            o_h,
+            cv2.INTER_CUBIC,
             crop_offset=(crop_x, crop_y) if is_viewport_only else (0, 0),
-            dest_roi=dest_roi_scaled
+            dest_roi=dest_roi_scaled,
         )
 
         processed_bg = self._process_heavy_stage(
@@ -696,13 +726,17 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     low_w, low_h, rotate_val, crop_val, flip_h, flip_v, ts_roi=low_scale
                 )
 
-                low_dest = self._apply_fused_remap(low_pre, low_maps, low_o_w, low_o_h, cv2.INTER_LINEAR)
+                low_dest = self._apply_fused_remap(
+                    low_pre, low_maps, low_o_w, low_o_h, cv2.INTER_LINEAR
+                )
 
                 low_heavy = self._process_heavy_stage(
                     low_dest, f"tier_{low_scale}", heavy_params, low_scale
                 )
 
-                low_out, _ = pynegative.apply_tone_map(low_heavy, **tone_map_settings, calculate_stats=False)
+                low_out, _ = pynegative.apply_tone_map(
+                    low_heavy, **tone_map_settings, calculate_stats=False
+                )
                 low_out = pynegative.apply_defringe(low_out, self.settings)
 
                 low_uint8 = (np.clip(low_out, 0, 1) * 255).astype(np.uint8)
@@ -712,7 +746,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     self.signals.histogramUpdated.emit(hist_data, self.request_id)
 
                 lh, lw = low_uint8.shape[:2]
-                qimg_low = QtGui.QImage(low_uint8.data, lw, lh, 3 * lw, QtGui.QImage.Format_RGB888)
+                qimg_low = QtGui.QImage(
+                    low_uint8.data, lw, lh, 3 * lw, QtGui.QImage.Format_RGB888
+                )
                 bg_lowres_pix = QtGui.QPixmap.fromImage(qimg_low)
         else:
             if self.calculate_histogram:
@@ -725,7 +761,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
         )
         pix_bg = QtGui.QPixmap.fromImage(qimg_bg)
 
-        visible_scene_rect_out = (out_vx, out_vy, out_vw, out_vh) if is_viewport_only else None
+        visible_scene_rect_out = (
+            (out_vx, out_vy, out_vw, out_vh) if is_viewport_only else None
+        )
 
         return (
             pix_bg,
