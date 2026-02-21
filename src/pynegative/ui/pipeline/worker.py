@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class ImageProcessorSignals(QtCore.QObject):
     """Signals for the image processing worker."""
 
-    finished = QtCore.Signal(QtGui.QPixmap, int, int, float, int)
+    finished = QtCore.Signal(QtGui.QPixmap, int, int, float, object, object, int)
     histogramUpdated = QtCore.Signal(dict, int)
     tierGenerated = QtCore.Signal(float, object)  # scale, array
     uneditedPixmapGenerated = QtCore.Signal(QtGui.QPixmap)
@@ -90,6 +90,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         last_heavy_adjusted="de_haze",
         lens_info=None,
         target_on_screen_width=None,
+        visible_scene_rect=None,
     ):
         super().__init__()
         self.signals = signals
@@ -103,6 +104,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.last_heavy_adjusted = last_heavy_adjusted
         self.lens_info = lens_info
         self.target_on_screen_width = target_on_screen_width
+        self.visible_scene_rect = visible_scene_rect
 
     def run(self):
         try:
@@ -414,20 +416,44 @@ class ImageProcessorWorker(QtCore.QRunnable):
         return img
 
     def _apply_fused_remap(
-        self, img, fused_maps, out_w, out_h, interpolation=cv2.INTER_CUBIC
+        self,
+        img,
+        fused_maps,
+        out_w,
+        out_h,
+        interpolation=cv2.INTER_CUBIC,
+        crop_offset=(0, 0),
+        dest_roi=None,
     ):
-        """Applies one or more fused maps to an image."""
+        """Applies one or more fused maps to an image, optionally localized to a ROI."""
+        crop_x, crop_y = crop_offset
+
+        if dest_roi is not None:
+            out_vx, out_vy, out_vw, out_vh = dest_roi
+        else:
+            out_vx, out_vy, out_vw, out_vh = 0, 0, out_w, out_h
+
         if len(fused_maps) == 3:
             # TCA case
             channels = cv2.split(img)
             remapped_channels = []
             for i in range(3):
                 mx, my = fused_maps[i]
+                if dest_roi is not None:
+                    mx_patch = (
+                        mx[out_vy : out_vy + out_vh, out_vx : out_vx + out_vw] - crop_x
+                    )
+                    my_patch = (
+                        my[out_vy : out_vy + out_vh, out_vx : out_vx + out_vw] - crop_y
+                    )
+                else:
+                    mx_patch = mx
+                    my_patch = my
                 remapped_channels.append(
                     cv2.remap(
                         channels[i],
-                        mx,
-                        my,
+                        mx_patch,
+                        my_patch,
                         interpolation,
                         borderMode=cv2.BORDER_CONSTANT,
                         borderValue=0,
@@ -438,24 +464,54 @@ class ImageProcessorWorker(QtCore.QRunnable):
             m = fused_maps[0]
             if isinstance(m, tuple):
                 # Distortion map
+                mx, my = m
+                if dest_roi is not None:
+                    mx_patch = (
+                        mx[out_vy : out_vy + out_vh, out_vx : out_vx + out_vw] - crop_x
+                    )
+                    my_patch = (
+                        my[out_vy : out_vy + out_vh, out_vx : out_vx + out_vw] - crop_y
+                    )
+                else:
+                    mx_patch = mx
+                    my_patch = my
                 return cv2.remap(
                     img,
-                    m[0],
-                    m[1],
+                    mx_patch,
+                    my_patch,
                     interpolation,
                     borderMode=cv2.BORDER_CONSTANT,
                     borderValue=0,
                 )
             else:
                 # Affine matrix
-                return cv2.warpAffine(
-                    img,
-                    m,
-                    (out_w, out_h),
-                    flags=interpolation,
-                    borderMode=cv2.BORDER_CONSTANT,
-                    borderValue=0,
-                )
+                if dest_roi is not None:
+                    Hom_M_full = np.vstack([m, [0, 0, 1]])
+                    T_src = np.array(
+                        [[1, 0, crop_x], [0, 1, crop_y], [0, 0, 1]], dtype=np.float32
+                    )
+                    T_dst_inv = np.array(
+                        [[1, 0, -out_vx], [0, 1, -out_vy], [0, 0, 1]], dtype=np.float32
+                    )
+                    Hom_M_new = T_dst_inv @ Hom_M_full @ T_src
+                    M_new = Hom_M_new[:2, :]
+                    return cv2.warpAffine(
+                        img,
+                        M_new,
+                        (out_vw, out_vh),
+                        flags=interpolation,
+                        borderMode=cv2.BORDER_CONSTANT,
+                        borderValue=0,
+                    )
+                else:
+                    return cv2.warpAffine(
+                        img,
+                        m,
+                        (out_w, out_h),
+                        flags=interpolation,
+                        borderMode=cv2.BORDER_CONSTANT,
+                        borderValue=0,
+                    )
         return img
 
     def _update_preview(self):
@@ -473,7 +529,8 @@ class ImageProcessorWorker(QtCore.QRunnable):
         heavy_params = {
             "de_haze": self.settings.get("de_haze", 0) / 50.0,
             "denoise_luma": self.settings.get("denoise_luma", 0),
-            "denoise_chroma": self.settings.get("denoise_chroma", 0),
+            "denoise_chroma": self.settings.get("denoise_chroma", 0)
+            * 2,  # Scale up max power
             "denoise_method": self.settings.get(
                 "denoise_method", "NLMeans (Numba Fast+)"
             ),
@@ -526,14 +583,61 @@ class ImageProcessorWorker(QtCore.QRunnable):
         res_key = f"tier_{selected_scale}"
         h_src, w_src = selected_img.shape[:2]
 
+        crop_x, crop_y, crop_w, crop_h = 0, 0, w_src, h_src
+        out_vx, out_vy, out_vw, out_vh = 0, 0, new_full_w, new_full_h
+
+        is_viewport_only = self.visible_scene_rect is not None
+        if is_viewport_only:
+            out_vx, out_vy, out_vw, out_vh = self.visible_scene_rect
+
+            # Map viewport back to source image to find raw crop bounds
+            corners_processed = np.array(
+                [
+                    [out_vx, out_vy],
+                    [out_vx + out_vw, out_vy],
+                    [out_vx + out_vw, out_vy + out_vh],
+                    [out_vx, out_vy + out_vh],
+                ],
+                dtype=np.float32,
+            ).reshape(-1, 1, 2)
+
+            M_full = full_resolver.get_matrix_2x3()
+            hom_M = np.vstack([M_full, [0, 0, 1]])
+            M_inv = np.linalg.inv(hom_M)[:2, :]
+
+            corners_raw = cv2.transform(corners_processed, M_inv).reshape(-1, 2)
+            rx_min, ry_min = corners_raw.min(axis=0)
+            rx_max, ry_max = corners_raw.max(axis=0)
+
+            crop_x = int(np.floor(rx_min * selected_scale))
+            crop_y = int(np.floor(ry_min * selected_scale))
+            crop_w = int(np.ceil((rx_max - rx_min) * selected_scale))
+            crop_h = int(np.ceil((ry_max - ry_min) * selected_scale))
+
+            crop_x = max(0, crop_x)
+            crop_y = max(0, crop_y)
+            crop_w = min(w_src - crop_x, crop_w)
+            crop_h = min(h_src - crop_y, crop_h)
+
+            if crop_w <= 0 or crop_h <= 0:
+                is_viewport_only = False
+                crop_x, crop_y, crop_w, crop_h = 0, 0, w_src, h_src
+
         vig_params = self._resolve_vignette_params(
-            roi_offset=None, full_size=(w_src, h_src)
+            roi_offset=(crop_x, crop_y) if is_viewport_only else None,
+            full_size=(w_src, h_src),
         )
         vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = vig_params
 
         # --- STEP 2: PROCESSING ---
+        source_for_preprocess = (
+            selected_img[crop_y : crop_y + crop_h, crop_x : crop_x + crop_w]
+            if is_viewport_only
+            else selected_img
+        )
+
         preprocessed_bg = pynegative.apply_preprocess(
-            selected_img,
+            source_for_preprocess,
             temperature=preprocess_settings["temperature"],
             tint=preprocess_settings["tint"],
             exposure=preprocess_settings["exposure"],
@@ -546,6 +650,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
             full_height=vig_fh,
         )
 
+        # Denoise only what is seen!
         denoised_bg = self._process_denoise_stage(
             preprocessed_bg, res_key, heavy_params, self.zoom_scale
         )
@@ -562,8 +667,26 @@ class ImageProcessorWorker(QtCore.QRunnable):
             full_size=(w_src, h_src),
         )
 
+        if is_viewport_only:
+            out_vx_s = int(np.floor(out_vx * selected_scale))
+            out_vy_s = int(np.floor(out_vy * selected_scale))
+            out_vw_s = int(np.ceil(out_vw * selected_scale))
+            out_vh_s = int(np.ceil(out_vh * selected_scale))
+
+            out_vw_s = max(1, min(out_vw_s, o_w - out_vx_s))
+            out_vh_s = max(1, min(out_vh_s, o_h - out_vy_s))
+            dest_roi_scaled = (out_vx_s, out_vy_s, out_vw_s, out_vh_s)
+        else:
+            dest_roi_scaled = None
+
         img_dest = self._apply_fused_remap(
-            denoised_bg, fused_maps, o_w, o_h, cv2.INTER_CUBIC
+            denoised_bg,
+            fused_maps,
+            o_w,
+            o_h,
+            cv2.INTER_CUBIC,
+            crop_offset=(crop_x, crop_y) if is_viewport_only else (0, 0),
+            dest_roi=dest_roi_scaled,
         )
 
         processed_bg = self._process_heavy_stage(
@@ -577,12 +700,60 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         img_uint8 = (np.clip(bg_output, 0, 1) * 255).astype(np.uint8)
 
-        if self.calculate_histogram:
-            try:
+        # -- STEP 3: Handle LowRes Pan Background & Histograms --
+        bg_lowres_pix = None
+        if is_viewport_only:
+            low_scale = 0.0625
+            low_img = self.tiers.get(low_scale)
+            if low_img is not None:
+                low_h, low_w = low_img.shape[:2]
+                low_vig_params = self._resolve_vignette_params(None, (low_w, low_h))
+                low_pre = pynegative.apply_preprocess(
+                    low_img,
+                    temperature=preprocess_settings["temperature"],
+                    tint=preprocess_settings["tint"],
+                    exposure=preprocess_settings["exposure"],
+                    vignette_k1=low_vig_params[0],
+                    vignette_k2=low_vig_params[1],
+                    vignette_k3=low_vig_params[2],
+                    vignette_cx=low_vig_params[3],
+                    vignette_cy=low_vig_params[4],
+                    full_width=low_vig_params[5],
+                    full_height=low_vig_params[6],
+                )
+
+                low_maps, low_o_w, low_o_h, _ = self._get_fused_geometry(
+                    low_w, low_h, rotate_val, crop_val, flip_h, flip_v, ts_roi=low_scale
+                )
+
+                low_dest = self._apply_fused_remap(
+                    low_pre, low_maps, low_o_w, low_o_h, cv2.INTER_LINEAR
+                )
+
+                low_heavy = self._process_heavy_stage(
+                    low_dest, f"tier_{low_scale}", heavy_params, low_scale
+                )
+
+                low_out, _ = pynegative.apply_tone_map(
+                    low_heavy, **tone_map_settings, calculate_stats=False
+                )
+                low_out = pynegative.apply_defringe(low_out, self.settings)
+
+                low_uint8 = (np.clip(low_out, 0, 1) * 255).astype(np.uint8)
+
+                if self.calculate_histogram:
+                    hist_data = self._calculate_histograms(low_uint8)
+                    self.signals.histogramUpdated.emit(hist_data, self.request_id)
+
+                lh, lw = low_uint8.shape[:2]
+                qimg_low = QtGui.QImage(
+                    low_uint8.data, lw, lh, 3 * lw, QtGui.QImage.Format_RGB888
+                )
+                bg_lowres_pix = QtGui.QPixmap.fromImage(qimg_low)
+        else:
+            if self.calculate_histogram:
                 hist_data = self._calculate_histograms(img_uint8)
                 self.signals.histogramUpdated.emit(hist_data, self.request_id)
-            except Exception as e:
-                logger.error(f"Histogram error: {e}")
 
         h_bg, w_bg = img_uint8.shape[:2]
         qimg_bg = QtGui.QImage(
@@ -590,11 +761,17 @@ class ImageProcessorWorker(QtCore.QRunnable):
         )
         pix_bg = QtGui.QPixmap.fromImage(qimg_bg)
 
+        visible_scene_rect_out = (
+            (out_vx, out_vy, out_vw, out_vh) if is_viewport_only else None
+        )
+
         return (
             pix_bg,
             new_full_w,
             new_full_h,
             rotate_val,
+            visible_scene_rect_out,
+            bg_lowres_pix,
         )
 
     def _calculate_histograms(self, img_array):
