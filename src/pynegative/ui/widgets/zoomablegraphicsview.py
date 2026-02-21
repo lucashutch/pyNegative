@@ -38,8 +38,6 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self._scene.addItem(self._bg_item)
         self._bg_item.setZValue(0)
 
-
-
         # Crop Item (Overlay)
         self._crop_item = CropRectItem()
         self._scene.addItem(self._crop_item)

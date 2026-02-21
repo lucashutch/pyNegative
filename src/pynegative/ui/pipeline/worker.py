@@ -12,9 +12,7 @@ logger = logging.getLogger(__name__)
 class ImageProcessorSignals(QtCore.QObject):
     """Signals for the image processing worker."""
 
-    finished = QtCore.Signal(
-        QtGui.QPixmap, int, int, float, int
-    )
+    finished = QtCore.Signal(QtGui.QPixmap, int, int, float, int)
     histogramUpdated = QtCore.Signal(dict, int)
     tierGenerated = QtCore.Signal(float, object)  # scale, array
     uneditedPixmapGenerated = QtCore.Signal(QtGui.QPixmap)
@@ -62,7 +60,7 @@ class TierGeneratorWorker(QtCore.QRunnable):
                 0.25,
                 round(1.0 / 6.0, 4),
                 0.125,
-                0.0625
+                0.0625,
             ]
 
             for scale in scales:

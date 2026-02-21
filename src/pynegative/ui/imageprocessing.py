@@ -1,7 +1,6 @@
 import numpy as np
 from PySide6 import QtCore, QtGui
 import time
-import cv2
 import logging
 from .pipeline.worker import (
     ImageProcessorSignals,
@@ -13,9 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class ImageProcessingPipeline(QtCore.QObject):
-    previewUpdated = QtCore.Signal(
-        QtGui.QPixmap, int, int, float
-    )
+    previewUpdated = QtCore.Signal(QtGui.QPixmap, int, int, float)
     histogramUpdated = QtCore.Signal(dict)
     performanceMeasured = QtCore.Signal(float)
     uneditedPixmapUpdated = QtCore.Signal(QtGui.QPixmap)
@@ -122,34 +119,14 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     def set_processing_params(self, **kwargs):
         heavy_keys = {"de_haze", "denoise_luma", "denoise_chroma", "sharpen_value"}
-        geometry_keys = {"rotation", "flip_h", "flip_v", "crop"}
-        lens_keys = {
-            "lens_distortion",
-            "lens_vignette",
-            "lens_ca",
-            "lens_enabled",
-            "lens_autocrop",
-            "lens_name_override",
-            "lens_camera_override",
-            "defringe_purple",
-            "defringe_green",
-            "defringe_edge",
-            "defringe_radius",
-        }
 
         changed = False
-        lens_changed = False
-        geom_changed = False
         for k, v in kwargs.items():
             if self._processing_params.get(k) != v:
                 self._processing_params[k] = v
                 changed = True
                 if k in heavy_keys:
                     self._last_heavy_adjusted = k
-                if k in lens_keys:
-                    lens_changed = True
-                if k in geometry_keys:
-                    geom_changed = True
 
         if changed:
             self.request_update()
@@ -234,9 +211,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._last_processed_id = request_id
         self._last_zoom_scale = self._last_requested_zoom
 
-        self.previewUpdated.emit(
-            pix_bg, full_w, full_h, rotation
-        )
+        self.previewUpdated.emit(pix_bg, full_w, full_h, rotation)
         self.editedPixmapUpdated.emit(pix_bg)
         self._measure_and_emit_perf()
 

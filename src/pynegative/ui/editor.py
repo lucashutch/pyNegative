@@ -362,11 +362,13 @@ class EditorWidget(QtWidgets.QWidget):
             thumb_img, _ = pynegative.load_cached_thumbnail(str(path), size=400)
             if thumb_img is not None:
                 # Convert PIL Image or numpy array to QPixmap
-                if hasattr(thumb_img, 'mode'):
-                    if thumb_img.mode == 'RGB':
+                if hasattr(thumb_img, "mode"):
+                    if thumb_img.mode == "RGB":
                         img_data = np.array(thumb_img)
                         h, w, c = img_data.shape
-                        qimg = QtGui.QImage(img_data.data, w, h, w * c, QtGui.QImage.Format_RGB888)
+                        qimg = QtGui.QImage(
+                            img_data.data, w, h, w * c, QtGui.QImage.Format_RGB888
+                        )
                         pixmap = QtGui.QPixmap.fromImage(qimg)
                         self.view.set_pixmaps(pixmap, w, h)
                 elif isinstance(thumb_img, np.ndarray):
@@ -375,7 +377,9 @@ class EditorWidget(QtWidgets.QWidget):
                     else:
                         img_uint8 = thumb_img
                     h, w, c = img_uint8.shape
-                    qimg = QtGui.QImage(img_uint8.data, w, h, w * c, QtGui.QImage.Format_RGB888)
+                    qimg = QtGui.QImage(
+                        img_uint8.data, w, h, w * c, QtGui.QImage.Format_RGB888
+                    )
                     pixmap = QtGui.QPixmap.fromImage(qimg)
                     self.view.set_pixmaps(pixmap, w, h)
             else:
