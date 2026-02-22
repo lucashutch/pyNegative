@@ -13,7 +13,7 @@ class ImageProcessorSignals(QtCore.QObject):
     """Signals for the image processing worker."""
 
     finished = QtCore.Signal(
-        QtGui.QPixmap, int, int, float, object, object, int, object, int
+        QtGui.QPixmap, int, int, float, object, object, int, object, int, int
     )
     histogramUpdated = QtCore.Signal(dict, int)
     tierGenerated = QtCore.Signal(float, object)  # scale, array
@@ -96,6 +96,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         tile_key=None,
         render_state_id=0,
         calculate_lowres=True,
+        settings_state_id=0,
     ):
         super().__init__()
         self.signals = signals
@@ -113,6 +114,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.tile_key = tile_key
         self.render_state_id = render_state_id
         self.calculate_lowres = calculate_lowres
+        self.settings_state_id = settings_state_id
 
     def run(self):
         try:
@@ -127,6 +129,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 self.request_id,
                 self.tile_key,
                 self.render_state_id,
+                self.settings_state_id,
             )
         except Exception as e:
             logger.error(f"Image processing worker failed: {e}", exc_info=True)

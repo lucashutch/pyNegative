@@ -48,6 +48,8 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._tile_cache = {}
         self._current_render_state_id = 0
         self._last_rendered_state_id = 0
+        self._current_settings_state_id = 0
+        self._last_rendered_settings_state_id = 0
         self._last_settings = None
 
         self.signals = ImageProcessorSignals()
@@ -189,6 +191,9 @@ class ImageProcessingPipeline(QtCore.QObject):
             self._last_settings = current_settings
             self._last_requested_zoom = zoom_scale
 
+        if settings_changed or is_fitting or is_cropping:
+            self._current_settings_state_id += 1
+
         self._current_request_id += 1
 
         if is_fitting or is_cropping:
@@ -208,6 +213,7 @@ class ImageProcessingPipeline(QtCore.QObject):
                 tile_key=None,
                 render_state_id=self._current_render_state_id,
                 calculate_lowres=True,
+                settings_state_id=self._current_settings_state_id,
             )
             self.thread_pool.start(worker)
             return
@@ -273,6 +279,7 @@ class ImageProcessingPipeline(QtCore.QObject):
                     tile_key=tile_key,
                     render_state_id=self._current_render_state_id,
                     calculate_lowres=needs_lowres,
+                    settings_state_id=self._current_settings_state_id,
                 )
                 needs_lowres = False
                 self.thread_pool.start(worker)
@@ -281,7 +288,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         elapsed_ms = (time.perf_counter() - self.perf_start_time) * 1000
         self.performanceMeasured.emit(elapsed_ms)
 
-    @QtCore.Slot(QtGui.QPixmap, int, int, float, object, object, int, object, int)
+    @QtCore.Slot(QtGui.QPixmap, int, int, float, object, object, int, object, int, int)
     def _on_worker_finished(
         self,
         pix_bg,
@@ -293,6 +300,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         request_id,
         tile_key,
         render_state_id,
+        settings_state_id,
     ):
         self._is_rendering_locked = False
 
@@ -302,10 +310,13 @@ class ImageProcessingPipeline(QtCore.QObject):
                 self._process_pending_update()
             return
 
-        clear_tiles = False
         if render_state_id > self._last_rendered_state_id:
-            clear_tiles = True
             self._last_rendered_state_id = render_state_id
+
+        clear_tiles = False
+        if settings_state_id > self._last_rendered_settings_state_id:
+            clear_tiles = True
+            self._last_rendered_settings_state_id = settings_state_id
 
         self._last_processed_id = request_id
         self._last_zoom_scale = self._last_requested_zoom
