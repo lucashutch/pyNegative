@@ -597,15 +597,21 @@ class ImageProcessorWorker(QtCore.QRunnable):
         if self.visible_scene_rect is not None:
             # When zooming IN, the self.zoom_scale grows (2.0x, 3.0x, etc).
             # Our tiers are fractions of the original size (0.25, 0.5, 1.0)
-            # We want to pick the highest available tier (1.0) when zoom > 1.0
-            for scale in available_scales:
-                tier_img = self.tiers.get(scale) if scale < 1.0 else self.base_img_full
-                if tier_img is not None:
-                    selected_scale = scale
-                    selected_img = tier_img
-                    # The highest available scale below or equal to zoom requirement.
-                    if scale >= min(1.0, self.zoom_scale):
-                        break
+            # We want to pick the highest available tier (1.0) when zoom >= 1.0
+            if self.zoom_scale >= 1.0:
+                selected_scale = 1.0
+                selected_img = self.base_img_full
+            else:
+                for scale in available_scales:
+                    tier_img = (
+                        self.tiers.get(scale) if scale < 1.0 else self.base_img_full
+                    )
+                    if tier_img is not None:
+                        selected_scale = scale
+                        selected_img = tier_img
+                        # The highest available scale below or equal to zoom requirement.
+                        if scale >= self.zoom_scale:
+                            break
         else:
             # Full image bounding calculation
             for scale in available_scales:
