@@ -370,7 +370,8 @@ class EditorWidget(QtWidgets.QWidget):
                             img_data.data, w, h, w * c, QtGui.QImage.Format_RGB888
                         )
                         pixmap = QtGui.QPixmap.fromImage(qimg)
-                        self.view.set_pixmaps(pixmap, w, h)
+                        self.view.set_pixmaps(pixmap, w, h, clear_tiles=True)
+                        self.view.reset_zoom()
                 elif isinstance(thumb_img, np.ndarray):
                     if thumb_img.dtype == np.float32:
                         img_uint8 = (np.clip(thumb_img, 0, 1) * 255).astype(np.uint8)
@@ -381,12 +382,13 @@ class EditorWidget(QtWidgets.QWidget):
                         img_uint8.data, w, h, w * c, QtGui.QImage.Format_RGB888
                     )
                     pixmap = QtGui.QPixmap.fromImage(qimg)
-                    self.view.set_pixmaps(pixmap, w, h)
+                    self.view.set_pixmaps(pixmap, w, h, clear_tiles=True)
+                    self.view.reset_zoom()
             else:
-                self.view.set_pixmaps(None, 0, 0)
+                self.view.set_pixmaps(None, 0, 0, clear_tiles=True)
         except Exception as e:
             logger.warning(f"Could not load thumbnail for instant preview: {e}")
-            self.view.set_pixmaps(None, 0, 0)
+            self.view.set_pixmaps(None, 0, 0, clear_tiles=True)
 
         self.metadata_panel.clear()
 
