@@ -13,7 +13,7 @@ class ImageProcessorSignals(QtCore.QObject):
     """Signals for the image processing worker."""
 
     finished = QtCore.Signal(
-        QtGui.QPixmap, int, int, float, object, object, int, object, int
+        QtGui.QPixmap, int, int, float, object, object, int, object, int, int
     )
     histogramUpdated = QtCore.Signal(dict, int)
     tierGenerated = QtCore.Signal(float, object)  # scale, array
@@ -96,6 +96,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         tile_key=None,
         render_state_id=0,
         calculate_lowres=True,
+        settings_state_id=0,
     ):
         super().__init__()
         self.signals = signals
@@ -113,6 +114,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.tile_key = tile_key
         self.render_state_id = render_state_id
         self.calculate_lowres = calculate_lowres
+        self.settings_state_id = settings_state_id
 
     def run(self):
         try:
@@ -127,6 +129,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 self.request_id,
                 self.tile_key,
                 self.render_state_id,
+                self.settings_state_id,
             )
         except Exception as e:
             logger.error(f"Image processing worker failed: {e}", exc_info=True)
@@ -591,12 +594,32 @@ class ImageProcessorWorker(QtCore.QRunnable):
         selected_scale = 1.0
         selected_img = self.base_img_full
 
-        for scale in available_scales:
-            tier_img = self.tiers.get(scale) if scale < 1.0 else self.base_img_full
-            if tier_img is not None and tier_img.shape[1] >= target_on_screen_width:
-                selected_scale = scale
-                selected_img = tier_img
-                break
+        if self.visible_scene_rect is not None:
+            # When zooming IN, the self.zoom_scale grows (2.0x, 3.0x, etc).
+            # Our tiers are fractions of the original size (0.25, 0.5, 1.0)
+            # We want to pick the highest available tier (1.0) when zoom >= 1.0
+            if self.zoom_scale >= 1.0:
+                selected_scale = 1.0
+                selected_img = self.base_img_full
+            else:
+                for scale in available_scales:
+                    tier_img = (
+                        self.tiers.get(scale) if scale < 1.0 else self.base_img_full
+                    )
+                    if tier_img is not None:
+                        selected_scale = scale
+                        selected_img = tier_img
+                        # The highest available scale below or equal to zoom requirement.
+                        if scale >= self.zoom_scale:
+                            break
+        else:
+            # Full image bounding calculation
+            for scale in available_scales:
+                tier_img = self.tiers.get(scale) if scale < 1.0 else self.base_img_full
+                if tier_img is not None and tier_img.shape[1] >= target_on_screen_width:
+                    selected_scale = scale
+                    selected_img = tier_img
+                    break
 
         res_key = f"tier_{selected_scale}"
         h_src, w_src = selected_img.shape[:2]

@@ -175,7 +175,7 @@ def de_noise_image(
             denoised = _apply_bilateral_path(img, l_str, c_str)
 
         elapsed = (time.perf_counter() - start_time) * 1000
-        logger.info(
+        logger.debug(
             f"Denoise: {method_name} | Size: {w}x{h}{tier_str} | Time: {elapsed:.2f}ms"
         )
 
