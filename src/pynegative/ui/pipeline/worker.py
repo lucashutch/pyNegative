@@ -594,12 +594,22 @@ class ImageProcessorWorker(QtCore.QRunnable):
         selected_scale = 1.0
         selected_img = self.base_img_full
 
-        for scale in available_scales:
-            tier_img = self.tiers.get(scale) if scale < 1.0 else self.base_img_full
-            if tier_img is not None and tier_img.shape[1] >= target_on_screen_width:
-                selected_scale = scale
-                selected_img = tier_img
-                break
+        if self.visible_scene_rect is not None:
+            # When requesting a specific coordinate region, simply match the literal zoom scale.
+            for scale in available_scales:
+                tier_img = self.tiers.get(scale) if scale < 1.0 else self.base_img_full
+                if tier_img is not None and scale >= self.zoom_scale:
+                    selected_scale = scale
+                    selected_img = tier_img
+                    break
+        else:
+            # Full image bounding calculation
+            for scale in available_scales:
+                tier_img = self.tiers.get(scale) if scale < 1.0 else self.base_img_full
+                if tier_img is not None and tier_img.shape[1] >= target_on_screen_width:
+                    selected_scale = scale
+                    selected_img = tier_img
+                    break
 
         res_key = f"tier_{selected_scale}"
         h_src, w_src = selected_img.shape[:2]
