@@ -143,7 +143,7 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
                     self._scene.addItem(item)
                     self._tile_items[tile_key] = item
 
-                    if len(self._tile_items) > 100:
+                    if len(self._tile_items) > 400:
                         oldest_k, oldest_item = self._tile_items.popitem(last=False)
                         self._scene.removeItem(oldest_item)
 

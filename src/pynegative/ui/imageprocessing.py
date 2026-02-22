@@ -224,7 +224,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         scene_rect = self._view_ref.sceneRect()
         visible_rect = visible_rect.intersected(scene_rect)
 
-        TILE_SIZE = 512
+        TILE_SIZE = 256
         tx_min = int(visible_rect.x() // TILE_SIZE)
         ty_min = int(visible_rect.y() // TILE_SIZE)
         tx_max = int((visible_rect.x() + visible_rect.width()) // TILE_SIZE)
@@ -241,10 +241,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         for ty in range(ty_min, ty_max + 1):
             for tx in range(tx_min, tx_max + 1):
                 tile_key = (tx, ty)
-                if (
-                    tile_key in self._tile_cache
-                    and self._tile_cache[tile_key] == "done"
-                ):
+                if tile_key in self._tile_cache:
                     continue
 
                 self._tile_cache[tile_key] = "pending"
