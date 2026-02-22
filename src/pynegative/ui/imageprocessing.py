@@ -277,8 +277,22 @@ class ImageProcessingPipeline(QtCore.QObject):
                 workers_queued += 1
                 self.thread_pool.start(worker)
 
+        # Deduce the selected tier matching what workers will use
+        available_scales = sorted(self.tiers.keys()) + [1.0]
+        selected_scale = 1.0
+        if zoom_scale >= 1.0:
+            selected_scale = 1.0
+        else:
+            for scale in available_scales:
+                if scale >= zoom_scale:
+                    selected_scale = scale
+                    break
+
+        v_w = self._view_ref.viewport().rect().width()
+        v_h = self._view_ref.viewport().rect().height()
+
         logger.info(
-            f"Viewport: {int(visible_rect.width())}x{int(visible_rect.height())} | Zoom Scale: {zoom_scale:.4f} | Queued {workers_queued} chunks ({TILE_SIZE}x{TILE_SIZE})"
+            f"Viewport: {v_w}x{v_h} | Zoom Scale: {zoom_scale:.4f} | Tier: {selected_scale} | Queued {workers_queued} chunks ({TILE_SIZE}x{TILE_SIZE})"
         )
 
     def _measure_and_emit_perf(self):
