@@ -1,6 +1,7 @@
-import pytest
 import numpy as np
-from pynegative.processing.lens import calculate_autocrop_scale, apply_lens_correction
+import pytest
+
+from pynegative.processing.lens import apply_lens_correction, calculate_autocrop_scale
 
 
 def test_autocrop_scale_calculation():

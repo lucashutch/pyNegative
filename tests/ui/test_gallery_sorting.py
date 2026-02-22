@@ -1,7 +1,8 @@
-from unittest.mock import MagicMock, patch
-from PySide6 import QtWidgets, QtCore
-from pathlib import Path
 import sys
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from PySide6 import QtCore, QtWidgets
 
 # Ensure project root is in path
 project_root = str(Path(__file__).resolve().parent.parent.parent)

@@ -1,8 +1,7 @@
 import logging
 import os
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from importlib.metadata import version, PackageNotFoundError
-
 
 logger = logging.getLogger(__name__)
 
@@ -21,21 +20,21 @@ def _setup_opencv_cache():
 _setup_opencv_cache()
 
 from .core import (  # noqa: E402
-    apply_tone_map,
-    apply_preprocess,
-    open_raw,
-    extract_thumbnail,
-    calculate_auto_exposure,
-    sharpen_image,
-    save_image,
-    de_noise_image,
-    de_haze_image,
-    apply_lens_correction,
-    apply_defringe,
-    save_sidecar,
-    load_sidecar,
-    SUPPORTED_EXTS,
     HEIF_SUPPORTED,
+    SUPPORTED_EXTS,
+    apply_defringe,
+    apply_lens_correction,
+    apply_preprocess,
+    apply_tone_map,
+    calculate_auto_exposure,
+    de_haze_image,
+    de_noise_image,
+    extract_thumbnail,
+    load_sidecar,
+    open_raw,
+    save_image,
+    save_sidecar,
+    sharpen_image,
 )
 
 __all__ = [

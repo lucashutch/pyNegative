@@ -1,7 +1,9 @@
 from pathlib import Path
+
 from PySide6 import QtCore
-from .undomanager import UndoManager
+
 from .. import core as pynegative
+from .undomanager import UndoManager
 
 
 class SettingsManager(QtCore.QObject):

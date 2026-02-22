@@ -1,5 +1,7 @@
 import math
+
 from PySide6 import QtCore
+
 from ... import core as pynegative
 
 

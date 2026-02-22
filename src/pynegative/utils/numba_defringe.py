@@ -1,6 +1,7 @@
 import numpy as np
 from numba import njit, prange
-from ..processing.constants import LUMA_R, LUMA_G, LUMA_B
+
+from ..processing.constants import LUMA_B, LUMA_G, LUMA_R
 
 
 @njit(inline="always")

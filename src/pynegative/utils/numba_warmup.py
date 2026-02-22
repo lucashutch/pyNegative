@@ -27,14 +27,14 @@ def warmup_kernels() -> tuple[bool, float]:
     elapsed_ms : float
         Wall-clock time spent warming up, in milliseconds.
     """
-    from .numba_color import tone_map_kernel, preprocess_kernel
-    from .numba_detail import sharpen_kernel
+    from .numba_color import preprocess_kernel, tone_map_kernel
+    from .numba_dehaze import dark_channel_kernel, dehaze_recovery_kernel
     from .numba_denoise import (
         bilateral_kernel_yuv,
         nl_means_numba,
         nl_means_numba_multichannel,
     )
-    from .numba_dehaze import dark_channel_kernel, dehaze_recovery_kernel
+    from .numba_detail import sharpen_kernel
 
     start = time.perf_counter()
 

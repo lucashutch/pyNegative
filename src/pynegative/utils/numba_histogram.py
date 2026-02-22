@@ -1,6 +1,7 @@
-from ._numba_base import njit
 import numpy as np
-from ..processing.constants import LUMA_R, LUMA_G, LUMA_B
+
+from ..processing.constants import LUMA_B, LUMA_G, LUMA_R
+from ._numba_base import njit
 
 
 @njit(fastmath=True, cache=True)

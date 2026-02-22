@@ -1,4 +1,5 @@
 import pytest
+
 from pynegative.io.lens_db_xml import LensDatabase
 
 # Mock XML content

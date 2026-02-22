@@ -1,4 +1,5 @@
 import numpy as np
+
 from ._numba_base import njit, prange
 
 

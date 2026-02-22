@@ -1,7 +1,9 @@
+import logging
+import time
+
 import numpy as np
 from PySide6 import QtCore, QtGui
-import time
-import logging
+
 from .pipeline.worker import (
     ImageProcessorSignals,
     ImageProcessorWorker,

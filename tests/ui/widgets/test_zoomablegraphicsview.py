@@ -1,6 +1,7 @@
 import pytest
-from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
+
 from pynegative.ui.widgets.zoomablegraphicsview import ZoomableGraphicsView
 
 

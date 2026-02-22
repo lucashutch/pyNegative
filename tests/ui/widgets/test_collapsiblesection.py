@@ -1,5 +1,6 @@
 import pytest
 from PySide6 import QtWidgets
+
 from pynegative.ui.widgets.collapsiblesection import CollapsibleSection
 
 

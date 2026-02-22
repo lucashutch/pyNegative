@@ -1,9 +1,11 @@
 import logging
-import time
 import math
+import time
+
 import numpy as np
-from .constants import LUMA_R, LUMA_G, LUMA_B
-from ..utils.numba_kernels import tone_map_kernel, preprocess_kernel
+
+from ..utils.numba_kernels import preprocess_kernel, tone_map_kernel
+from .constants import LUMA_B, LUMA_G, LUMA_R
 
 logger = logging.getLogger(__name__)
 

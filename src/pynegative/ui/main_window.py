@@ -1,11 +1,12 @@
 import logging
 from pathlib import Path
-from PySide6 import QtWidgets, QtGui, QtCore
+
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from .. import core as pynegative
-from .gallery import GalleryWidget
 from .editor import EditorWidget
 from .export_tab import ExportWidget
+from .gallery import GalleryWidget
 from .widgets import StarRatingWidget
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Now MainWindow is in ui/main_window.py, so it's reaching up.
         style_path = Path(__file__).parent.parent / "styles.qss"
         try:
-            with open(style_path, "r") as f:
+            with open(style_path) as f:
                 self.setStyleSheet(f.read())
         except FileNotFoundError:
             print(f"Warning: Stylesheet not found at {style_path}")

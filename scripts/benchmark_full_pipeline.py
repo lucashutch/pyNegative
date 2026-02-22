@@ -9,10 +9,9 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List
 
-import numpy as np
 import cv2
+import numpy as np
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -31,7 +30,7 @@ class PipelineBenchmark:
     def log(self, msg):
         print(msg)
 
-    def benchmark_func(self, name: str, func, img: np.ndarray, **kwargs) -> Dict:
+    def benchmark_func(self, name: str, func, img: np.ndarray, **kwargs) -> dict:
         """Benchmark a single function call."""
         res_key = f"{img.shape[1]}x{img.shape[0]}"
 
@@ -76,7 +75,7 @@ class PipelineBenchmark:
         }
         return result
 
-    def run_all(self, img_path: Path, resolutions: List[int]):
+    def run_all(self, img_path: Path, resolutions: list[int]):
         self.log(f"Starting comprehensive benchmark with {img_path.name}")
         self.log(f"OpenCL Available: {self.has_opencl}")
         if self.has_opencl:

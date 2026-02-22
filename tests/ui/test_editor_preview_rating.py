@@ -1,9 +1,9 @@
-from unittest.mock import MagicMock, patch
-from PySide6 import QtWidgets, QtCore, QtGui
-from PySide6.QtCore import Qt
-from pathlib import Path
-
 import sys
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6.QtCore import Qt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 

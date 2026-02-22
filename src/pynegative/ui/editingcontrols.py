@@ -1,14 +1,15 @@
-from PySide6 import QtWidgets, QtCore
-from .widgets import (
-    CollapsibleSection,
-    StarRatingWidget,
-    HistogramWidget,
-)
-from .controls.tone_controls import ToneControls
+from PySide6 import QtCore, QtWidgets
+
 from .controls.color_controls import ColorControls
 from .controls.detail_controls import DetailControls
 from .controls.geometry_controls import GeometryControls
 from .controls.lens_controls import LensControls
+from .controls.tone_controls import ToneControls
+from .widgets import (
+    CollapsibleSection,
+    HistogramWidget,
+    StarRatingWidget,
+)
 
 
 class EditingControls(QtWidgets.QWidget):

@@ -1,14 +1,16 @@
 import logging
 import time
-import numpy as np
+
 import cv2
+import numpy as np
+
 from ..utils.numba_kernels import (
-    sharpen_kernel,
     bilateral_kernel_yuv,
-    dehaze_recovery_kernel,
     dark_channel_kernel,
+    dehaze_recovery_kernel,
     nl_means_numba,
     nl_means_numba_multichannel,
+    sharpen_kernel,
 )
 
 logger = logging.getLogger(__name__)

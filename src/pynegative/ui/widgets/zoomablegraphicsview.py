@@ -1,7 +1,9 @@
-import logging
 import collections
-from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Signal, QRectF
+import logging
+
+from PySide6 import QtGui, QtWidgets
+from PySide6.QtCore import QRectF, Qt, Signal
+
 from .crop_item import CropRectItem
 
 logger = logging.getLogger(__name__)

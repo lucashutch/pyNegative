@@ -1,13 +1,14 @@
 import logging
-import exifread
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
+
+import exifread
 
 logger = logging.getLogger(__name__)
 
 
-def extract_bmff_metadata(path: str | Path) -> Dict[str, Any]:
+def extract_bmff_metadata(path: str | Path) -> dict[str, Any]:
     """
     Extracts metadata from BMFF-based RAW files (like Canon CR3) by searching for
     embedded TIFF headers and parsing them.
@@ -54,7 +55,7 @@ def extract_bmff_metadata(path: str | Path) -> Dict[str, Any]:
     return merged_tags
 
 
-def get_exposure_info(tags: Dict[str, Any]) -> Dict[str, Any]:
+def get_exposure_info(tags: dict[str, Any]) -> dict[str, Any]:
     """
     Helper to extract standard exposure info from a merged tags dictionary.
     """

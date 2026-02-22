@@ -1,4 +1,4 @@
-from PySide6 import QtWidgets, QtGui, QtCore
+from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
 
@@ -13,9 +13,9 @@ class CropRectItem(QtWidgets.QGraphicsObject):
         QtCore.Signal()
     )  # Emitted when mouse is released after move/resize/rotate
 
-    def __init__(self, rect=QtCore.QRectF(0, 0, 100, 100), parent=None):
+    def __init__(self, rect=None, parent=None):
         super().__init__(parent)
-        self._rect = rect
+        self._rect = rect if rect is not None else QtCore.QRectF(0, 0, 100, 100)
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QtWidgets.QGraphicsItem.ItemSendsGeometryChanges, True)
         self.setAcceptHoverEvents(True)
@@ -201,7 +201,7 @@ class CropRectItem(QtWidgets.QGraphicsObject):
         handle_pen.setCapStyle(QtCore.Qt.RoundCap)  # Round dots
         painter.setPen(handle_pen)
 
-        for k, pt in handles.items():
+        for _k, pt in handles.items():
             painter.drawPoint(pt)
 
         # 4. Rotation Handles (Top Center and Middle Right)
@@ -212,7 +212,7 @@ class CropRectItem(QtWidgets.QGraphicsObject):
         rotation_handle_pen.setCapStyle(QtCore.Qt.RoundCap)
         painter.setPen(rotation_handle_pen)
 
-        for k, pt in rotation_handles.items():
+        for _k, pt in rotation_handles.items():
             painter.drawPoint(pt)
             # Draw rotation icon (double curved arrows)
             self._draw_rotation_icon(painter, pt)
@@ -237,9 +237,9 @@ class CropRectItem(QtWidgets.QGraphicsObject):
             if scale > 0:
                 radius = 20 / scale  # 20px screen radius
 
-        for k, pt in handles.items():
+        for _k, pt in handles.items():
             if QtCore.QLineF(pos, pt).length() < radius:
-                return k
+                return _k
         return None
 
     def _get_handles(self):

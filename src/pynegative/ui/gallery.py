@@ -1,10 +1,12 @@
 from pathlib import Path
-from PySide6 import QtWidgets, QtGui, QtCore
+
+from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
+
 from .. import core as pynegative
-from .loaders import ThumbnailLoader
-from .widgets import GalleryItemDelegate, GalleryListWidget, ComboBox, MetadataPanel
 from .editor import EditorWidget
+from .loaders import ThumbnailLoader
+from .widgets import ComboBox, GalleryItemDelegate, GalleryListWidget, MetadataPanel
 
 
 class GalleryWidget(QtWidgets.QWidget):

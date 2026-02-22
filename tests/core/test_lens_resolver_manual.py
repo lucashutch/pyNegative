@@ -1,5 +1,7 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
+
 from pynegative.io import lens_resolver
 from pynegative.io.lens_resolver import ProfileSource
 

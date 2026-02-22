@@ -1,4 +1,5 @@
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtCore, QtWidgets
+
 from ..widgets import CollapsibleSection
 from .base import BaseControlWidget
 
@@ -41,9 +42,7 @@ class DetailControls(BaseControlWidget):
             btn = QtWidgets.QPushButton(name)
             btn.setStyleSheet(btn_style)
             btn.setFixedWidth(60)
-            btn.clicked.connect(
-                lambda checked=False, n=name.lower(): self._apply_preset(n)
-            )
+            btn.clicked.connect(lambda _, n=name: self._apply_preset(n.lower()))
             preset_layout.addWidget(btn)
 
         preset_layout.addStretch()

@@ -1,13 +1,15 @@
 from pathlib import Path
-from PySide6 import QtWidgets, QtCore, QtGui
-from PySide6.QtGui import QDesktopServices
+
+from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import QUrl
-from .widgets import ComboBox, ToastWidget, CollapsibleSection
+from PySide6.QtGui import QDesktopServices
+
 from .exportgallerymanager import ExportGalleryManager
-from .exportsettingsmanager import ExportSettingsManager
 from .exportprocessor import ExportJob
-from .renamesettingsmanager import RenameSettingsManager
+from .exportsettingsmanager import ExportSettingsManager
 from .renamepreviewdialog import RenamePreviewDialog
+from .renamesettingsmanager import RenameSettingsManager
+from .widgets import CollapsibleSection, ComboBox, ToastWidget
 
 
 class ExportWidget(QtWidgets.QWidget):

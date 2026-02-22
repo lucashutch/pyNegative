@@ -1,7 +1,7 @@
 import pytest
-from PySide6 import QtWidgets, QtCore, QtGui
-# QTest is not used for direct event injection, but keep for qtbot fixture
+from PySide6 import QtCore, QtGui, QtWidgets
 
+# QTest is not used for direct event injection, but keep for qtbot fixture
 from pynegative.ui.widgets.starrating import StarRatingWidget
 
 

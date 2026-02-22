@@ -1,8 +1,10 @@
+import logging
+import time
+
+import cv2
 import numpy as np
 from PySide6 import QtCore, QtGui
-import cv2
-import time
-import logging
+
 from ... import core as pynegative
 from ...processing.geometry import GeometryResolver
 
@@ -262,7 +264,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
             else:
                 pipeline_scaled.append((name, p, func))
 
-        for i, (name, params, func) in enumerate(pipeline_scaled):
+        for _i, (_name, _params, func) in enumerate(pipeline_scaled):
             processed = func(processed)
 
         return processed

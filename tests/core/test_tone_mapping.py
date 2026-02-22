@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Unit tests for tone mapping and auto-exposure functions in pynegative.core"""
 
-import pytest
 import numpy as np
-from pynegative.processing.constants import LUMA_R, LUMA_G, LUMA_B
+import pytest
 
 import pynegative
+from pynegative.processing.constants import LUMA_B, LUMA_G, LUMA_R
 
 
 class TestApplyToneMap:

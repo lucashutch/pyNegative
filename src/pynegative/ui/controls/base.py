@@ -1,4 +1,5 @@
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtCore, QtWidgets
+
 from ..widgets import ResetableSlider
 
 

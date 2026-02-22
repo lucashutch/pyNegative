@@ -1,9 +1,10 @@
+import logging
+import threading
+import time
+from collections import OrderedDict
+
 import cv2
 import numpy as np
-import logging
-import time
-import threading
-from collections import OrderedDict
 from numba import njit, prange
 
 logger = logging.getLogger(__name__)

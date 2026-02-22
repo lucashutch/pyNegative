@@ -1,8 +1,10 @@
 from pathlib import Path
-from PySide6 import QtWidgets, QtCore, QtGui
-from .widgets import GalleryListWidget, CarouselDelegate
-from .loaders import ThumbnailLoader
+
+from PySide6 import QtCore, QtGui, QtWidgets
+
 from .. import core as pynegative
+from .loaders import ThumbnailLoader
+from .widgets import CarouselDelegate, GalleryListWidget
 
 
 class ExportGalleryManager(QtCore.QObject):

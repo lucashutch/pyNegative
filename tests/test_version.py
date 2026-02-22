@@ -1,5 +1,6 @@
-import pynegative
 from importlib.metadata import version
+
+import pynegative
 
 
 def test_version_available():

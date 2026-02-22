@@ -1,4 +1,5 @@
 from PySide6 import QtWidgets
+
 from ..widgets import CollapsibleSection
 from .base import BaseControlWidget
 
