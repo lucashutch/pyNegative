@@ -243,6 +243,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         ty_max = min(ty_max, sh // TILE_SIZE)
 
         needs_lowres = True
+        workers_queued = 0
 
         for ty in range(ty_min, ty_max + 1):
             for tx in range(tx_min, tx_max + 1):
@@ -282,7 +283,12 @@ class ImageProcessingPipeline(QtCore.QObject):
                     settings_state_id=self._current_settings_state_id,
                 )
                 needs_lowres = False
+                workers_queued += 1
                 self.thread_pool.start(worker)
+
+        print(
+            f"[RENDER INFO] Viewport: {int(visible_rect.width())}x{int(visible_rect.height())} | Zoom Scale: {zoom_scale:.4f} | Queued {workers_queued} chunks ({TILE_SIZE}x{TILE_SIZE})"
+        )
 
     def _measure_and_emit_perf(self):
         elapsed_ms = (time.perf_counter() - self.perf_start_time) * 1000
