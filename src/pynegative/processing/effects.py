@@ -39,23 +39,18 @@ def sharpen_image(img, radius, percent, method="High Quality"):
     size_str = f" | Size: {w}x{h}"
 
     try:
-        # Setup: Blur and Edges (CPU)
+        # Unsharp mask: sharpen = img + percent * (img - blur)
+        # The mask is inherently edge-selective because (img - blur) is
+        # only large near edges and near-zero in flat/smooth areas.
         blur = cv2.GaussianBlur(img, (0, 0), radius)
-        gray = (cv2.cvtColor(img, cv2.COLOR_RGB2GRAY) * 255).astype(np.uint8)
-        edges = cv2.Canny(gray, 50, 150)
-        kernel = np.ones((3, 3), np.uint8)
-        edges = cv2.dilate(edges, kernel, iterations=1)
-
-        # Kernel is in-place, so we copy for the 'sharpened' version
         sharpened = img.copy()
         sharpen_kernel(sharpened, blur, percent)
-        result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img)
 
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.debug(
             f"Sharpen: Radius: {radius:.2f} | Percent: {percent:.1f}%{size_str} | Time: {elapsed:.2f}ms"
         )
-        return np.clip(result, 0, 1.0)
+        return sharpened
     except Exception as e:
         logger.error(f"High Quality Sharpen failed: {e}")
         return img
@@ -117,10 +112,15 @@ def _apply_bilateral_path(img_array, l_str, c_str):
     s_scale = 1.0 / 255.0
     yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
 
+    # Chroma slider has 2× sensitivity: same value yields twice the
+    # denoising strength compared to luma, since chroma noise is
+    # generally less perceptually objectionable and needs larger sigmas.
+    c_str = c_str * 2.0
+
     sigma_color_y = max(1e-6, l_str * 0.4 * s_scale)
     sigma_space_y = 0.5 + (l_str / 100.0)
     sigma_color_uv = max(1e-6, c_str * 4.5 * s_scale)
-    sigma_space_uv = 2.0 + (c_str / 10.0)
+    sigma_space_uv = 3.0 + (c_str / 8.0)
 
     img_yuv_denoised = bilateral_kernel_yuv(
         yuv,
@@ -188,6 +188,39 @@ def de_noise_image(
         return np.clip(denoised, 0, 1)
 
     return img
+
+
+def estimate_atmospheric_light(img):
+    """Estimate the atmospheric light from an image using Dark Channel Prior.
+
+    This should be called once on a low-res version of the full image,
+    and the result passed to de_haze_image() as fixed_atmospheric_light
+    for every tile.  This prevents per-tile colour tint differences.
+
+    Returns a numpy array of shape (3,) with the atmospheric light per channel,
+    or None if estimation fails.
+    """
+    if img is None:
+        return None
+    try:
+        h_img, w_img = img.shape[:2]
+        kernel_size = max(3, int(15 * (w_img / 2048.0)))
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+
+        dark_channel = dark_channel_kernel(img)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
+        dark_channel = cv2.erode(dark_channel, kernel)
+
+        num_pixels = dark_channel.size
+        num_brightest = max(1, num_pixels // 1000)
+        indices = np.argpartition(dark_channel.flatten(), -num_brightest)[
+            -num_brightest:
+        ]
+        brightest_pixels = img.reshape(-1, 3)[indices]
+        return np.max(brightest_pixels, axis=0)
+    except Exception:
+        return None
 
 
 def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):

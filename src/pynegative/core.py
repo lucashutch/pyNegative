@@ -21,7 +21,12 @@ from .io.sidecar import (
     save_sidecar,
 )
 from .processing.defringe import apply_defringe
-from .processing.effects import de_haze_image, de_noise_image, sharpen_image
+from .processing.effects import (
+    de_haze_image,
+    de_noise_image,
+    estimate_atmospheric_light,
+    sharpen_image,
+)
 from .processing.geometry import apply_geometry, calculate_max_safe_crop
 from .processing.lens import apply_lens_correction
 from .processing.tonemap import (
@@ -63,5 +68,6 @@ __all__ = [
     "sharpen_image",
     "de_noise_image",
     "de_haze_image",
+    "estimate_atmospheric_light",
     "numba_histogram_kernel",
 ]

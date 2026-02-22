@@ -102,6 +102,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         render_state_id=0,
         calculate_lowres=True,
         settings_state_id=0,
+        dehaze_atmospheric_light=None,
     ):
         super().__init__()
         self.signals = signals
@@ -120,6 +121,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.render_state_id = render_state_id
         self.calculate_lowres = calculate_lowres
         self.settings_state_id = settings_state_id
+        self.dehaze_atmospheric_light = dehaze_atmospheric_light
 
     def run(self):
         try:
@@ -156,7 +158,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         if l_str <= 0 and c_str <= 0:
             return img
 
-        requested_method = heavy_params.get("denoise_method", "NLMeans (Numba Fast+)")
+        requested_method = heavy_params.get("denoise_method", "High Quality")
         effective_method = requested_method
 
         if "NLMeans" in requested_method:
@@ -215,7 +217,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 image,
                 dehaze_p["de_haze"],
                 zoom=zoom_scale,
-                fixed_atmospheric_light=None,
+                fixed_atmospheric_light=self.dehaze_atmospheric_light,
             )
             return processed
 
@@ -246,12 +248,18 @@ class ImageProcessorWorker(QtCore.QRunnable):
         if preprocess_key is not None:
             accumulated_params["_preprocess_key"] = preprocess_key
 
-        img_w = img.shape[1]
-        full_w = self.base_img_full.shape[1]
-        scale_factor = img_w / full_w
+        # Scale sharpen radius by the tier resolution, NOT by tile/full ratio.
+        # A 256×256 tile at tier 1.0 is a full-res crop — radius should be unscaled.
+        # At tier 0.25 the pixels are 4× larger, so radius should be 0.25×.
+        try:
+            tier_scale = float(res_key.split("_")[1])
+        except (IndexError, ValueError):
+            tier_scale = 1.0
 
         adj_sharpen_p = sharpen_p.copy()
-        adj_sharpen_p["sharpen_radius"] *= scale_factor
+        adj_sharpen_p["sharpen_radius"] = max(
+            0.3, sharpen_p["sharpen_radius"] * tier_scale
+        )
 
         def apply_sharpen_scaled(image):
             if adj_sharpen_p["sharpen_value"] <= 0:
@@ -563,9 +571,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "denoise_luma": self.settings.get("denoise_luma", 0),
             "denoise_chroma": self.settings.get("denoise_chroma", 0)
             * 2,  # Scale up max power
-            "denoise_method": self.settings.get(
-                "denoise_method", "NLMeans (Numba Fast+)"
-            ),
+            "denoise_method": self.settings.get("denoise_method", "High Quality"),
             "sharpen_value": self.settings.get("sharpen_value", 0),
             "sharpen_radius": self.settings.get("sharpen_radius", 0.5),
             "sharpen_percent": self.settings.get("sharpen_percent", 0.0),

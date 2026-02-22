@@ -9,6 +9,7 @@ from .pipeline.worker import (
     ImageProcessorWorker,
     TierGeneratorWorker,
 )
+from .. import core as pynegative
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,10 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.signals.error.connect(self._on_worker_error)
         self._current_image_id = 0
 
+        # Pre-computed dehaze atmospheric light (shared across all tiles)
+        self._dehaze_atmos_light = None
+        self._dehaze_atmos_settings_id = -1
+
     def set_image(self, img_array):
         self.base_img_full = img_array
         self._unedited_img_full = img_array
@@ -74,6 +79,8 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._tile_cache.clear()
         self._current_settings_state_id += 1
         self._current_render_state_id += 1
+        self._dehaze_atmos_light = None
+        self._dehaze_atmos_settings_id = -1
 
         if img_array is not None:
             h, w = img_array.shape[:2]
@@ -178,11 +185,12 @@ class ImageProcessingPipeline(QtCore.QObject):
 
         self._render_pending = True
 
-        if self._active_workers == 0:
-            # Rate limit/Debounce: wait a few ms to catch rapid slider movements
-            # 16ms = ~60fps, 33ms = ~30fps.
-            if not self.render_timer.isActive():
-                self.render_timer.start(20)
+        # Always ensure a timer is running when a render is pending.
+        # If workers are active, use a slightly longer delay so their
+        # stale results have time to drop before we queue the next pass.
+        if not self.render_timer.isActive():
+            delay = 20 if self._active_workers == 0 else 50
+            self.render_timer.start(delay)
 
     def shutdown(self):
         """Stop all pending work gracefully before app close."""
@@ -297,6 +305,28 @@ class ImageProcessingPipeline(QtCore.QObject):
         workers_queued = 0
         workers_pending = 0
 
+        # Pre-compute dehaze atmospheric light from smallest available tier
+        # so every tile uses the same value (prevents per-tile colour tints).
+        dehaze_val = current_settings.get("de_haze", 0)
+        atmos_light = None
+        if dehaze_val and float(dehaze_val) > 0:
+            if self._dehaze_atmos_settings_id != self._current_settings_state_id:
+                smallest_tier = None
+                for s in sorted(self.tiers.keys()):
+                    if self.tiers[s] is not None:
+                        smallest_tier = self.tiers[s]
+                        break
+                if smallest_tier is None:
+                    smallest_tier = self.base_img_full
+                self._dehaze_atmos_light = pynegative.estimate_atmospheric_light(
+                    smallest_tier
+                )
+                self._dehaze_atmos_settings_id = self._current_settings_state_id
+                logger.debug(
+                    f"Dehaze atmospheric light computed: {self._dehaze_atmos_light}"
+                )
+            atmos_light = self._dehaze_atmos_light
+
         for ty in range(ty_min, ty_max + 1):
             for tx in range(tx_min, tx_max + 1):
                 tile_key = (tx, ty, TILE_SIZE_SCENE)
@@ -341,6 +371,7 @@ class ImageProcessingPipeline(QtCore.QObject):
                     render_state_id=self._current_render_state_id,
                     calculate_lowres=needs_lowres,
                     settings_state_id=self._current_settings_state_id,
+                    dehaze_atmospheric_light=atmos_light,
                 )
                 needs_lowres = False
                 workers_queued += 1
@@ -383,9 +414,11 @@ class ImageProcessingPipeline(QtCore.QObject):
             return
 
         if render_state_id < self._current_render_state_id:
-            # Stale result; if all workers done and a render pending, kick off next pass
-            if self._active_workers == 0 and self._render_pending:
-                self.render_timer.start(5)
+            # Stale result — ensure any pending render gets scheduled.
+            # If all workers are done we can fire immediately; otherwise
+            # start a timer so the pending render isn't lost.
+            if self._render_pending and not self.render_timer.isActive():
+                self.render_timer.start(5 if self._active_workers == 0 else 30)
             return
 
         if render_state_id > self._last_rendered_state_id:
@@ -417,10 +450,8 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.editedPixmapUpdated.emit(pix_bg)
         self._measure_and_emit_perf()
 
-        if self._render_pending and self._active_workers == 0:
-            # If there's another update pending and all workers done,
-            # give the UI thread a tiny slice of time to handle input events.
-            self.render_timer.start(5)
+        if self._render_pending and not self.render_timer.isActive():
+            self.render_timer.start(5 if self._active_workers == 0 else 30)
 
     @QtCore.Slot(dict, int)
     def _on_histogram_updated(self, hist_data, request_id):
