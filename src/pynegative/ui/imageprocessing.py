@@ -286,8 +286,8 @@ class ImageProcessingPipeline(QtCore.QObject):
                 workers_queued += 1
                 self.thread_pool.start(worker)
 
-        print(
-            f"[RENDER INFO] Viewport: {int(visible_rect.width())}x{int(visible_rect.height())} | Zoom Scale: {zoom_scale:.4f} | Queued {workers_queued} chunks ({TILE_SIZE}x{TILE_SIZE})"
+        logger.info(
+            f"Viewport: {int(visible_rect.width())}x{int(visible_rect.height())} | Zoom Scale: {zoom_scale:.4f} | Queued {workers_queued} chunks ({TILE_SIZE}x{TILE_SIZE})"
         )
 
     def _measure_and_emit_perf(self):
