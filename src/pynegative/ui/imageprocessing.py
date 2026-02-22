@@ -241,7 +241,10 @@ class ImageProcessingPipeline(QtCore.QObject):
         for ty in range(ty_min, ty_max + 1):
             for tx in range(tx_min, tx_max + 1):
                 tile_key = (tx, ty)
-                if tile_key in self._tile_cache:
+                if (
+                    tile_key in self._tile_cache
+                    and self._tile_cache[tile_key] == "done"
+                ):
                     continue
 
                 self._tile_cache[tile_key] = "pending"
@@ -320,6 +323,9 @@ class ImageProcessingPipeline(QtCore.QObject):
             tile_key,
             clear_tiles,
         )
+        if tile_key is not None:
+            self._tile_cache[tile_key] = "done"
+
         self.editedPixmapUpdated.emit(pix_bg)
         self._measure_and_emit_perf()
 
