@@ -126,19 +126,25 @@ class ImageProcessorWorker(QtCore.QRunnable):
             *result, rotate_val, visible_scene_rect_out, bg_lowres_pix = (
                 self._update_preview()
             )
-            self.signals.finished.emit(
-                *result,
-                rotate_val,
-                visible_scene_rect_out,
-                bg_lowres_pix,
-                self.request_id,
-                self.tile_key,
-                self.render_state_id,
-                self.settings_state_id,
-            )
+            try:
+                self.signals.finished.emit(
+                    *result,
+                    rotate_val,
+                    visible_scene_rect_out,
+                    bg_lowres_pix,
+                    self.request_id,
+                    self.tile_key,
+                    self.render_state_id,
+                    self.settings_state_id,
+                )
+            except RuntimeError:
+                pass  # Signal source deleted (app closing)
         except Exception as e:
             logger.error(f"Image processing worker failed: {e}", exc_info=True)
-            self.signals.error.emit(str(e), self.request_id)
+            try:
+                self.signals.error.emit(str(e), self.request_id)
+            except RuntimeError:
+                pass  # Signal source deleted (app closing)
 
     def _process_denoise_stage(
         self, img, res_key, heavy_params, zoom_scale, preprocess_key=None

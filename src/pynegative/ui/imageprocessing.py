@@ -29,7 +29,8 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.render_timer.setSingleShot(True)
         self.render_timer.timeout.connect(self._on_render_timer_timeout)
         self._render_pending = False
-        self._is_rendering_locked = False
+        self._active_workers = 0
+        self._shutting_down = False
         self.base_img_full = None
         self.base_img_half = None
         self.base_img_quarter = None
@@ -167,16 +168,22 @@ class ImageProcessingPipeline(QtCore.QObject):
         return self._processing_params.copy()
 
     def request_update(self):
-        if self.base_img_full is None:
+        if self.base_img_full is None or self._shutting_down:
             return
 
         self._render_pending = True
 
-        if not self._is_rendering_locked:
+        if self._active_workers == 0:
             # Rate limit/Debounce: wait a few ms to catch rapid slider movements
             # 16ms = ~60fps, 33ms = ~30fps.
             if not self.render_timer.isActive():
                 self.render_timer.start(20)
+
+    def shutdown(self):
+        """Stop all pending work gracefully before app close."""
+        self._shutting_down = True
+        self.render_timer.stop()
+        self._render_pending = False
 
     def _on_render_timer_timeout(self):
         self._process_pending_update()
@@ -186,11 +193,11 @@ class ImageProcessingPipeline(QtCore.QObject):
             not self._render_pending
             or self.base_img_full is None
             or self._view_ref is None
+            or self._shutting_down
         ):
             return
 
         self._render_pending = False
-        self._is_rendering_locked = True
         self.perf_start_time = time.perf_counter()
 
         # Capture viewport state in UI thread
@@ -279,7 +286,6 @@ class ImageProcessingPipeline(QtCore.QObject):
             logger.debug(
                 f"Delaying worker threads: awaiting async downscale tiers for zoom ({zoom_scale:.4f})."
             )
-            self._is_rendering_locked = False
             return
 
         needs_lowres = True
@@ -333,6 +339,7 @@ class ImageProcessingPipeline(QtCore.QObject):
                 )
                 needs_lowres = False
                 workers_queued += 1
+                self._active_workers += 1
                 self.thread_pool.start(worker)
 
         v_w = self._view_ref.viewport().rect().width()
@@ -343,7 +350,9 @@ class ImageProcessingPipeline(QtCore.QObject):
         )
 
         if workers_queued == 0 and workers_pending == 0:
-            self._is_rendering_locked = False
+            # Nothing to do; if a render is pending, re-schedule
+            if self._render_pending:
+                self.render_timer.start(5)
 
     def _measure_and_emit_perf(self):
         elapsed_ms = (time.perf_counter() - self.perf_start_time) * 1000
@@ -363,12 +372,15 @@ class ImageProcessingPipeline(QtCore.QObject):
         render_state_id,
         settings_state_id,
     ):
-        self._is_rendering_locked = False
+        self._active_workers = max(0, self._active_workers - 1)
+
+        if self._shutting_down:
+            return
 
         if render_state_id < self._current_render_state_id:
-            # Optionally check if there are pending updates for rapid slider moves
-            if self._render_pending:
-                self._process_pending_update()
+            # Stale result; if all workers done and a render pending, kick off next pass
+            if self._active_workers == 0 and self._render_pending:
+                self.render_timer.start(5)
             return
 
         if render_state_id > self._last_rendered_state_id:
@@ -400,9 +412,9 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.editedPixmapUpdated.emit(pix_bg)
         self._measure_and_emit_perf()
 
-        if self._render_pending:
-            # If there's another update pending, don't start it IMMEDIATELY.
-            # Give the UI thread a tiny slice of time to handle input events.
+        if self._render_pending and self._active_workers == 0:
+            # If there's another update pending and all workers done,
+            # give the UI thread a tiny slice of time to handle input events.
             self.render_timer.start(5)
 
     @QtCore.Slot(dict, int)
@@ -414,9 +426,11 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     @QtCore.Slot(str, int)
     def _on_worker_error(self, error_message, request_id):
-        self._is_rendering_locked = False
-        if self._render_pending:
-            self._process_pending_update()
+        self._active_workers = max(0, self._active_workers - 1)
+        if self._shutting_down:
+            return
+        if self._active_workers == 0 and self._render_pending:
+            self.render_timer.start(5)
         if request_id < self._last_processed_id:
             return
         print(f"Image processing error (ID {request_id}): {error_message}")

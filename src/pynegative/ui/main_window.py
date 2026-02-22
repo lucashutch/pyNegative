@@ -79,6 +79,17 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.gallery._load_last_folder()
 
+    def closeEvent(self, event):
+        """Gracefully shut down background workers before closing."""
+        # Stop the rendering pipeline from queuing new work
+        self.editor.image_processor.shutdown()
+        # Also stop the gallery preview's processor if it exists
+        if hasattr(self.gallery, "preview_widget"):
+            self.gallery.preview_widget.image_processor.shutdown()
+        # Wait for any in-flight workers to finish (up to 2 seconds)
+        self.thread_pool.waitForDone(2000)
+        super().closeEvent(event)
+
     def _load_stylesheet(self):
         """Load the QSS stylesheet from file."""
         # Find style.qss in the parent package (src/pynegative)
