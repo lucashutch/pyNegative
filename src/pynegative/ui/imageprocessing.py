@@ -185,38 +185,22 @@ class ImageProcessingPipeline(QtCore.QObject):
         settings_changed = self._last_settings != current_settings
         zoom_changed = abs(zoom_scale - self._last_requested_zoom) > 0.05
 
-        if settings_changed or zoom_changed or is_fitting or is_cropping:
+        fit_crop_changed = (is_fitting != getattr(self, "_last_is_fitting", False)) or (
+            is_cropping != getattr(self, "_last_is_cropping", False)
+        )
+        self._last_is_fitting = is_fitting
+        self._last_is_cropping = is_cropping
+
+        if settings_changed or zoom_changed or fit_crop_changed:
             self._current_render_state_id += 1
             self._tile_cache.clear()
             self._last_settings = current_settings
             self._last_requested_zoom = zoom_scale
 
-        if settings_changed or is_fitting or is_cropping:
+        if settings_changed or fit_crop_changed:
             self._current_settings_state_id += 1
 
         self._current_request_id += 1
-
-        if is_fitting or is_cropping:
-            worker = ImageProcessorWorker(
-                self.signals,
-                self.base_img_full,
-                self.tiers,
-                current_settings,
-                self._current_request_id,
-                zoom_scale=zoom_scale,
-                is_fitting=is_fitting,
-                calculate_histogram=self.histogram_enabled,
-                last_heavy_adjusted=self._last_heavy_adjusted,
-                lens_info=self.lens_info,
-                target_on_screen_width=target_w,
-                visible_scene_rect=None,
-                tile_key=None,
-                render_state_id=self._current_render_state_id,
-                calculate_lowres=True,
-                settings_state_id=self._current_settings_state_id,
-            )
-            self.thread_pool.start(worker)
-            return
 
         viewport_rect = self._view_ref.viewport().rect()
         visible_poly = self._view_ref.mapToScene(viewport_rect)
@@ -228,7 +212,15 @@ class ImageProcessingPipeline(QtCore.QObject):
         visible_rect.adjust(-buf_w, -buf_h, buf_w, buf_h)
 
         scene_rect = self._view_ref.sceneRect()
-        visible_rect = visible_rect.intersected(scene_rect)
+        sw = int(scene_rect.width())
+        sh = int(scene_rect.height())
+
+        # Bootstrap scene rect on first load if missing
+        if sw <= 0 or sh <= 0:
+            sw = self.base_img_full.shape[1]
+            sh = self.base_img_full.shape[0]
+
+        visible_rect = visible_rect.intersected(QtCore.QRectF(0, 0, sw, sh))
 
         TILE_SIZE = 256
         tx_min = int(visible_rect.x() // TILE_SIZE)
@@ -236,8 +228,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         tx_max = int((visible_rect.x() + visible_rect.width()) // TILE_SIZE)
         ty_max = int((visible_rect.y() + visible_rect.height()) // TILE_SIZE)
 
-        sw = int(scene_rect.width())
-        sh = int(scene_rect.height())
+        # Use sw/sh defined in bootstrap instead of pulling from scene again
 
         tx_max = min(tx_max, sw // TILE_SIZE)
         ty_max = min(ty_max, sh // TILE_SIZE)
