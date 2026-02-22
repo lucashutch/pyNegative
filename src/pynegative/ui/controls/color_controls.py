@@ -61,14 +61,14 @@ class ColorControls(BaseControlWidget):
         )
         self._add_slider("Tint", -1.0, 1.0, 0.0, "val_tint", 0.01, self.color_section)
         self._add_slider(
-            "Saturation", 0.0, 2.0, 1.0, "val_saturation", 0.01, self.color_section
+            "Saturation", -1.0, 1.0, 0.0, "val_saturation", 0.01, self.color_section
         )
 
     def reset_section(self):
         params = [
             ("val_temperature", 0.0, "temperature"),
             ("val_tint", 0.0, "tint"),
-            ("val_saturation", 1.0, "saturation"),
+            ("val_saturation", 0.0, "saturation"),
         ]
         for var_name, default, setting_name in params:
             self.set_slider_value(var_name, default)

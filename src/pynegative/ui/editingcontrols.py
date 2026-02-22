@@ -434,9 +434,7 @@ class EditingControls(QtWidgets.QWidget):
                         label.setText(f"{logical_val:.2f}")
             else:
                 key = var.replace("val_", "")
-                default_val = (
-                    1.0 if key in ["contrast", "saturation", "whites"] else 0.0
-                )
+                default_val = 0.0
                 val = settings.get(key, default_val)
                 if var == "val_sharpen_value":
                     val = min(50.0, val)

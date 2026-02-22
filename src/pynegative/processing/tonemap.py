@@ -81,12 +81,12 @@ def apply_preprocess(
 
 def apply_tone_map(
     img,
-    contrast=1.0,
+    contrast=0.0,
     blacks=0.0,
-    whites=1.0,
+    whites=0.0,
     shadows=0.0,
     highlights=0.0,
-    saturation=1.0,
+    saturation=0.0,
     calculate_stats=True,
     apply_gamma=True,
 ):
@@ -107,12 +107,12 @@ def apply_tone_map(
             except (ValueError, TypeError):
                 return default
 
-        contrast = safe_float(contrast, 1.0)
+        contrast = safe_float(contrast, 0.0)
         blacks = safe_float(blacks, 0.0)
-        whites = safe_float(whites, 1.0)
+        whites = safe_float(whites, 0.0)
         shadows = safe_float(shadows, 0.0)
         highlights = safe_float(highlights, 0.0)
-        saturation = safe_float(saturation, 1.0)
+        saturation = safe_float(saturation, 0.0)
 
         calculate_stats = bool(calculate_stats)
         apply_gamma = bool(apply_gamma)
@@ -175,7 +175,7 @@ def calculate_auto_exposure(img):
     exposure = float(np.clip(exposure, 0.5, 4.0))
 
     base_blacks = 0.01
-    base_whites = 0.95
+    base_whites = 0.0  # Neutral
 
     return {
         "exposure": exposure,
@@ -183,7 +183,7 @@ def calculate_auto_exposure(img):
         "whites": float(base_whites),
         "highlights": 0.0,
         "shadows": 0.0,
-        "saturation": 1.05,
+        "saturation": 0.05,  # 1.05 -> 0.05
     }
 
 

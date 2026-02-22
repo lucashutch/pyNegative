@@ -570,12 +570,12 @@ class ImageProcessorWorker(QtCore.QRunnable):
         }
 
         tone_map_settings = {
-            "contrast": self.settings.get("contrast", 1.0),
+            "contrast": self.settings.get("contrast", 0.0),
             "blacks": self.settings.get("blacks", 0.0),
-            "whites": self.settings.get("whites", 1.0),
+            "whites": self.settings.get("whites", 0.0),
             "shadows": self.settings.get("shadows", 0.0),
             "highlights": self.settings.get("highlights", 0.0),
-            "saturation": self.settings.get("saturation", 1.0),
+            "saturation": self.settings.get("saturation", 0.0),
         }
 
         full_resolver = GeometryResolver(full_w, full_h)
