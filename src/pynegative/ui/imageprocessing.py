@@ -83,6 +83,8 @@ class ImageProcessingPipeline(QtCore.QObject):
             # We don't emit uneditedPixmapUpdated here because TierGeneratorWorker
             # already emitted a fast 1:16 unedited pixmap.
             # We just request a full update so the background renderer uses the new better tier.
+            self._tile_cache.clear()
+            self._current_render_state_id += 1
             self.request_update()
 
     def set_view_reference(self, view):
@@ -225,7 +227,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         # Dynamically calculate scene tile size so that chunks represent roughly 256x256 on the screen
         ideal_scale = 1.0
         if zoom_scale < 1.0:
-            for scale in [0.5, 0.25, 0.125, 0.0625]:
+            for scale in [0.0625, 0.125, 0.25, 0.5]:
                 if scale >= zoom_scale:
                     ideal_scale = scale
                     break
@@ -239,6 +241,25 @@ class ImageProcessingPipeline(QtCore.QObject):
         # Use sw/sh defined in bootstrap instead of pulling from scene again
         tx_max = min(tx_max, sw // TILE_SIZE_SCENE)
         ty_max = min(ty_max, sh // TILE_SIZE_SCENE)
+
+        # Deduce the selected tier matching what workers will use
+        available_scales = sorted(self.tiers.keys()) + [1.0]
+        selected_scale = 1.0
+        if zoom_scale >= 1.0:
+            selected_scale = 1.0
+        else:
+            for scale in available_scales:
+                if scale >= zoom_scale:
+                    selected_scale = scale
+                    break
+
+        # Prevent 100% full-resolution processing queues when zoomed out drastically during initial file load
+        if zoom_scale <= 0.5 and selected_scale == 1.0 and 0.25 not in self.tiers:
+            logger.debug(
+                f"Delaying worker threads: async tier (0.25) not yet cached for zoom ({zoom_scale:.4f})."
+            )
+            self._is_rendering_locked = False
+            return
 
         needs_lowres = True
         workers_queued = 0
@@ -283,17 +304,6 @@ class ImageProcessingPipeline(QtCore.QObject):
                 needs_lowres = False
                 workers_queued += 1
                 self.thread_pool.start(worker)
-
-        # Deduce the selected tier matching what workers will use
-        available_scales = sorted(self.tiers.keys()) + [1.0]
-        selected_scale = 1.0
-        if zoom_scale >= 1.0:
-            selected_scale = 1.0
-        else:
-            for scale in available_scales:
-                if scale >= zoom_scale:
-                    selected_scale = scale
-                    break
 
         v_w = self._view_ref.viewport().rect().width()
         v_h = self._view_ref.viewport().rect().height()
