@@ -149,8 +149,9 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
 
                 item.setPixmap(bg_pix)
                 vx, vy, vw, vh = visible_scene_rect
-                s_w = vw / bg_pix.width()
-                s_h = vh / bg_pix.height()
+                # Add a tiny subpixel overlap to prevent background bleed from antialiasing seams
+                s_w = (vw + 0.5) / bg_pix.width()
+                s_h = (vh + 0.5) / bg_pix.height()
                 item.setTransform(QtGui.QTransform().scale(s_w, s_h))
                 item.setPos(vx, vy)
 
