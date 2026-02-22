@@ -193,7 +193,6 @@ class ImageProcessingPipeline(QtCore.QObject):
 
         # Capture viewport state in UI thread
         zoom_scale = self._view_ref.transform().m11()
-        self._last_requested_zoom = zoom_scale
 
         viewport_size = self._view_ref.viewport().size()
         v_w = viewport_size.width()
@@ -243,32 +242,68 @@ class ImageProcessingPipeline(QtCore.QObject):
 
         visible_rect = visible_rect.intersected(QtCore.QRectF(0, 0, sw, sh))
 
-        TILE_SIZE = 256
-        tx_min = int(visible_rect.x() // TILE_SIZE)
-        ty_min = int(visible_rect.y() // TILE_SIZE)
-        tx_max = int((visible_rect.x() + visible_rect.width()) // TILE_SIZE)
-        ty_max = int((visible_rect.y() + visible_rect.height()) // TILE_SIZE)
+        # Dynamically calculate scene tile size so that chunks represent roughly 256x256 on the screen
+        ideal_scale = 1.0
+        if zoom_scale < 1.0:
+            for scale in [0.0625, 0.125, 0.25, 0.5]:
+                if scale >= zoom_scale:
+                    ideal_scale = scale
+                    break
+
+        TILE_SIZE_SCENE = int(256 / ideal_scale)
+        tx_min = int(visible_rect.x() // TILE_SIZE_SCENE)
+        ty_min = int(visible_rect.y() // TILE_SIZE_SCENE)
+        tx_max = int((visible_rect.x() + visible_rect.width()) // TILE_SIZE_SCENE)
+        ty_max = int((visible_rect.y() + visible_rect.height()) // TILE_SIZE_SCENE)
 
         # Use sw/sh defined in bootstrap instead of pulling from scene again
+        tx_max = min(tx_max, sw // TILE_SIZE_SCENE)
+        ty_max = min(ty_max, sh // TILE_SIZE_SCENE)
 
-        tx_max = min(tx_max, sw // TILE_SIZE)
-        ty_max = min(ty_max, sh // TILE_SIZE)
+        # Deduce the selected tier matching what workers will use
+        available_scales = sorted(self.tiers.keys()) + [1.0]
+        selected_scale = 1.0
+        if zoom_scale >= 1.0:
+            selected_scale = 1.0
+        else:
+            for scale in available_scales:
+                if scale >= zoom_scale:
+                    selected_scale = scale
+                    break
+
+        # Prevent 100% full-resolution processing queues when zoomed out drastically during initial file load
+        # Wait for any async scaled tiers to become available before processing grid chunks.
+        if zoom_scale <= 0.5 and selected_scale == 1.0 and len(self.tiers) == 0:
+            logger.debug(
+                f"Delaying worker threads: awaiting async downscale tiers for zoom ({zoom_scale:.4f})."
+            )
+            self._is_rendering_locked = False
+            return
 
         needs_lowres = True
         workers_queued = 0
+        workers_pending = 0
 
         for ty in range(ty_min, ty_max + 1):
             for tx in range(tx_min, tx_max + 1):
-                tile_key = (tx, ty)
-                if tile_key in self._tile_cache:
+                tile_key = (tx, ty, TILE_SIZE_SCENE)
+
+                # If a tile is already processing or done specifically for this render_state, skip it.
+                # If the state changed (e.g. slider dragged), we want to submit a new worker
+                # for this tile_key, overwriting the old geometry string pending.
+                current_state = self._tile_cache.get(tile_key)
+                if current_state == f"pending_{self._current_render_state_id}":
+                    workers_pending += 1
+                    continue
+                elif current_state == f"done_{self._current_render_state_id}":
                     continue
 
-                self._tile_cache[tile_key] = "pending"
+                self._tile_cache[tile_key] = f"pending_{self._current_render_state_id}"
 
-                vx = tx * TILE_SIZE
-                vy = ty * TILE_SIZE
-                vw = TILE_SIZE
-                vh = TILE_SIZE
+                vx = tx * TILE_SIZE_SCENE
+                vy = ty * TILE_SIZE_SCENE
+                vw = TILE_SIZE_SCENE
+                vh = TILE_SIZE_SCENE
 
                 vw = min(vw, sw - vx)
                 vh = min(vh, sh - vy)
@@ -298,9 +333,15 @@ class ImageProcessingPipeline(QtCore.QObject):
                 workers_queued += 1
                 self.thread_pool.start(worker)
 
+        v_w = self._view_ref.viewport().rect().width()
+        v_h = self._view_ref.viewport().rect().height()
+
         logger.info(
-            f"Viewport: {int(visible_rect.width())}x{int(visible_rect.height())} | Zoom Scale: {zoom_scale:.4f} | Queued {workers_queued} chunks ({TILE_SIZE}x{TILE_SIZE})"
+            f"Viewport: {v_w}x{v_h} | Zoom Scale: {zoom_scale:.4f} | Tier: {selected_scale} | Queued {workers_queued} chunks (256x256)"
         )
+
+        if workers_queued == 0 and workers_pending == 0:
+            self._is_rendering_locked = False
 
     def _measure_and_emit_perf(self):
         elapsed_ms = (time.perf_counter() - self.perf_start_time) * 1000
