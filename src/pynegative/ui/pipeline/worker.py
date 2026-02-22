@@ -51,10 +51,10 @@ class TierGeneratorWorker(QtCore.QRunnable):
                 img_uint8.data, w_p, h_p, c_p * w_p, QtGui.QImage.Format_RGB888
             )
             pixmap = QtGui.QPixmap.fromImage(qimage)
-            self.signals.uneditedPixmapGenerated.emit(pixmap)
+            self.signals.uneditedPixmapGenerated.emit(pixmap, self.image_id)
 
             # Emit fast tier
-            self.signals.tierGenerated.emit(scale_fast, preview_fast)
+            self.signals.tierGenerated.emit(scale_fast, preview_fast, self.image_id)
 
             # 2. High Quality Pyramid Chain
             scales = [
