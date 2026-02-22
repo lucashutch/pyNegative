@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 class ImageProcessorSignals(QtCore.QObject):
     """Signals for the image processing worker."""
 
-    finished = QtCore.Signal(QtGui.QPixmap, int, int, float, object, object, int)
+    finished = QtCore.Signal(
+        QtGui.QPixmap, int, int, float, object, object, int, object, int
+    )
     histogramUpdated = QtCore.Signal(dict, int)
     tierGenerated = QtCore.Signal(float, object)  # scale, array
     uneditedPixmapGenerated = QtCore.Signal(QtGui.QPixmap)
@@ -91,6 +93,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
         lens_info=None,
         target_on_screen_width=None,
         visible_scene_rect=None,
+        tile_key=None,
+        render_state_id=0,
+        calculate_lowres=True,
     ):
         super().__init__()
         self.signals = signals
@@ -105,11 +110,24 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.lens_info = lens_info
         self.target_on_screen_width = target_on_screen_width
         self.visible_scene_rect = visible_scene_rect
+        self.tile_key = tile_key
+        self.render_state_id = render_state_id
+        self.calculate_lowres = calculate_lowres
 
     def run(self):
         try:
-            *result, rotate_val = self._update_preview()
-            self.signals.finished.emit(*result, rotate_val, self.request_id)
+            *result, rotate_val, visible_scene_rect_out, bg_lowres_pix = (
+                self._update_preview()
+            )
+            self.signals.finished.emit(
+                *result,
+                rotate_val,
+                visible_scene_rect_out,
+                bg_lowres_pix,
+                self.request_id,
+                self.tile_key,
+                self.render_state_id,
+            )
         except Exception as e:
             logger.error(f"Image processing worker failed: {e}", exc_info=True)
             self.signals.error.emit(str(e), self.request_id)
@@ -702,58 +720,65 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         # -- STEP 3: Handle LowRes Pan Background & Histograms --
         bg_lowres_pix = None
-        if is_viewport_only:
-            low_scale = 0.0625
-            low_img = self.tiers.get(low_scale)
-            if low_img is not None:
-                low_h, low_w = low_img.shape[:2]
-                low_vig_params = self._resolve_vignette_params(None, (low_w, low_h))
-                low_pre = pynegative.apply_preprocess(
-                    low_img,
-                    temperature=preprocess_settings["temperature"],
-                    tint=preprocess_settings["tint"],
-                    exposure=preprocess_settings["exposure"],
-                    vignette_k1=low_vig_params[0],
-                    vignette_k2=low_vig_params[1],
-                    vignette_k3=low_vig_params[2],
-                    vignette_cx=low_vig_params[3],
-                    vignette_cy=low_vig_params[4],
-                    full_width=low_vig_params[5],
-                    full_height=low_vig_params[6],
-                )
+        if self.calculate_lowres:
+            if is_viewport_only:
+                low_scale = 0.0625
+                low_img = self.tiers.get(low_scale)
+                if low_img is not None:
+                    low_h, low_w = low_img.shape[:2]
+                    low_vig_params = self._resolve_vignette_params(None, (low_w, low_h))
+                    low_pre = pynegative.apply_preprocess(
+                        low_img,
+                        temperature=preprocess_settings["temperature"],
+                        tint=preprocess_settings["tint"],
+                        exposure=preprocess_settings["exposure"],
+                        vignette_k1=low_vig_params[0],
+                        vignette_k2=low_vig_params[1],
+                        vignette_k3=low_vig_params[2],
+                        vignette_cx=low_vig_params[3],
+                        vignette_cy=low_vig_params[4],
+                        full_width=low_vig_params[5],
+                        full_height=low_vig_params[6],
+                    )
 
-                low_maps, low_o_w, low_o_h, _ = self._get_fused_geometry(
-                    low_w, low_h, rotate_val, crop_val, flip_h, flip_v, ts_roi=low_scale
-                )
+                    low_maps, low_o_w, low_o_h, _ = self._get_fused_geometry(
+                        low_w,
+                        low_h,
+                        rotate_val,
+                        crop_val,
+                        flip_h,
+                        flip_v,
+                        ts_roi=low_scale,
+                    )
 
-                low_dest = self._apply_fused_remap(
-                    low_pre, low_maps, low_o_w, low_o_h, cv2.INTER_LINEAR
-                )
+                    low_dest = self._apply_fused_remap(
+                        low_pre, low_maps, low_o_w, low_o_h, cv2.INTER_LINEAR
+                    )
 
-                low_heavy = self._process_heavy_stage(
-                    low_dest, f"tier_{low_scale}", heavy_params, low_scale
-                )
+                    low_heavy = self._process_heavy_stage(
+                        low_dest, f"tier_{low_scale}", heavy_params, low_scale
+                    )
 
-                low_out, _ = pynegative.apply_tone_map(
-                    low_heavy, **tone_map_settings, calculate_stats=False
-                )
-                low_out = pynegative.apply_defringe(low_out, self.settings)
+                    low_out, _ = pynegative.apply_tone_map(
+                        low_heavy, **tone_map_settings, calculate_stats=False
+                    )
+                    low_out = pynegative.apply_defringe(low_out, self.settings)
 
-                low_uint8 = (np.clip(low_out, 0, 1) * 255).astype(np.uint8)
+                    low_uint8 = (np.clip(low_out, 0, 1) * 255).astype(np.uint8)
 
+                    if self.calculate_histogram:
+                        hist_data = self._calculate_histograms(low_uint8)
+                        self.signals.histogramUpdated.emit(hist_data, self.request_id)
+
+                    lh, lw = low_uint8.shape[:2]
+                    qimg_low = QtGui.QImage(
+                        low_uint8.data, lw, lh, 3 * lw, QtGui.QImage.Format_RGB888
+                    )
+                    bg_lowres_pix = QtGui.QPixmap.fromImage(qimg_low)
+            else:
                 if self.calculate_histogram:
-                    hist_data = self._calculate_histograms(low_uint8)
+                    hist_data = self._calculate_histograms(img_uint8)
                     self.signals.histogramUpdated.emit(hist_data, self.request_id)
-
-                lh, lw = low_uint8.shape[:2]
-                qimg_low = QtGui.QImage(
-                    low_uint8.data, lw, lh, 3 * lw, QtGui.QImage.Format_RGB888
-                )
-                bg_lowres_pix = QtGui.QPixmap.fromImage(qimg_low)
-        else:
-            if self.calculate_histogram:
-                hist_data = self._calculate_histograms(img_uint8)
-                self.signals.histogramUpdated.emit(hist_data, self.request_id)
 
         h_bg, w_bg = img_uint8.shape[:2]
         qimg_bg = QtGui.QImage(
