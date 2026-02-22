@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 class ImageProcessingPipeline(QtCore.QObject):
-    previewUpdated = QtCore.Signal(QtGui.QPixmap, int, int, float, object, object)
+    previewUpdated = QtCore.Signal(
+        QtGui.QPixmap, int, int, float, object, object, object, bool
+    )
     histogramUpdated = QtCore.Signal(dict)
     performanceMeasured = QtCore.Signal(float)
     uneditedPixmapUpdated = QtCore.Signal(QtGui.QPixmap)
@@ -42,6 +44,11 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._last_processed_id = -1
         self._last_zoom_scale = 1.0
         self._last_requested_zoom = 1.0
+
+        self._tile_cache = {}
+        self._current_render_state_id = 0
+        self._last_rendered_state_id = 0
+        self._last_settings = None
 
         self.signals = ImageProcessorSignals()
         self.signals.finished.connect(self._on_worker_finished)
@@ -170,52 +177,111 @@ class ImageProcessingPipeline(QtCore.QObject):
         is_fitting = getattr(self._view_ref, "_is_fitting", False)
 
         is_cropping = self._view_ref._crop_item.isVisible()
-
         target_w = self.base_img_full.shape[1] * zoom_scale if not is_fitting else v_w
 
-        visible_scene_rect = None
-        if not is_fitting and not is_cropping:
-            viewport_rect = self._view_ref.viewport().rect()
-            visible_poly = self._view_ref.mapToScene(viewport_rect)
-            visible_rect = visible_poly.boundingRect()
+        current_settings = self.get_current_settings()
+        settings_changed = self._last_settings != current_settings
+        zoom_changed = abs(zoom_scale - self._last_requested_zoom) > 0.05
 
-            # Use smaller boundaries safely
-            buf_w = visible_rect.width() * 0.05
-            buf_h = visible_rect.height() * 0.05
-            visible_rect.adjust(-buf_w, -buf_h, buf_w, buf_h)
-
-            scene_rect = self._view_ref.sceneRect()
-            visible_rect = visible_rect.intersected(scene_rect)
-
-            visible_scene_rect = (
-                int(visible_rect.x()),
-                int(visible_rect.y()),
-                int(visible_rect.width()),
-                int(visible_rect.height()),
-            )
+        if settings_changed or zoom_changed or is_fitting or is_cropping:
+            self._current_render_state_id += 1
+            self._tile_cache.clear()
+            self._last_settings = current_settings
+            self._last_requested_zoom = zoom_scale
 
         self._current_request_id += 1
-        worker = ImageProcessorWorker(
-            self.signals,
-            self.base_img_full,
-            self.tiers,
-            self.get_current_settings(),
-            self._current_request_id,
-            zoom_scale=zoom_scale,
-            is_fitting=is_fitting,
-            calculate_histogram=self.histogram_enabled,
-            last_heavy_adjusted=self._last_heavy_adjusted,
-            lens_info=self.lens_info,
-            target_on_screen_width=target_w,
-            visible_scene_rect=visible_scene_rect,
-        )
-        self.thread_pool.start(worker)
+
+        if is_fitting or is_cropping:
+            worker = ImageProcessorWorker(
+                self.signals,
+                self.base_img_full,
+                self.tiers,
+                current_settings,
+                self._current_request_id,
+                zoom_scale=zoom_scale,
+                is_fitting=is_fitting,
+                calculate_histogram=self.histogram_enabled,
+                last_heavy_adjusted=self._last_heavy_adjusted,
+                lens_info=self.lens_info,
+                target_on_screen_width=target_w,
+                visible_scene_rect=None,
+                tile_key=None,
+                render_state_id=self._current_render_state_id,
+                calculate_lowres=True,
+            )
+            self.thread_pool.start(worker)
+            return
+
+        viewport_rect = self._view_ref.viewport().rect()
+        visible_poly = self._view_ref.mapToScene(viewport_rect)
+        visible_rect = visible_poly.boundingRect()
+
+        # Slight overscan for panning buffer (~5%)
+        buf_w = visible_rect.width() * 0.05
+        buf_h = visible_rect.height() * 0.05
+        visible_rect.adjust(-buf_w, -buf_h, buf_w, buf_h)
+
+        scene_rect = self._view_ref.sceneRect()
+        visible_rect = visible_rect.intersected(scene_rect)
+
+        TILE_SIZE = 256
+        tx_min = int(visible_rect.x() // TILE_SIZE)
+        ty_min = int(visible_rect.y() // TILE_SIZE)
+        tx_max = int((visible_rect.x() + visible_rect.width()) // TILE_SIZE)
+        ty_max = int((visible_rect.y() + visible_rect.height()) // TILE_SIZE)
+
+        sw = int(scene_rect.width())
+        sh = int(scene_rect.height())
+
+        tx_max = min(tx_max, sw // TILE_SIZE)
+        ty_max = min(ty_max, sh // TILE_SIZE)
+
+        needs_lowres = True
+
+        for ty in range(ty_min, ty_max + 1):
+            for tx in range(tx_min, tx_max + 1):
+                tile_key = (tx, ty)
+                if tile_key in self._tile_cache:
+                    continue
+
+                self._tile_cache[tile_key] = "pending"
+
+                vx = tx * TILE_SIZE
+                vy = ty * TILE_SIZE
+                vw = TILE_SIZE
+                vh = TILE_SIZE
+
+                vw = min(vw, sw - vx)
+                vh = min(vh, sh - vy)
+
+                if vw <= 0 or vh <= 0:
+                    continue
+
+                worker = ImageProcessorWorker(
+                    self.signals,
+                    self.base_img_full,
+                    self.tiers,
+                    current_settings,
+                    self._current_request_id,
+                    zoom_scale=zoom_scale,
+                    is_fitting=is_fitting,
+                    calculate_histogram=self.histogram_enabled and needs_lowres,
+                    last_heavy_adjusted=self._last_heavy_adjusted,
+                    lens_info=self.lens_info,
+                    target_on_screen_width=target_w,
+                    visible_scene_rect=(int(vx), int(vy), int(vw), int(vh)),
+                    tile_key=tile_key,
+                    render_state_id=self._current_render_state_id,
+                    calculate_lowres=needs_lowres,
+                )
+                needs_lowres = False
+                self.thread_pool.start(worker)
 
     def _measure_and_emit_perf(self):
         elapsed_ms = (time.perf_counter() - self.perf_start_time) * 1000
         self.performanceMeasured.emit(elapsed_ms)
 
-    @QtCore.Slot(QtGui.QPixmap, int, int, float, object, object, int)
+    @QtCore.Slot(QtGui.QPixmap, int, int, float, object, object, int, object, int)
     def _on_worker_finished(
         self,
         pix_bg,
@@ -225,21 +291,38 @@ class ImageProcessingPipeline(QtCore.QObject):
         visible_scene_rect,
         bg_lowres_pix,
         request_id,
+        tile_key,
+        render_state_id,
     ):
         self._is_rendering_locked = False
 
-        # Drop stale results (a newer request has been started)
-        if request_id < self._current_request_id:
+        if render_state_id < self._current_render_state_id:
+            # Optionally check if there are pending updates for rapid slider moves
             if self._render_pending:
                 self._process_pending_update()
             return
+
+        clear_tiles = False
+        if render_state_id > self._last_rendered_state_id:
+            clear_tiles = True
+            self._last_rendered_state_id = render_state_id
 
         self._last_processed_id = request_id
         self._last_zoom_scale = self._last_requested_zoom
 
         self.previewUpdated.emit(
-            pix_bg, full_w, full_h, rotation, visible_scene_rect, bg_lowres_pix
+            pix_bg,
+            full_w,
+            full_h,
+            rotation,
+            visible_scene_rect,
+            bg_lowres_pix,
+            tile_key,
+            clear_tiles,
         )
+        if tile_key is not None:
+            self._tile_cache[tile_key] = "done"
+
         self.editedPixmapUpdated.emit(pix_bg)
         self._measure_and_emit_perf()
 
