@@ -1,8 +1,10 @@
-import time
 import logging
+import time
 from pathlib import Path
+
 from PIL import ImageQt
-from PySide6 import QtGui, QtCore
+from PySide6 import QtCore, QtGui
+
 from .. import core as pynegative
 
 logger = logging.getLogger(__name__)

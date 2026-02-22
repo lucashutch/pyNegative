@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 import argparse
-import urllib.request
 import json
-from pathlib import Path
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 LENSFUN_DB_URL = "https://api.github.com/repos/lensfun/lensfun/contents/data/db"
 RAW_URL_BASE = "https://raw.githubusercontent.com/lensfun/lensfun/master/data/db/"

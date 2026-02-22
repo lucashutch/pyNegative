@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """Unit tests for image I/O and processing functions in pynegative.core"""
 
-import pytest
-from PIL import Image
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pynegative
-
-
 import numpy as np
+import pytest
+from PIL import Image
+
+import pynegative
 
 
 class TestSharpening:

@@ -1,10 +1,9 @@
 import logging
 from enum import Enum, auto
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Any
+from typing import Any
 
-from . import lens_metadata
-from . import lens_db_xml
+from . import lens_db_xml, lens_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +25,7 @@ def format_lens_name(maker: str, model: str) -> str:
 
 def resolve_lens_profile(
     raw_path: str | Path,
-) -> Tuple[ProfileSource, Optional[Dict[str, Any]]]:
+) -> tuple[ProfileSource, dict[str, Any] | None]:
     """
     Resolves the lens profile using the 3-tier priority logic:
     1. Embedded RAW metadata

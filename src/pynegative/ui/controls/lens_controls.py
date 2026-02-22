@@ -1,7 +1,8 @@
-from PySide6 import QtWidgets, QtCore
-from .base import BaseControlWidget
-from ..widgets.collapsiblesection import CollapsibleSection
+from PySide6 import QtCore, QtWidgets
+
 from ...io import lens_db_xml, lens_resolver
+from ..widgets.collapsiblesection import CollapsibleSection
+from .base import BaseControlWidget
 
 
 class LensControls(BaseControlWidget):
@@ -212,7 +213,7 @@ class LensControls(BaseControlWidget):
             else:
                 cam_names.add(f"{maker} {model}")
 
-        cameras = sorted(list(cam_names))
+        cameras = sorted(cam_names)
         self.camera_combo.addItems(["Auto"] + cameras)
 
         self.lens_combo.clear()

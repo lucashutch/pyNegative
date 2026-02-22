@@ -1,17 +1,17 @@
-from .horizontallist import HorizontalListWidget
+from .carouseldelegate import CarouselDelegate
 from .collapsiblesection import CollapsibleSection
-from .resetableslider import ResetableSlider
-from .zoomablegraphicsview import ZoomableGraphicsView
-from .zoomcontrols import ZoomControls
-from .starrating import StarRatingWidget
+from .combobox import ComboBox
+from .comparisonoverlay import ComparisonHandle, ComparisonOverlay
 from .galleryitemdelegate import GalleryItemDelegate
 from .gallerylistwidget import GalleryListWidget
-from .combobox import ComboBox
-from .carouseldelegate import CarouselDelegate
-from .toast import ToastWidget
 from .histogram import HistogramWidget
-from .comparisonoverlay import ComparisonOverlay, ComparisonHandle
+from .horizontallist import HorizontalListWidget
 from .metadata_panel import MetadataPanel
+from .resetableslider import ResetableSlider
+from .starrating import StarRatingWidget
+from .toast import ToastWidget
+from .zoomablegraphicsview import ZoomableGraphicsView
+from .zoomcontrols import ZoomControls
 
 __all__ = [
     "HorizontalListWidget",

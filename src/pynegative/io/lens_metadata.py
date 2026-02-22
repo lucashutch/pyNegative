@@ -1,14 +1,16 @@
 import logging
+from pathlib import Path
+from typing import Any
+
 import exifread
 import rawpy
-from pathlib import Path
-from typing import Dict, Optional, Any
+
 from . import bmff_metadata
 
 logger = logging.getLogger(__name__)
 
 
-def extract_lens_info(raw_path: str | Path) -> Dict[str, Any]:
+def extract_lens_info(raw_path: str | Path) -> dict[str, Any]:
     """
     Extracts camera and lens information from RAW or standard image file.
 
@@ -156,7 +158,7 @@ def extract_lens_info(raw_path: str | Path) -> Dict[str, Any]:
     return info
 
 
-def extract_embedded_correction_params(raw_path: str | Path) -> Optional[Dict]:
+def extract_embedded_correction_params(raw_path: str | Path) -> dict | None:
     """
     Extracts embedded lens correction parameters (distortion, vignetting, CA).
     Currently a placeholder for Phase 2.

@@ -1,7 +1,8 @@
-import pytest
 import numpy as np
+import pytest
+
 from pynegative.io.lens_db_xml import LensDatabase
-from pynegative.processing.lens import vignette_kernel, apply_lens_correction
+from pynegative.processing.lens import apply_lens_correction, vignette_kernel
 
 MOCK_VIGNETTE_DB = """
 <lensdatabase>

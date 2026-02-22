@@ -1,8 +1,8 @@
-from pathlib import Path
-from typing import List, Optional, Tuple
 from datetime import datetime
-from PySide6 import QtCore
+from pathlib import Path
+
 import rawpy
+from PySide6 import QtCore
 
 
 class RenameSettingsManager(QtCore.QObject):
@@ -46,11 +46,11 @@ class RenameSettingsManager(QtCore.QObject):
         """Check if renaming is enabled."""
         return self._current_settings.get("enabled", False)
 
-    def get_pattern_names(self) -> List[str]:
+    def get_pattern_names(self) -> list[str]:
         """Get list of available pattern names."""
         return list(self.PATTERNS.keys())
 
-    def get_exif_date(self, raw_path: str) -> Optional[str]:
+    def get_exif_date(self, raw_path: str) -> str | None:
         """Extract capture date from RAW file EXIF data.
 
         Returns date as YYYY-MM-DD string or None if unavailable.
@@ -86,10 +86,10 @@ class RenameSettingsManager(QtCore.QObject):
             try:
                 mtime = Path(raw_path).stat().st_mtime
                 return datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
-            except (OSError, IOError):
+            except OSError:
                 return None
 
-    def _parse_exif_date(self, exif_data: bytes) -> Optional[str]:
+    def _parse_exif_date(self, exif_data: bytes) -> str | None:
         """Parse DateTimeOriginal from EXIF data.
 
         This is a basic parser. For more robust parsing, consider using
@@ -116,13 +116,13 @@ class RenameSettingsManager(QtCore.QObject):
 
     def generate_preview(
         self,
-        files: List[Path],
+        files: list[Path],
         pattern_name: str,
         prefix: str,
         start_seq: int,
         destination: Path,
         format_ext: str,
-    ) -> List[Tuple[str, str, Optional[str]]]:
+    ) -> list[tuple[str, str, str | None]]:
         """Generate preview of renamed files.
 
         Args:
@@ -181,7 +181,7 @@ class RenameSettingsManager(QtCore.QObject):
 
         return preview
 
-    def validate_settings(self) -> List[str]:
+    def validate_settings(self) -> list[str]:
         """Validate current rename settings.
 
         Returns list of error messages, empty if valid.
@@ -215,8 +215,8 @@ class RenameSettingsManager(QtCore.QObject):
 
     def create_rename_mapping(
         self,
-        files: List[Path],
-        preview: List[Tuple[str, str, Optional[str]]],
+        files: list[Path],
+        preview: list[tuple[str, str, str | None]],
     ) -> dict:
         """Create a mapping from source file to target filename.
 

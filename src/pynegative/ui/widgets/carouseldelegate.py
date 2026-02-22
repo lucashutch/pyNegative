@@ -1,4 +1,5 @@
 from PySide6 import QtCore, QtWidgets
+
 from .galleryitemdelegate import GalleryItemDelegate
 
 

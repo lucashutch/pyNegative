@@ -1,5 +1,7 @@
-import numpy as np
 from unittest.mock import MagicMock, patch
+
+import numpy as np
+
 from pynegative.io.raw import open_raw
 
 
@@ -31,7 +33,7 @@ def test_tone_map_gamma():
     img = np.repeat(img, 3, axis=2).astype(np.float32)
 
     out, _ = apply_tone_map(
-        img, contrast=1.0, blacks=0.0, whites=1.0, calculate_stats=False
+        img, contrast=0.0, blacks=0.0, whites=0.0, calculate_stats=False
     )
 
     mid_idx = 18
@@ -44,9 +46,10 @@ def test_tone_map_gamma():
 
 def test_standard_image_linearization():
     """Verify that standard images are linearized on load."""
-    from PIL import Image
     import tempfile
     from pathlib import Path
+
+    from PIL import Image
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir) / "test.jpg"

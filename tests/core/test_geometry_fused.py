@@ -1,5 +1,6 @@
-import numpy as np
 import cv2
+import numpy as np
+
 from pynegative.processing.geometry import GeometryResolver
 from pynegative.processing.lens import generate_poly3_map
 

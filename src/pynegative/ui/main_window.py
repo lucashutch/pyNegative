@@ -1,11 +1,12 @@
 import logging
 from pathlib import Path
-from PySide6 import QtWidgets, QtGui, QtCore
+
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from .. import core as pynegative
-from .gallery import GalleryWidget
 from .editor import EditorWidget
 from .export_tab import ExportWidget
+from .gallery import GalleryWidget
 from .widgets import StarRatingWidget
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resize(1000, 700)
 
         self.thread_pool = QtCore.QThreadPool()
+        self.thread_pool.setMaxThreadCount(
+            max(4, QtCore.QThread.idealThreadCount() - 1)
+        )
 
         # Load QSS Stylesheet
         self._load_stylesheet()
@@ -75,6 +79,17 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.gallery._load_last_folder()
 
+    def closeEvent(self, event):
+        """Gracefully shut down background workers before closing."""
+        # Stop the rendering pipeline from queuing new work
+        self.editor.image_processor.shutdown()
+        # Also stop the gallery preview's processor if it exists
+        if hasattr(self.gallery, "preview_widget"):
+            self.gallery.preview_widget.image_processor.shutdown()
+        # Wait for any in-flight workers to finish (up to 2 seconds)
+        self.thread_pool.waitForDone(2000)
+        super().closeEvent(event)
+
     def _load_stylesheet(self):
         """Load the QSS stylesheet from file."""
         # Find style.qss in the parent package (src/pynegative)
@@ -84,7 +99,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Now MainWindow is in ui/main_window.py, so it's reaching up.
         style_path = Path(__file__).parent.parent / "styles.qss"
         try:
-            with open(style_path, "r") as f:
+            with open(style_path) as f:
                 self.setStyleSheet(f.read())
         except FileNotFoundError:
             print(f"Warning: Stylesheet not found at {style_path}")

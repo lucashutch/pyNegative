@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Unit tests for tone mapping and auto-exposure functions in pynegative.core"""
 
-import pytest
 import numpy as np
-from pynegative.processing.constants import LUMA_R, LUMA_G, LUMA_B
+import pytest
 
 import pynegative
+from pynegative.processing.constants import LUMA_B, LUMA_G, LUMA_R
 
 
 class TestApplyToneMap:
@@ -58,9 +58,11 @@ class TestApplyToneMap:
             dtype=np.float32,
         )
 
-        # Pull blacks to 0.1, whites to 0.9
+        # New semantics: blacks=-0.5 -> b_mapped = -(-0.5)*0.2 = 0.1
+        #                whites=-0.2 -> w_mapped = 1.0 + (-0.2)*0.5 = 0.9
+        # So effective range is [0.1, 0.9], denominator = 0.8
         result, _ = pynegative.apply_tone_map(
-            img, blacks=0.1, whites=0.9, apply_gamma=False
+            img, blacks=-0.5, whites=-0.2, apply_gamma=False
         )
 
         # 0.5 -> (0.5-0.1)/0.8 = 0.4/0.8 = 0.5 (Mid stays mid)
@@ -104,8 +106,8 @@ class TestApplyToneMap:
         # Partially saturated color [0.5, 0.2, 0.2]
         img = np.array([[[0.5, 0.2, 0.2]]], dtype=np.float32)
 
-        # Desaturate to 0 (should become grayscale)
-        result, _ = pynegative.apply_tone_map(img, saturation=0.0, apply_gamma=False)
+        # Desaturate to -1.0 (s_mult = 1.0 + (-1.0) = 0.0, should become grayscale)
+        result, _ = pynegative.apply_tone_map(img, saturation=-1.0, apply_gamma=False)
 
         # Luminance for [0.5, 0.2, 0.2] is 0.5*LUMA_R + 0.2*LUMA_G + 0.2*LUMA_B
         expected_gray = 0.5 * LUMA_R + 0.2 * LUMA_G + 0.2 * LUMA_B
@@ -116,17 +118,18 @@ class TestApplyToneMap:
             ),
         )
 
-        # Oversaturate
-        result, _ = pynegative.apply_tone_map(img, saturation=2.0, apply_gamma=False)
+        # Oversaturate: saturation=1.0 (s_mult = 1.0 + 1.0 = 2.0)
+        result, _ = pynegative.apply_tone_map(img, saturation=1.0, apply_gamma=False)
         # Manual check: lum + (img-lum)*2
         expected_r = expected_gray + (0.5 - expected_gray) * 2.0
         assert result[0, 0, 0] == pytest.approx(expected_r)
 
     def test_edge_case_zero_division_protection(self):
-        """Test that the function handles edge cases like blacks == whites"""
+        """Test that the function handles edge cases without division by zero"""
         img = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
+        # Extreme values that make w_mapped very close to b_mapped
         # This should not raise a division by zero error
-        result, _ = pynegative.apply_tone_map(img, blacks=0.5, whites=0.5)
+        result, _ = pynegative.apply_tone_map(img, blacks=0.0, whites=-1.0)
         assert np.all(np.isfinite(result))
 
 

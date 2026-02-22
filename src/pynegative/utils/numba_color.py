@@ -1,5 +1,5 @@
+from ..processing.constants import LUMA_B, LUMA_G, LUMA_R
 from ._numba_base import njit, prange
-from ..processing.constants import LUMA_R, LUMA_G, LUMA_B
 
 
 @njit(fastmath=True, cache=True, parallel=True)
@@ -78,8 +78,25 @@ def tone_map_kernel(
     """
     rows, cols, _ = img.shape
 
-    inv_denom = 1.0 / (whites - blacks) if abs(whites - blacks) > 1e-6 else 1000000.0
+    # Map Whites logically: 0.0 is neutral (1.0), 1.0 is soft (1.5), -1.0 is aggressive (0.5)
+    # User expects 'negative' behavior (softening) when sliding Right (positive)
+    w_mapped = 1.0 + (whites * 0.5)
+
+    # Map Blacks: user expects 'negative' behavior (lifting) when sliding Right (positive)
+    # +1.0 slider should equal old +0.2 behavior.
+    b_mapped = -blacks * 0.2
+
+    inv_denom = (
+        1.0 / (w_mapped - b_mapped) if abs(w_mapped - b_mapped) > 1e-6 else 1000000.0
+    )
     abs_h = abs(highlights)
+
+    if contrast >= 0.0:
+        c_mult = 1.0 + contrast
+    else:
+        c_mult = 1.0 + (contrast * 0.5)
+
+    s_mult = 1.0 + saturation
 
     clipped_shadows = 0
     clipped_highlights = 0
@@ -91,19 +108,19 @@ def tone_map_kernel(
             g_val = img[r, c, 1]
             b_val = img[r, c, 2]
 
-            if contrast != 1.0:
-                r_val = (r_val - 0.18) * contrast + 0.18
-                g_val = (g_val - 0.18) * contrast + 0.18
-                b_val = (b_val - 0.18) * contrast + 0.18
+            if c_mult != 1.0:
+                r_val = (r_val - 0.18) * c_mult + 0.18
+                g_val = (g_val - 0.18) * c_mult + 0.18
+                b_val = (b_val - 0.18) * c_mult + 0.18
 
             lum = LUMA_R * r_val + LUMA_G * g_val + LUMA_B * b_val
 
-            r_val = (r_val - blacks) * inv_denom
-            g_val = (g_val - blacks) * inv_denom
-            b_val = (b_val - blacks) * inv_denom
-            lum = (lum - blacks) * inv_denom
+            r_val = (r_val - b_mapped) * inv_denom
+            g_val = (g_val - b_mapped) * inv_denom
+            b_val = (b_val - b_mapped) * inv_denom
+            lum = (lum - b_mapped) * inv_denom
 
-            if shadows != 0.0 or highlights != 0.0 or saturation != 1.0:
+            if shadows != 0.0 or highlights != 0.0 or s_mult != 1.0:
                 if shadows != 0.0:
                     clim = max(0.0, min(1.0, lum))
                     s_mask = (1.0 - clim) * (1.0 - clim)
@@ -131,11 +148,11 @@ def tone_map_kernel(
                         b_val = b_val * inv_h + h_term
                         lum = lum * inv_h + h_term
 
-                if saturation != 1.0:
+                if s_mult != 1.0:
                     c_lum = max(0.0, min(1.0, lum))
-                    r_val = c_lum + (r_val - c_lum) * saturation
-                    g_val = c_lum + (g_val - c_lum) * saturation
-                    b_val = c_lum + (b_val - c_lum) * saturation
+                    r_val = c_lum + (r_val - c_lum) * s_mult
+                    g_val = c_lum + (g_val - c_lum) * s_mult
+                    b_val = c_lum + (b_val - c_lum) * s_mult
 
             if r_val < 0.0:
                 clipped_shadows += 1

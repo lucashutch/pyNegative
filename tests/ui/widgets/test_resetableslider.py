@@ -1,5 +1,6 @@
 import pytest
 from PySide6 import QtCore
+
 from pynegative.ui.widgets.resetableslider import ResetableSlider
 
 

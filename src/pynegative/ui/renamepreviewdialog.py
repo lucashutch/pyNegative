@@ -1,6 +1,6 @@
 from pathlib import Path
-from typing import List, Optional, Tuple
-from PySide6 import QtWidgets, QtGui
+
+from PySide6 import QtGui, QtWidgets
 
 
 class RenamePreviewDialog(QtWidgets.QDialog):
@@ -85,7 +85,7 @@ class RenamePreviewDialog(QtWidgets.QDialog):
 
         layout.addWidget(button_box)
 
-    def set_preview_data(self, preview_data: List[Tuple[str, str, Optional[str]]]):
+    def set_preview_data(self, preview_data: list[tuple[str, str, str | None]]):
         """Set the preview data and populate the table.
 
         Args:
@@ -151,7 +151,7 @@ class RenamePreviewDialog(QtWidgets.QDialog):
         """Return whether the user confirmed the preview."""
         return self._confirmed
 
-    def get_rename_mapping(self, source_files: List[Path]) -> dict:
+    def get_rename_mapping(self, source_files: list[Path]) -> dict:
         """Create a mapping from source file to target filename.
 
         Only includes files without warnings.

@@ -4,9 +4,10 @@ Icon generation script for pyNegative installer.
 Resizes the main icon to various sizes needed for different platforms.
 """
 
-from PIL import Image
-from pathlib import Path
 import sys
+from pathlib import Path
+
+from PIL import Image
 
 
 def generate_icons():

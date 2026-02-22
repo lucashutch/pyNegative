@@ -1,4 +1,5 @@
 from PySide6 import QtWidgets
+
 from ..widgets import CollapsibleSection
 from .base import BaseControlWidget
 
@@ -21,7 +22,7 @@ class ToneControls(BaseControlWidget):
             "Exposure", -4.0, 4.0, 0.0, "val_exposure", 0.01, self.tone_section
         )
         self._add_slider(
-            "Contrast", 0.5, 2.0, 1.0, "val_contrast", 0.01, self.tone_section
+            "Contrast", -1.0, 1.0, 0.0, "val_contrast", 0.01, self.tone_section
         )
         self._add_slider(
             "Highlights", -1.0, 1.0, 0.0, "val_highlights", 0.01, self.tone_section
@@ -30,26 +31,19 @@ class ToneControls(BaseControlWidget):
             "Shadows", -1.0, 1.0, 0.0, "val_shadows", 0.01, self.tone_section
         )
         self._add_slider(
-            "Whites", 0.5, 1.5, 1.0, "val_whites", 0.01, self.tone_section, flipped=True
+            "Whites", -1.0, 1.0, 0.0, "val_whites", 0.01, self.tone_section
         )
         self._add_slider(
-            "Blacks",
-            -0.2,
-            0.2,
-            0.0,
-            "val_blacks",
-            0.001,
-            self.tone_section,
-            flipped=True,
+            "Blacks", -1.0, 1.0, 0.0, "val_blacks", 0.01, self.tone_section
         )
 
     def reset_section(self):
         params = [
             ("val_exposure", 0.0, "exposure"),
-            ("val_contrast", 1.0, "contrast"),
+            ("val_contrast", 0.0, "contrast"),
             ("val_highlights", 0.0, "highlights"),
             ("val_shadows", 0.0, "shadows"),
-            ("val_whites", 1.0, "whites"),
+            ("val_whites", 0.0, "whites"),
             ("val_blacks", 0.0, "blacks"),
         ]
         for var_name, default, setting_name in params:

@@ -1,5 +1,5 @@
 import time
-from typing import Dict, Any, Optional
+from typing import Any
 
 
 class UndoManager:
@@ -20,7 +20,7 @@ class UndoManager:
         self._last_description = ""
 
     def push_state(
-        self, description: str, settings: Dict[str, Any], rating: int
+        self, description: str, settings: dict[str, Any], rating: int
     ) -> bool:
         """Push a new state to the history.
 
@@ -76,7 +76,7 @@ class UndoManager:
 
         return True
 
-    def undo(self) -> Optional[Dict[str, Any]]:
+    def undo(self) -> dict[str, Any] | None:
         """Undo the last action and return the previous state.
 
         Returns:
@@ -88,7 +88,7 @@ class UndoManager:
         self._current_index -= 1
         return self._history[self._current_index].copy()
 
-    def redo(self) -> Optional[Dict[str, Any]]:
+    def redo(self) -> dict[str, Any] | None:
         """Redo the last undone action and return the state.
 
         Returns:

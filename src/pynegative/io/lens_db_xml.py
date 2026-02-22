@@ -1,7 +1,6 @@
 import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +90,7 @@ class LensDatabase:
                     }
                 )
 
-    def get_distortion_params(self, lens: Dict, focal_length: float) -> Optional[Dict]:
+    def get_distortion_params(self, lens: dict, focal_length: float) -> dict | None:
         """
         Extract and interpolate distortion parameters for a given focal length.
         """
@@ -156,7 +155,7 @@ class LensDatabase:
 
         return dist_entries[0]
 
-    def get_tca_params(self, lens: Dict, focal_length: float) -> Optional[Dict]:
+    def get_tca_params(self, lens: dict, focal_length: float) -> dict | None:
         """
         Extract and interpolate TCA (Transverse Chromatic Aberration) parameters.
         Returns coefficients for Red and Blue channels.
@@ -222,11 +221,11 @@ class LensDatabase:
 
     def get_vignette_params(
         self,
-        lens: Dict,
+        lens: dict,
         focal_length: float,
         aperture: float,
         distance: float = 1000.0,
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         """
         Extract and interpolate vignette parameters.
         Vignetting depends on focal length, aperture, and focus distance.
@@ -298,9 +297,9 @@ class LensDatabase:
         camera_maker: str,
         camera_model: str,
         lens_model: str,
-        focal_length: Optional[float] = None,
-        aperture: Optional[float] = None,
-    ) -> Optional[Dict]:
+        focal_length: float | None = None,
+        aperture: float | None = None,
+    ) -> dict | None:
         if not self.loaded:
             return None
 
@@ -386,7 +385,7 @@ class LensDatabase:
 
         return None
 
-    def search_lenses(self, query: str) -> List[Dict]:
+    def search_lenses(self, query: str) -> list[dict]:
         if not self.loaded:
             return []
 
@@ -405,7 +404,7 @@ class LensDatabase:
             ),
         )[:50]
 
-    def get_all_lens_names(self) -> List[str]:
+    def get_all_lens_names(self) -> list[str]:
         if not self.loaded:
             return []
 
@@ -418,7 +417,7 @@ class LensDatabase:
             else:
                 lens_names.add(f"{maker} {model}")
 
-        return sorted(list(lens_names))
+        return sorted(lens_names)
 
 
 # Global instance

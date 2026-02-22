@@ -1,4 +1,5 @@
 import numpy as np
+
 from pynegative.utils.numba_defringe import defringe_kernel
 
 

@@ -1,6 +1,9 @@
+import collections
 import logging
-from PySide6 import QtWidgets, QtGui
-from PySide6.QtCore import Qt, Signal, QRectF
+
+from PySide6 import QtGui, QtWidgets
+from PySide6.QtCore import QRectF, Qt, Signal
+
 from .crop_item import CropRectItem
 
 logger = logging.getLogger(__name__)
@@ -42,6 +45,9 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         self._bg_item = QtWidgets.QGraphicsPixmapItem()
         self._scene.addItem(self._bg_item)
         self._bg_item.setZValue(0)
+
+        # Tile management
+        self._tile_items = collections.OrderedDict()
 
         # Crop Item (Overlay)
         self._crop_item = CropRectItem()
@@ -96,9 +102,17 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         rotation=0.0,
         visible_scene_rect=None,
         bg_lowres_pix=None,
+        tile_key=None,
+        clear_tiles=False,
     ):
         """Unified update for both layers to ensure alignment."""
         self._rendered_rotation = rotation
+
+        if clear_tiles:
+            for item in self._tile_items.values():
+                self._scene.removeItem(item)
+            self._tile_items.clear()
+            self._bg_item.hide()
 
         if bg_pix is None:
             bg_pix = QtGui.QPixmap()
@@ -107,23 +121,52 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         if bg_lowres_pix is not None and not bg_lowres_pix.isNull():
             self._bg_low_item.setPixmap(bg_lowres_pix)
             self._bg_low_item.show()
-            s_w = full_w / bg_lowres_pix.width()
-            s_h = full_h / bg_lowres_pix.height()
-            self._bg_low_item.setTransform(QtGui.QTransform().scale(s_w, s_h))
+            if bg_lowres_pix.width() > 0:
+                s_w = full_w / bg_lowres_pix.width()
+                s_h = full_h / bg_lowres_pix.height()
+                self._bg_low_item.setTransform(QtGui.QTransform().scale(s_w, s_h))
             self._bg_low_item.setPos(0, 0)
-        elif visible_scene_rect is None:
+        elif visible_scene_rect is None and tile_key is None and not clear_tiles:
             self._bg_low_item.hide()
 
-        # 2. Update Background Foreground Crop
-        self._bg_item.setPixmap(bg_pix)
-        if not bg_pix.isNull() and bg_pix.width() > 0:
-            if visible_scene_rect is not None:
+        if visible_scene_rect is None and tile_key is None:
+            self._bg_low_item.hide()
+
+        # 2. Update Foreground Render
+        if tile_key is not None and visible_scene_rect is not None:
+            self._bg_item.hide()
+            if not bg_pix.isNull() and bg_pix.width() > 0:
+                if tile_key in self._tile_items:
+                    item = self._tile_items[tile_key]
+                    self._tile_items.move_to_end(tile_key)
+                else:
+                    item = QtWidgets.QGraphicsPixmapItem()
+                    item.setZValue(0)
+                    self._scene.addItem(item)
+                    self._tile_items[tile_key] = item
+
+                    if len(self._tile_items) > 400:
+                        oldest_k, oldest_item = self._tile_items.popitem(last=False)
+                        self._scene.removeItem(oldest_item)
+
+                item.setPixmap(bg_pix)
                 vx, vy, vw, vh = visible_scene_rect
-                s_w = vw / bg_pix.width()
-                s_h = vh / bg_pix.height()
-                self._bg_item.setTransform(QtGui.QTransform().scale(s_w, s_h))
-                self._bg_item.setPos(vx, vy)
-            else:
+                # Add a tiny subpixel overlap to prevent background bleed from antialiasing seams
+                s_w = (vw + 0.5) / bg_pix.width()
+                s_h = (vh + 0.5) / bg_pix.height()
+                item.setTransform(QtGui.QTransform().scale(s_w, s_h))
+                item.setPos(vx, vy)
+
+                # Immediately map new item rotation
+                center = self._scene.sceneRect().center()
+                item.setTransformOriginPoint(item.mapFromScene(center))
+                current_angle = self._crop_item.get_rotation()
+                item.setRotation(current_angle - self._rendered_rotation)
+
+        else:
+            self._bg_item.show()
+            self._bg_item.setPixmap(bg_pix)
+            if not bg_pix.isNull() and bg_pix.width() > 0:
                 s_w = full_w / bg_pix.width()
                 s_h = full_h / bg_pix.height()
                 self._bg_item.setTransform(QtGui.QTransform().scale(s_w, s_h))
@@ -280,6 +323,10 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
             self._bg_low_item.mapFromScene(center)
         )
         self._bg_low_item.setRotation(rel_rotation)
+
+        for item in self._tile_items.values():
+            item.setTransformOriginPoint(item.mapFromScene(center))
+            item.setRotation(rel_rotation)
 
     def get_rotation(self) -> float:
         """Get rotation angle from crop item."""

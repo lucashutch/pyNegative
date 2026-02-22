@@ -1,4 +1,5 @@
 import numpy as np
+
 from pynegative.ui.widgets.histogram import HistogramWidget
 
 

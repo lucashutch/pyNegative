@@ -2,6 +2,7 @@ import json
 import logging
 import time
 from pathlib import Path
+
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ def load_cached_thumbnail(
             with Image.open(img_path) as img:
                 # Load fully into memory so we can close the file handle
                 pil_img = img.copy()
-            with open(meta_path, "r") as f:
+            with open(meta_path) as f:
                 metadata = json.load(f)
             return pil_img, metadata
         except Exception as e:
@@ -105,7 +106,7 @@ def load_sidecar(raw_path: str | Path) -> dict | None:
         return None
 
     try:
-        with open(sidecar_path, "r") as f:
+        with open(sidecar_path) as f:
             data = json.load(f)
             settings = data.get("settings")
             if settings:

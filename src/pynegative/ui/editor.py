@@ -1,26 +1,27 @@
-import math
 import logging
-from pathlib import Path
+import math
 from functools import partial
-from PySide6 import QtWidgets, QtGui, QtCore
-from PySide6.QtCore import Qt
-import numpy as np
+from pathlib import Path
 
-from .loaders import RawLoader
-from .widgets import (
-    ZoomControls,
-    ZoomableGraphicsView,
-    MetadataPanel,
-)
-from .imageprocessing import ImageProcessingPipeline
-from .editingcontrols import EditingControls
-from .settingsmanager import SettingsManager
+import numpy as np
+from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6.QtCore import Qt
+
+from .. import core as pynegative
 from .carouselmanager import CarouselManager
-from .widgets import StarRatingWidget
+from .editingcontrols import EditingControls
 from .editor_managers.comparison_manager import ComparisonManager
 from .editor_managers.crop_manager import CropManager
 from .editor_managers.floating_ui_manager import FloatingUIManager
-from .. import core as pynegative
+from .imageprocessing import ImageProcessingPipeline
+from .loaders import RawLoader
+from .settingsmanager import SettingsManager
+from .widgets import (
+    MetadataPanel,
+    StarRatingWidget,
+    ZoomableGraphicsView,
+    ZoomControls,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -370,7 +371,8 @@ class EditorWidget(QtWidgets.QWidget):
                             img_data.data, w, h, w * c, QtGui.QImage.Format_RGB888
                         )
                         pixmap = QtGui.QPixmap.fromImage(qimg)
-                        self.view.set_pixmaps(pixmap, w, h)
+                        self.view.set_pixmaps(pixmap, w, h, clear_tiles=True)
+                        self.view.reset_zoom()
                 elif isinstance(thumb_img, np.ndarray):
                     if thumb_img.dtype == np.float32:
                         img_uint8 = (np.clip(thumb_img, 0, 1) * 255).astype(np.uint8)
@@ -381,12 +383,13 @@ class EditorWidget(QtWidgets.QWidget):
                         img_uint8.data, w, h, w * c, QtGui.QImage.Format_RGB888
                     )
                     pixmap = QtGui.QPixmap.fromImage(qimg)
-                    self.view.set_pixmaps(pixmap, w, h)
+                    self.view.set_pixmaps(pixmap, w, h, clear_tiles=True)
+                    self.view.reset_zoom()
             else:
-                self.view.set_pixmaps(None, 0, 0)
+                self.view.set_pixmaps(None, 0, 0, clear_tiles=True)
         except Exception as e:
             logger.warning(f"Could not load thumbnail for instant preview: {e}")
-            self.view.set_pixmaps(None, 0, 0)
+            self.view.set_pixmaps(None, 0, 0, clear_tiles=True)
 
         self.metadata_panel.clear()
 

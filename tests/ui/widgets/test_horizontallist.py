@@ -1,5 +1,6 @@
 import pytest
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtCore, QtWidgets
+
 from pynegative.ui.widgets.horizontallist import HorizontalListWidget
 
 

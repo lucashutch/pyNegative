@@ -3,8 +3,8 @@
 Master benchmark runner that executes multiple configurations and generates a summary report.
 """
 
-import subprocess
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -98,7 +98,7 @@ def main():
     else:
         print(f"Using existing results from {results_path}")
 
-    with open(results_path, "r") as f:
+    with open(results_path) as f:
         results = json.load(f)
 
     # Generate a simple markdown report from the single run for now

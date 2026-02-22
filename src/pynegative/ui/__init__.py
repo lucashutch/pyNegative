@@ -1,6 +1,6 @@
-import sys
-import logging
 import argparse
+import logging
+import sys
 from pathlib import Path
 
 # Configure logging EARLY before importing internal modules
@@ -18,10 +18,10 @@ logging.getLogger("numba").setLevel(logging.WARNING)
 logging.getLogger("llvmlite").setLevel(logging.WARNING)
 logging.getLogger("exifread").setLevel(logging.ERROR)
 
-from PySide6 import QtWidgets, QtGui, QtCore  # noqa: E402
-from .main_window import MainWindow  # noqa: E402
-from .. import __version__  # noqa: E402
+from PySide6 import QtCore, QtGui, QtWidgets  # noqa: E402
 
+from .. import __version__  # noqa: E402
+from .main_window import MainWindow  # noqa: E402
 
 logger = logging.getLogger(__name__)
 logger.debug(f"pyNegative v{__version__} starting up...")
@@ -134,8 +134,9 @@ def main():
 
     # Load lens database
     update_splash_status("Loading lens database...")
-    from ..io import lens_db_xml
     from platformdirs import user_data_dir
+
+    from ..io import lens_db_xml
 
     # 1. Standard platform-specific data dir (used by installers)
     db_path = Path(user_data_dir("pyNegative")) / "data" / "lensfun"

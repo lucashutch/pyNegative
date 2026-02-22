@@ -1,6 +1,8 @@
-import pytest
 from unittest.mock import patch
-from PySide6 import QtWidgets, QtCore
+
+import pytest
+from PySide6 import QtCore, QtWidgets
+
 from pynegative.ui.editingcontrols import EditingControls
 
 

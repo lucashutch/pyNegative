@@ -1,7 +1,6 @@
 import os
 
 import pytest
-
 from PIL import Image
 
 from pynegative import core

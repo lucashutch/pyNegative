@@ -39,7 +39,6 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 import numpy as np
 
@@ -47,6 +46,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import cv2
+
 from pynegative import core
 
 
@@ -72,7 +72,7 @@ def generate_test_image(width: int, height: int) -> np.ndarray:
     return np.clip(img, 0, 1)
 
 
-def load_raw_image(raw_path: str) -> Tuple[np.ndarray, Dict]:
+def load_raw_image(raw_path: str) -> tuple[np.ndarray, dict]:
     """Load a RAW image file using pynegative's RAW loader.
 
     Returns:
@@ -91,8 +91,8 @@ def load_raw_image(raw_path: str) -> Tuple[np.ndarray, Dict]:
 
 
 def create_scale_variants(
-    img: np.ndarray, scales: List[float]
-) -> Dict[float, np.ndarray]:
+    img: np.ndarray, scales: list[float]
+) -> dict[float, np.ndarray]:
     """Create scaled versions of an image.
 
     Args:
@@ -131,7 +131,7 @@ def benchmark_operation(
     img: np.ndarray,
     iterations: int,
     warmup: int,
-) -> Dict:
+) -> dict:
     """Benchmark a single operation across all three modes."""
     results = {
         "operation": name,
@@ -194,10 +194,10 @@ def benchmark_operation(
 
 def run_benchmarks(
     test_image: np.ndarray,
-    resolutions: List[int],
+    resolutions: list[int],
     iterations: int,
     warmup: int,
-) -> List[Dict]:
+) -> list[dict]:
     """Run all benchmarks."""
     all_results = []
 
@@ -257,7 +257,7 @@ def run_benchmarks_for_image(
     iterations: int,
     warmup: int,
     label: str = None,
-) -> List[Dict]:
+) -> list[dict]:
     """Run benchmarks on a single image (for RAW scale variants)."""
     all_results = []
 
@@ -303,7 +303,7 @@ def run_benchmarks_for_image(
     return all_results
 
 
-def print_results_table(results: List[Dict]):
+def print_results_table(results: list[dict]):
     """Print formatted results table to console."""
     print("\n" + "=" * 80)
     print("BENCHMARK RESULTS")
@@ -344,7 +344,7 @@ def print_results_table(results: List[Dict]):
     print("\n" + "=" * 80)
 
 
-def save_json_report(results: List[Dict], output_path: str):
+def save_json_report(results: list[dict], output_path: str):
     """Save results to JSON file."""
     report = {
         "benchmark_info": {
@@ -361,7 +361,7 @@ def save_json_report(results: List[Dict], output_path: str):
     print(f"\nJSON report saved to: {output_path}")
 
 
-def save_markdown_report(results: List[Dict], output_path: str):
+def save_markdown_report(results: list[dict], output_path: str):
     """Save results to Markdown file."""
     lines = [
         "# Image Processing Pipeline Benchmark Results",

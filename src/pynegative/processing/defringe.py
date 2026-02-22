@@ -1,6 +1,8 @@
-import time
 import logging
+import time
+
 import numpy as np
+
 from ..utils.numba_defringe import defringe_kernel
 
 logger = logging.getLogger(__name__)

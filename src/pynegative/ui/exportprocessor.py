@@ -1,8 +1,10 @@
 from pathlib import Path
-from PIL import Image
+
 import numpy as np
-from PySide6 import QtCore
 import pillow_heif
+from PIL import Image
+from PySide6 import QtCore
+
 from .. import core as pynegative
 
 
@@ -167,12 +169,12 @@ class ExportProcessor(QtCore.QRunnable):
         # 4.1 Tone Mapping (Contrast, Levels, Saturation, Gamma)
         img, _ = pynegative.apply_tone_map(
             img,
-            contrast=sidecar_settings.get("contrast", 1.0),
+            contrast=sidecar_settings.get("contrast", 0.0),
             blacks=sidecar_settings.get("blacks", 0.0),
-            whites=sidecar_settings.get("whites", 1.0),
+            whites=sidecar_settings.get("whites", 0.0),
             shadows=sidecar_settings.get("shadows", 0.0),
             highlights=sidecar_settings.get("highlights", 0.0),
-            saturation=sidecar_settings.get("saturation", 1.0),
+            saturation=sidecar_settings.get("saturation", 0.0),
         )
 
         # 4.2 Defringe

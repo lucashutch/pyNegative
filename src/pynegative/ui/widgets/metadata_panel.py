@@ -1,9 +1,10 @@
 """Reusable Metadata Panel widget for displaying EXIF data from RAW files."""
 
-from pathlib import Path
-from PySide6 import QtWidgets, QtCore
-import exifread
 import logging
+from pathlib import Path
+
+import exifread
+from PySide6 import QtCore, QtWidgets
 
 from ... import core as pynegative
 
@@ -131,7 +132,8 @@ class MetadataPanel(QtWidgets.QWidget):
 
         try:
             import rawpy
-            from ...io import lens_metadata, bmff_metadata
+
+            from ...io import bmff_metadata, lens_metadata
 
             # 1. Try rawpy for basic RAW handling and WB
             with rawpy.imread(str(raw_path)) as raw:

@@ -1,14 +1,15 @@
-from PySide6 import QtWidgets, QtCore
-from .widgets import (
-    CollapsibleSection,
-    StarRatingWidget,
-    HistogramWidget,
-)
-from .controls.tone_controls import ToneControls
+from PySide6 import QtCore, QtWidgets
+
 from .controls.color_controls import ColorControls
 from .controls.detail_controls import DetailControls
 from .controls.geometry_controls import GeometryControls
 from .controls.lens_controls import LensControls
+from .controls.tone_controls import ToneControls
+from .widgets import (
+    CollapsibleSection,
+    HistogramWidget,
+    StarRatingWidget,
+)
 
 
 class EditingControls(QtWidgets.QWidget):
@@ -434,9 +435,7 @@ class EditingControls(QtWidgets.QWidget):
                         label.setText(f"{logical_val:.2f}")
             else:
                 key = var.replace("val_", "")
-                default_val = (
-                    1.0 if key in ["contrast", "saturation", "whites"] else 0.0
-                )
+                default_val = 0.0
                 val = settings.get(key, default_val)
                 if var == "val_sharpen_value":
                     val = min(50.0, val)
