@@ -16,18 +16,19 @@ class ImageProcessorSignals(QtCore.QObject):
         QtGui.QPixmap, int, int, float, object, object, int, object, int, int
     )
     histogramUpdated = QtCore.Signal(dict, int)
-    tierGenerated = QtCore.Signal(float, object)  # scale, array
-    uneditedPixmapGenerated = QtCore.Signal(QtGui.QPixmap)
+    tierGenerated = QtCore.Signal(float, object, int)  # scale, array, image_id
+    uneditedPixmapGenerated = QtCore.Signal(QtGui.QPixmap, int)
     error = QtCore.Signal(str, int)
 
 
 class TierGeneratorWorker(QtCore.QRunnable):
     """Worker to generate scaled image tiers in the background."""
 
-    def __init__(self, signals, img_array):
+    def __init__(self, signals, img_array, image_id):
         super().__init__()
         self.signals = signals
         self.img_array = img_array
+        self.image_id = image_id
 
     def run(self):
         if self.img_array is None:
@@ -36,8 +37,9 @@ class TierGeneratorWorker(QtCore.QRunnable):
         try:
             h, w = self.img_array.shape[:2]
 
-            # 1. Immediate Fast Feedback (1:16)
-            scale_fast = 0.0625
+            # 1. Immediate Fast Feedback
+            total_pixels = h * w
+            scale_fast = 0.0625 if total_pixels >= 40_000_000 else 0.125
             fast_w, fast_h = int(w * scale_fast), int(h * scale_fast)
             preview_fast = cv2.resize(
                 self.img_array, (fast_w, fast_h), interpolation=cv2.INTER_LINEAR
@@ -62,15 +64,16 @@ class TierGeneratorWorker(QtCore.QRunnable):
                 0.25,
                 round(1.0 / 6.0, 4),
                 0.125,
-                0.0625,
             ]
+            if scale_fast <= 0.0625:
+                scales.append(0.0625)
 
             for scale in scales:
                 tw, th = int(w * scale), int(h * scale)
                 next_img = cv2.resize(
                     self.img_array, (tw, th), interpolation=cv2.INTER_AREA
                 )
-                self.signals.tierGenerated.emit(scale, next_img)
+                self.signals.tierGenerated.emit(scale, next_img, self.image_id)
 
         except Exception as e:
             logger.error(f"Tier generation error: {e}")

@@ -56,8 +56,9 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.signals.finished.connect(self._on_worker_finished)
         self.signals.histogramUpdated.connect(self._on_histogram_updated)
         self.signals.tierGenerated.connect(self._on_tier_generated)
-        self.signals.uneditedPixmapGenerated.connect(self.uneditedPixmapUpdated.emit)
+        self.signals.uneditedPixmapGenerated.connect(self._on_unedited_pixmap_generated)
         self.signals.error.connect(self._on_worker_error)
+        self._current_image_id = 0
 
     def set_image(self, img_array):
         self.base_img_full = img_array
@@ -67,22 +68,42 @@ class ImageProcessingPipeline(QtCore.QObject):
         # Dictionary of scales (0.5, 0.25, 0.125, 0.0625)
         self.tiers = {}
 
+        self._tile_cache.clear()
+        self._current_settings_state_id += 1
+        self._current_render_state_id += 1
+
         if img_array is not None:
+            h, w = img_array.shape[:2]
+            # Create a unique ID for this image file so async ghosts drop properly
+            self._current_image_id += 1
             # Asynchronous Pyramid Generation
             # Start background worker to generate tiers so UI isn't blocked
-            worker = TierGeneratorWorker(self.signals, img_array)
+            worker = TierGeneratorWorker(
+                self.signals, img_array, self._current_image_id
+            )
             self.thread_pool.start(worker)
         else:
+            self._current_image_id += 1
+            self.previewUpdated.emit(QtGui.QPixmap(), 0, 0, 0.0, None, None, None, True)
             self.uneditedPixmapUpdated.emit(QtGui.QPixmap())
 
-    @QtCore.Slot(float, object)
-    def _on_tier_generated(self, scale, array):
+    @QtCore.Slot(QtGui.QPixmap, int)
+    def _on_unedited_pixmap_generated(self, pixmap, image_id):
+        if image_id == self._current_image_id:
+            self.uneditedPixmapUpdated.emit(pixmap)
+
+    @QtCore.Slot(float, object, int)
+    def _on_tier_generated(self, scale, array, image_id):
+        if image_id != self._current_image_id:
+            return
         self.tiers[scale] = array
-        # Once we have the 1:4 tier (0.25) or better, we can request a high-quality preview update
-        if scale == 0.25:
+        # Once we have the first reliable downscaled tier, or the requested specific tier natively triggers it, we request a high-quality preview update
+        if scale == 0.25 or scale == 0.1667 or len(self.tiers) == 1:
             # We don't emit uneditedPixmapUpdated here because TierGeneratorWorker
             # already emitted a fast 1:16 unedited pixmap.
             # We just request a full update so the background renderer uses the new better tier.
+            self._tile_cache.clear()
+            self._current_render_state_id += 1
             self.request_update()
 
     def set_view_reference(self, view):
