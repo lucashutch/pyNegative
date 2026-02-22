@@ -117,6 +117,11 @@ def _apply_bilateral_path(img_array, l_str, c_str):
     s_scale = 1.0 / 255.0
     yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
 
+    # Chroma slider has 2× sensitivity: same value yields twice the
+    # denoising strength compared to luma, since chroma noise is
+    # generally less perceptually objectionable and needs larger sigmas.
+    c_str = c_str * 2.0
+
     sigma_color_y = max(1e-6, l_str * 0.4 * s_scale)
     sigma_space_y = 0.5 + (l_str / 100.0)
     sigma_color_uv = max(1e-6, c_str * 4.5 * s_scale)

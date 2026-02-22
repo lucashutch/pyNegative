@@ -156,7 +156,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         if l_str <= 0 and c_str <= 0:
             return img
 
-        requested_method = heavy_params.get("denoise_method", "NLMeans (Numba Fast+)")
+        requested_method = heavy_params.get("denoise_method", "High Quality")
         effective_method = requested_method
 
         if "NLMeans" in requested_method:
@@ -564,7 +564,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "denoise_chroma": self.settings.get("denoise_chroma", 0)
             * 2,  # Scale up max power
             "denoise_method": self.settings.get(
-                "denoise_method", "NLMeans (Numba Fast+)"
+                "denoise_method", "High Quality"
             ),
             "sharpen_value": self.settings.get("sharpen_value", 0),
             "sharpen_radius": self.settings.get("sharpen_radius", 0.5),

@@ -31,7 +31,7 @@ class EditingControls(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.val_denoise_method = "NLMeans (Numba Fast+)"
+        self.val_denoise_method = "High Quality"
         self._init_ui()
 
     def _init_ui(self):
@@ -501,5 +501,5 @@ class EditingControls(QtWidgets.QWidget):
         self.detail_controls.val_sharpen_percent = (s_val / 100.0) * 300.0
 
         self.val_denoise_method = settings.get(
-            "denoise_method", "NLMeans (Numba Fast+)"
+            "denoise_method", "High Quality"
         )
