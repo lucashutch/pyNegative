@@ -178,11 +178,12 @@ class ImageProcessingPipeline(QtCore.QObject):
 
         self._render_pending = True
 
-        if self._active_workers == 0:
-            # Rate limit/Debounce: wait a few ms to catch rapid slider movements
-            # 16ms = ~60fps, 33ms = ~30fps.
-            if not self.render_timer.isActive():
-                self.render_timer.start(20)
+        # Always ensure a timer is running when a render is pending.
+        # If workers are active, use a slightly longer delay so their
+        # stale results have time to drop before we queue the next pass.
+        if not self.render_timer.isActive():
+            delay = 20 if self._active_workers == 0 else 50
+            self.render_timer.start(delay)
 
     def shutdown(self):
         """Stop all pending work gracefully before app close."""
@@ -383,9 +384,11 @@ class ImageProcessingPipeline(QtCore.QObject):
             return
 
         if render_state_id < self._current_render_state_id:
-            # Stale result; if all workers done and a render pending, kick off next pass
-            if self._active_workers == 0 and self._render_pending:
-                self.render_timer.start(5)
+            # Stale result — ensure any pending render gets scheduled.
+            # If all workers are done we can fire immediately; otherwise
+            # start a timer so the pending render isn't lost.
+            if self._render_pending and not self.render_timer.isActive():
+                self.render_timer.start(5 if self._active_workers == 0 else 30)
             return
 
         if render_state_id > self._last_rendered_state_id:
@@ -417,10 +420,8 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.editedPixmapUpdated.emit(pix_bg)
         self._measure_and_emit_perf()
 
-        if self._render_pending and self._active_workers == 0:
-            # If there's another update pending and all workers done,
-            # give the UI thread a tiny slice of time to handle input events.
-            self.render_timer.start(5)
+        if self._render_pending and not self.render_timer.isActive():
+            self.render_timer.start(5 if self._active_workers == 0 else 30)
 
     @QtCore.Slot(dict, int)
     def _on_histogram_updated(self, hist_data, request_id):
