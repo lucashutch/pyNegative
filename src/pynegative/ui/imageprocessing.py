@@ -222,32 +222,39 @@ class ImageProcessingPipeline(QtCore.QObject):
 
         visible_rect = visible_rect.intersected(QtCore.QRectF(0, 0, sw, sh))
 
-        TILE_SIZE = 256
-        tx_min = int(visible_rect.x() // TILE_SIZE)
-        ty_min = int(visible_rect.y() // TILE_SIZE)
-        tx_max = int((visible_rect.x() + visible_rect.width()) // TILE_SIZE)
-        ty_max = int((visible_rect.y() + visible_rect.height()) // TILE_SIZE)
+        # Dynamically calculate scene tile size so that chunks represent roughly 256x256 on the screen
+        ideal_scale = 1.0
+        if zoom_scale < 1.0:
+            for scale in [0.5, 0.25, 0.125, 0.0625]:
+                if scale >= zoom_scale:
+                    ideal_scale = scale
+                    break
+
+        TILE_SIZE_SCENE = int(256 / ideal_scale)
+        tx_min = int(visible_rect.x() // TILE_SIZE_SCENE)
+        ty_min = int(visible_rect.y() // TILE_SIZE_SCENE)
+        tx_max = int((visible_rect.x() + visible_rect.width()) // TILE_SIZE_SCENE)
+        ty_max = int((visible_rect.y() + visible_rect.height()) // TILE_SIZE_SCENE)
 
         # Use sw/sh defined in bootstrap instead of pulling from scene again
-
-        tx_max = min(tx_max, sw // TILE_SIZE)
-        ty_max = min(ty_max, sh // TILE_SIZE)
+        tx_max = min(tx_max, sw // TILE_SIZE_SCENE)
+        ty_max = min(ty_max, sh // TILE_SIZE_SCENE)
 
         needs_lowres = True
         workers_queued = 0
 
         for ty in range(ty_min, ty_max + 1):
             for tx in range(tx_min, tx_max + 1):
-                tile_key = (tx, ty)
+                tile_key = (tx, ty, TILE_SIZE_SCENE)
                 if tile_key in self._tile_cache:
                     continue
 
                 self._tile_cache[tile_key] = "pending"
 
-                vx = tx * TILE_SIZE
-                vy = ty * TILE_SIZE
-                vw = TILE_SIZE
-                vh = TILE_SIZE
+                vx = tx * TILE_SIZE_SCENE
+                vy = ty * TILE_SIZE_SCENE
+                vw = TILE_SIZE_SCENE
+                vh = TILE_SIZE_SCENE
 
                 vw = min(vw, sw - vx)
                 vh = min(vh, sh - vy)
@@ -292,7 +299,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         v_h = self._view_ref.viewport().rect().height()
 
         logger.info(
-            f"Viewport: {v_w}x{v_h} | Zoom Scale: {zoom_scale:.4f} | Tier: {selected_scale} | Queued {workers_queued} chunks ({TILE_SIZE}x{TILE_SIZE})"
+            f"Viewport: {v_w}x{v_h} | Zoom Scale: {zoom_scale:.4f} | Tier: {selected_scale} | Queued {workers_queued} chunks (256x256)"
         )
 
     def _measure_and_emit_perf(self):
