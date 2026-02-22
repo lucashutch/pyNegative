@@ -56,8 +56,9 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.signals.finished.connect(self._on_worker_finished)
         self.signals.histogramUpdated.connect(self._on_histogram_updated)
         self.signals.tierGenerated.connect(self._on_tier_generated)
-        self.signals.uneditedPixmapGenerated.connect(self.uneditedPixmapUpdated.emit)
+        self.signals.uneditedPixmapGenerated.connect(self._on_unedited_pixmap_generated)
         self.signals.error.connect(self._on_worker_error)
+        self._current_image_id = 0
 
     def set_image(self, img_array):
         self.base_img_full = img_array
@@ -75,16 +76,28 @@ class ImageProcessingPipeline(QtCore.QObject):
             h, w = img_array.shape[:2]
             # Instantly flush old tiles from the viewport using the new image dimensions
             self.previewUpdated.emit(QtGui.QPixmap(), w, h, 0.0, None, None, None, True)
+            # Create a unique ID for this image file so async ghosts drop properly
+            self._current_image_id += 1
             # Asynchronous Pyramid Generation
             # Start background worker to generate tiers so UI isn't blocked
-            worker = TierGeneratorWorker(self.signals, img_array)
+            worker = TierGeneratorWorker(
+                self.signals, img_array, self._current_image_id
+            )
             self.thread_pool.start(worker)
         else:
+            self._current_image_id += 1
             self.previewUpdated.emit(QtGui.QPixmap(), 0, 0, 0.0, None, None, None, True)
             self.uneditedPixmapUpdated.emit(QtGui.QPixmap())
 
-    @QtCore.Slot(float, object)
-    def _on_tier_generated(self, scale, array):
+    @QtCore.Slot(QtGui.QPixmap, int)
+    def _on_unedited_pixmap_generated(self, pixmap, image_id):
+        if image_id == self._current_image_id:
+            self.uneditedPixmapUpdated.emit(pixmap)
+
+    @QtCore.Slot(float, object, int)
+    def _on_tier_generated(self, scale, array, image_id):
+        if image_id != self._current_image_id:
+            return
         self.tiers[scale] = array
         # Once we have the 1:4 tier (0.25) or better, we can request a high-quality preview update
         if scale == 0.25:
@@ -350,7 +363,9 @@ class ImageProcessingPipeline(QtCore.QObject):
 
         clear_tiles = False
         if settings_state_id > self._last_rendered_settings_state_id:
-            clear_tiles = True
+            # We explicitly do NOT clear_tiles here anymore.
+            # Doing so obliterates the high-res view and causes a blurry 0.25x flash.
+            # The old tiles will simply remain on screen until the workers replace them.
             self._last_rendered_settings_state_id = settings_state_id
 
         self._last_processed_id = request_id

@@ -70,7 +70,7 @@ class TierGeneratorWorker(QtCore.QRunnable):
                 next_img = cv2.resize(
                     self.img_array, (tw, th), interpolation=cv2.INTER_AREA
                 )
-                self.signals.tierGenerated.emit(scale, next_img)
+                self.signals.tierGenerated.emit(scale, next_img, self.image_id)
 
         except Exception as e:
             logger.error(f"Tier generation error: {e}")
