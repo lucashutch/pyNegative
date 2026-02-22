@@ -125,7 +125,7 @@ def _apply_bilateral_path(img_array, l_str, c_str):
     sigma_color_y = max(1e-6, l_str * 0.4 * s_scale)
     sigma_space_y = 0.5 + (l_str / 100.0)
     sigma_color_uv = max(1e-6, c_str * 4.5 * s_scale)
-    sigma_space_uv = 2.0 + (c_str / 10.0)
+    sigma_space_uv = 3.0 + (c_str / 8.0)
 
     img_yuv_denoised = bilateral_kernel_yuv(
         yuv,

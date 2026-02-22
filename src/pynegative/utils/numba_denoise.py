@@ -28,14 +28,21 @@ def bilateral_kernel_yuv(
     img_yuv, strength, sigma_color_y, sigma_space_y, sigma_color_uv, sigma_space_uv
 ):
     """
-    Bilateral filter for YUV image.
-    Fuses luma and chroma denoising with different parameters.
+    Joint-bilateral filter for YUV image.
+    Luma is self-guided (standard bilateral). Chroma is **Y-guided**
+    (joint/cross bilateral): the colour-similarity weight for U and V
+    is derived from the luma (Y) channel, not from the chroma values
+    themselves. This dramatically improves chroma denoising because:
+      - Luma carries the real edge structure; chroma is too noisy to
+        reliably detect its own edges.
+      - Flat-luma regions get aggressively smoothed in chroma.
+      - Luma edges prevent chroma bleeding across real boundaries.
 
-    Optimised for small images (e.g. 256×256 preview tiles):
-      - Fast polynomial exp() replaces np.exp() in inner loops
-      - U and V chroma channels are fused into a single 5×5 pass
-      - Interior pixels skip boundary checks; only the border pays for them
-      - Channel planes are pre-extracted for contiguous memory access
+    Chroma uses a 7×7 window (was 5×5) because chroma noise is
+    lower-frequency and our eyes are less sensitive to chroma detail.
+
+    Both U and V share the same Y-derived weight per neighbour, saving
+    one _fast_exp call per inner iteration compared to self-guided.
     """
     rows, cols, _ = img_yuv.shape
     out = np.empty_like(img_yuv)
@@ -53,19 +60,22 @@ def bilateral_kernel_yuv(
         for j in range(-1, 2):
             s_weights_y[i + 1, j + 1] = _fast_exp((i * i + j * j) * s_inv_y)
 
-    # Chroma 5×5
-    s_weights_uv = np.zeros((5, 5), dtype=np.float64)
+    # Chroma 7×7 (larger window captures spatially-spread chroma noise)
+    chroma_half = 3  # 7×7 kernel
+    chroma_size = 2 * chroma_half + 1  # 7
+    s_weights_uv = np.zeros((chroma_size, chroma_size), dtype=np.float64)
     s_inv_uv = -1.0 / (2.0 * sigma_space_uv * sigma_space_uv)
-    for i in range(-2, 3):
-        for j in range(-2, 3):
-            s_weights_uv[i + 2, j + 2] = _fast_exp((i * i + j * j) * s_inv_uv)
+    for i in range(-chroma_half, chroma_half + 1):
+        for j in range(-chroma_half, chroma_half + 1):
+            s_weights_uv[i + chroma_half, j + chroma_half] = _fast_exp(
+                (i * i + j * j) * s_inv_uv
+            )
 
     c_inv_y = -1.0 / (2.0 * sigma_color_y * sigma_color_y)
     c_inv_uv = -1.0 / (2.0 * sigma_color_uv * sigma_color_uv)
 
     # Border widths for the two kernel sizes
-    border_y = 1   # 3×3 luma kernel
-    border_uv = 2  # 5×5 chroma kernel
+    border_uv = chroma_half  # 3 for 7×7 chroma kernel
 
     # =====================================================================
     #  INTERIOR: no bounds checks needed  (vast majority of pixels)
@@ -89,34 +99,30 @@ def bilateral_kernel_yuv(
 
             out[r, c, 0] = sum_y / w_sum_y if w_sum_y > 0 else y_val
 
-            # --- Chroma (U+V fused) — 5×5 window, no bounds checks ---
+            # --- Chroma (U+V fused, Y-guided) — 7×7 window, no bounds checks ---
             u_val = plane_u[r, c]
             v_val = plane_v[r, c]
             sum_u = 0.0
             sum_v = 0.0
-            w_sum_u = 0.0
-            w_sum_v = 0.0
+            w_sum_uv = 0.0
 
-            for i in range(-2, 3):
+            for i in range(-chroma_half, chroma_half + 1):
                 rr = r + i
-                for j in range(-2, 3):
+                for j in range(-chroma_half, chroma_half + 1):
                     cc = c + j
-                    sw = s_weights_uv[i + 2, j + 2]
+                    sw = s_weights_uv[i + chroma_half, j + chroma_half]
 
-                    pu = plane_u[rr, cc]
-                    du = pu - u_val
-                    wu = sw * _fast_exp(du * du * c_inv_uv)
-                    sum_u += pu * wu
-                    w_sum_u += wu
+                    # Y-guided: colour weight from luma differences
+                    dy = plane_y[rr, cc] - y_val
+                    w = sw * _fast_exp(dy * dy * c_inv_uv)
 
-                    pv = plane_v[rr, cc]
-                    dv = pv - v_val
-                    wv = sw * _fast_exp(dv * dv * c_inv_uv)
-                    sum_v += pv * wv
-                    w_sum_v += wv
+                    # Same weight for both U and V
+                    sum_u += plane_u[rr, cc] * w
+                    sum_v += plane_v[rr, cc] * w
+                    w_sum_uv += w
 
-            out[r, c, 1] = sum_u / w_sum_u if w_sum_u > 0 else u_val
-            out[r, c, 2] = sum_v / w_sum_v if w_sum_v > 0 else v_val
+            out[r, c, 1] = sum_u / w_sum_uv if w_sum_uv > 0 else u_val
+            out[r, c, 2] = sum_v / w_sum_uv if w_sum_uv > 0 else v_val
 
     # =====================================================================
     #  BORDER: needs bounds checks  (thin strip around the edge)
@@ -148,38 +154,32 @@ def bilateral_kernel_yuv(
 
             out[r, c, 0] = sum_y / w_sum_y if w_sum_y > 0 else y_val
 
-            # --- Chroma (U+V fused) — 5×5 with bounds checks ---
+            # --- Chroma (U+V fused, Y-guided) — 7×7 with bounds checks ---
             u_val = plane_u[r, c]
             v_val = plane_v[r, c]
             sum_u = 0.0
             sum_v = 0.0
-            w_sum_u = 0.0
-            w_sum_v = 0.0
+            w_sum_uv = 0.0
 
-            for i in range(-2, 3):
+            for i in range(-chroma_half, chroma_half + 1):
                 rr = r + i
                 if rr < 0 or rr >= rows:
                     continue
-                for j in range(-2, 3):
+                for j in range(-chroma_half, chroma_half + 1):
                     cc = c + j
                     if cc < 0 or cc >= cols:
                         continue
-                    sw = s_weights_uv[i + 2, j + 2]
+                    sw = s_weights_uv[i + chroma_half, j + chroma_half]
 
-                    pu = plane_u[rr, cc]
-                    du = pu - u_val
-                    wu = sw * _fast_exp(du * du * c_inv_uv)
-                    sum_u += pu * wu
-                    w_sum_u += wu
+                    dy = plane_y[rr, cc] - y_val
+                    w = sw * _fast_exp(dy * dy * c_inv_uv)
 
-                    pv = plane_v[rr, cc]
-                    dv = pv - v_val
-                    wv = sw * _fast_exp(dv * dv * c_inv_uv)
-                    sum_v += pv * wv
-                    w_sum_v += wv
+                    sum_u += plane_u[rr, cc] * w
+                    sum_v += plane_v[rr, cc] * w
+                    w_sum_uv += w
 
-            out[r, c, 1] = sum_u / w_sum_u if w_sum_u > 0 else u_val
-            out[r, c, 2] = sum_v / w_sum_v if w_sum_v > 0 else v_val
+            out[r, c, 1] = sum_u / w_sum_uv if w_sum_uv > 0 else u_val
+            out[r, c, 2] = sum_v / w_sum_uv if w_sum_uv > 0 else v_val
 
     # Handle left/right border columns of interior rows
     for r in prange(border_uv, rows - border_uv):
@@ -209,38 +209,32 @@ def bilateral_kernel_yuv(
 
             out[r, c, 0] = sum_y / w_sum_y if w_sum_y > 0 else y_val
 
-            # --- Chroma (U+V fused) — 5×5 with bounds checks ---
+            # --- Chroma (U+V fused, Y-guided) — 7×7 with bounds checks ---
             u_val = plane_u[r, c]
             v_val = plane_v[r, c]
             sum_u = 0.0
             sum_v = 0.0
-            w_sum_u = 0.0
-            w_sum_v = 0.0
+            w_sum_uv = 0.0
 
-            for i in range(-2, 3):
+            for i in range(-chroma_half, chroma_half + 1):
                 rr = r + i
                 if rr < 0 or rr >= rows:
                     continue
-                for j in range(-2, 3):
+                for j in range(-chroma_half, chroma_half + 1):
                     cc = c + j
                     if cc < 0 or cc >= cols:
                         continue
-                    sw = s_weights_uv[i + 2, j + 2]
+                    sw = s_weights_uv[i + chroma_half, j + chroma_half]
 
-                    pu = plane_u[rr, cc]
-                    du = pu - u_val
-                    wu = sw * _fast_exp(du * du * c_inv_uv)
-                    sum_u += pu * wu
-                    w_sum_u += wu
+                    dy = plane_y[rr, cc] - y_val
+                    w = sw * _fast_exp(dy * dy * c_inv_uv)
 
-                    pv = plane_v[rr, cc]
-                    dv = pv - v_val
-                    wv = sw * _fast_exp(dv * dv * c_inv_uv)
-                    sum_v += pv * wv
-                    w_sum_v += wv
+                    sum_u += plane_u[rr, cc] * w
+                    sum_v += plane_v[rr, cc] * w
+                    w_sum_uv += w
 
-            out[r, c, 1] = sum_u / w_sum_u if w_sum_u > 0 else u_val
-            out[r, c, 2] = sum_v / w_sum_v if w_sum_v > 0 else v_val
+            out[r, c, 1] = sum_u / w_sum_uv if w_sum_uv > 0 else u_val
+            out[r, c, 2] = sum_v / w_sum_uv if w_sum_uv > 0 else v_val
 
     return out
 
