@@ -18,6 +18,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resize(1000, 700)
 
         self.thread_pool = QtCore.QThreadPool()
+        self.thread_pool.setMaxThreadCount(
+            max(4, QtCore.QThread.idealThreadCount() - 1)
+        )
 
         # Load QSS Stylesheet
         self._load_stylesheet()
