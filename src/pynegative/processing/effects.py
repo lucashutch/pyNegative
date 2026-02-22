@@ -39,23 +39,18 @@ def sharpen_image(img, radius, percent, method="High Quality"):
     size_str = f" | Size: {w}x{h}"
 
     try:
-        # Setup: Blur and Edges (CPU)
+        # Unsharp mask: sharpen = img + percent * (img - blur)
+        # The mask is inherently edge-selective because (img - blur) is
+        # only large near edges and near-zero in flat/smooth areas.
         blur = cv2.GaussianBlur(img, (0, 0), radius)
-        gray = (cv2.cvtColor(img, cv2.COLOR_RGB2GRAY) * 255).astype(np.uint8)
-        edges = cv2.Canny(gray, 50, 150)
-        kernel = np.ones((3, 3), np.uint8)
-        edges = cv2.dilate(edges, kernel, iterations=1)
-
-        # Kernel is in-place, so we copy for the 'sharpened' version
         sharpened = img.copy()
         sharpen_kernel(sharpened, blur, percent)
-        result = np.where(edges[:, :, np.newaxis] > 0, sharpened, img)
 
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.debug(
             f"Sharpen: Radius: {radius:.2f} | Percent: {percent:.1f}%{size_str} | Time: {elapsed:.2f}ms"
         )
-        return np.clip(result, 0, 1.0)
+        return sharpened
     except Exception as e:
         logger.error(f"High Quality Sharpen failed: {e}")
         return img
@@ -214,9 +209,7 @@ def estimate_atmospheric_light(img):
             kernel_size += 1
 
         dark_channel = dark_channel_kernel(img)
-        kernel = cv2.getStructuringElement(
-            cv2.MORPH_RECT, (kernel_size, kernel_size)
-        )
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
         dark_channel = cv2.erode(dark_channel, kernel)
 
         num_pixels = dark_channel.size

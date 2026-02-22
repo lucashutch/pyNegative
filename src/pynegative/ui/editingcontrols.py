@@ -500,6 +500,4 @@ class EditingControls(QtWidgets.QWidget):
         self.detail_controls.val_sharpen_radius = 0.5 + (s_val / 100.0) * 2.5
         self.detail_controls.val_sharpen_percent = (s_val / 100.0) * 300.0
 
-        self.val_denoise_method = settings.get(
-            "denoise_method", "High Quality"
-        )
+        self.val_denoise_method = settings.get("denoise_method", "High Quality")

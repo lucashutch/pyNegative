@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Quick benchmark of the bilateral kernel on a 256×256 image."""
+
 import sys
 import time
 from pathlib import Path

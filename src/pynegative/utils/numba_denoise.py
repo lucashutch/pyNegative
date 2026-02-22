@@ -16,7 +16,14 @@ def _fast_exp(x):
         return 0.0
     # 6th-degree minimax polynomial approximation of exp(x) for x in [-10, 0]
     # Coefficients via Remez/Chebyshev fitting
-    a = 1.0 + x * (1.0 + x * (0.5 + x * (0.16666667 + x * (0.04166667 + x * (0.00833333 + x * 0.00138889)))))
+    a = 1.0 + x * (
+        1.0
+        + x
+        * (
+            0.5
+            + x * (0.16666667 + x * (0.04166667 + x * (0.00833333 + x * 0.00138889)))
+        )
+    )
     # Clamp to [0, 1] to prevent any negative blips from the polynomial
     if a < 0.0:
         return 0.0

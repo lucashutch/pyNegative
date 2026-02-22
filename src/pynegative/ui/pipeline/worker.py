@@ -248,12 +248,18 @@ class ImageProcessorWorker(QtCore.QRunnable):
         if preprocess_key is not None:
             accumulated_params["_preprocess_key"] = preprocess_key
 
-        img_w = img.shape[1]
-        full_w = self.base_img_full.shape[1]
-        scale_factor = img_w / full_w
+        # Scale sharpen radius by the tier resolution, NOT by tile/full ratio.
+        # A 256×256 tile at tier 1.0 is a full-res crop — radius should be unscaled.
+        # At tier 0.25 the pixels are 4× larger, so radius should be 0.25×.
+        try:
+            tier_scale = float(res_key.split("_")[1])
+        except (IndexError, ValueError):
+            tier_scale = 1.0
 
         adj_sharpen_p = sharpen_p.copy()
-        adj_sharpen_p["sharpen_radius"] *= scale_factor
+        adj_sharpen_p["sharpen_radius"] = max(
+            0.3, sharpen_p["sharpen_radius"] * tier_scale
+        )
 
         def apply_sharpen_scaled(image):
             if adj_sharpen_p["sharpen_value"] <= 0:
@@ -565,9 +571,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "denoise_luma": self.settings.get("denoise_luma", 0),
             "denoise_chroma": self.settings.get("denoise_chroma", 0)
             * 2,  # Scale up max power
-            "denoise_method": self.settings.get(
-                "denoise_method", "High Quality"
-            ),
+            "denoise_method": self.settings.get("denoise_method", "High Quality"),
             "sharpen_value": self.settings.get("sharpen_value", 0),
             "sharpen_radius": self.settings.get("sharpen_radius", 0.5),
             "sharpen_percent": self.settings.get("sharpen_percent", 0.0),
