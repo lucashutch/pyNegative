@@ -33,7 +33,7 @@ def test_tone_map_gamma():
     img = np.repeat(img, 3, axis=2).astype(np.float32)
 
     out, _ = apply_tone_map(
-        img, contrast=1.0, blacks=0.0, whites=1.0, calculate_stats=False
+        img, contrast=0.0, blacks=0.0, whites=0.0, calculate_stats=False
     )
 
     mid_idx = 18
