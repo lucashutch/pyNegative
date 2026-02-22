@@ -374,7 +374,9 @@ class ImageProcessingPipeline(QtCore.QObject):
 
         clear_tiles = False
         if settings_state_id > self._last_rendered_settings_state_id:
-            clear_tiles = True
+            # We explicitly do NOT clear_tiles here anymore.
+            # Doing so obliterates the high-res view and causes a blurry 0.25x flash.
+            # The old tiles will simply remain on screen until the workers replace them.
             self._last_rendered_settings_state_id = settings_state_id
 
         self._last_processed_id = request_id
@@ -391,7 +393,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             clear_tiles,
         )
         if tile_key is not None:
-            self._tile_cache[tile_key] = "done"
+            self._tile_cache[tile_key] = f"done_{render_state_id}"
 
         self.editedPixmapUpdated.emit(pix_bg)
         self._measure_and_emit_perf()
