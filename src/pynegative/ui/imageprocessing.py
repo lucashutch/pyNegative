@@ -162,6 +162,11 @@ class ImageProcessingPipeline(QtCore.QObject):
                     self._last_heavy_adjusted = k
 
         if changed:
+            # Eagerly invalidate in-flight workers so their stale results
+            # are dropped when they complete, preventing mixed-settings tiles.
+            self._current_render_state_id += 1
+            self._current_settings_state_id += 1
+            self._tile_cache.clear()
             self.request_update()
 
     def get_current_settings(self):
