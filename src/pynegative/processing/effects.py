@@ -195,6 +195,41 @@ def de_noise_image(
     return img
 
 
+def estimate_atmospheric_light(img):
+    """Estimate the atmospheric light from an image using Dark Channel Prior.
+
+    This should be called once on a low-res version of the full image,
+    and the result passed to de_haze_image() as fixed_atmospheric_light
+    for every tile.  This prevents per-tile colour tint differences.
+
+    Returns a numpy array of shape (3,) with the atmospheric light per channel,
+    or None if estimation fails.
+    """
+    if img is None:
+        return None
+    try:
+        h_img, w_img = img.shape[:2]
+        kernel_size = max(3, int(15 * (w_img / 2048.0)))
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+
+        dark_channel = dark_channel_kernel(img)
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_RECT, (kernel_size, kernel_size)
+        )
+        dark_channel = cv2.erode(dark_channel, kernel)
+
+        num_pixels = dark_channel.size
+        num_brightest = max(1, num_pixels // 1000)
+        indices = np.argpartition(dark_channel.flatten(), -num_brightest)[
+            -num_brightest:
+        ]
+        brightest_pixels = img.reshape(-1, 3)[indices]
+        return np.max(brightest_pixels, axis=0)
+    except Exception:
+        return None
+
+
 def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
     """
     Applies a fast dehazing algorithm based on Dark Channel Prior.

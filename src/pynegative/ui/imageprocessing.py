@@ -9,6 +9,7 @@ from .pipeline.worker import (
     ImageProcessorWorker,
     TierGeneratorWorker,
 )
+from .. import core as pynegative
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,10 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.signals.error.connect(self._on_worker_error)
         self._current_image_id = 0
 
+        # Pre-computed dehaze atmospheric light (shared across all tiles)
+        self._dehaze_atmos_light = None
+        self._dehaze_atmos_settings_id = -1
+
     def set_image(self, img_array):
         self.base_img_full = img_array
         self._unedited_img_full = img_array
@@ -74,6 +79,8 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._tile_cache.clear()
         self._current_settings_state_id += 1
         self._current_render_state_id += 1
+        self._dehaze_atmos_light = None
+        self._dehaze_atmos_settings_id = -1
 
         if img_array is not None:
             h, w = img_array.shape[:2]
@@ -298,6 +305,28 @@ class ImageProcessingPipeline(QtCore.QObject):
         workers_queued = 0
         workers_pending = 0
 
+        # Pre-compute dehaze atmospheric light from smallest available tier
+        # so every tile uses the same value (prevents per-tile colour tints).
+        dehaze_val = current_settings.get("de_haze", 0)
+        atmos_light = None
+        if dehaze_val and float(dehaze_val) > 0:
+            if self._dehaze_atmos_settings_id != self._current_settings_state_id:
+                smallest_tier = None
+                for s in sorted(self.tiers.keys()):
+                    if self.tiers[s] is not None:
+                        smallest_tier = self.tiers[s]
+                        break
+                if smallest_tier is None:
+                    smallest_tier = self.base_img_full
+                self._dehaze_atmos_light = pynegative.estimate_atmospheric_light(
+                    smallest_tier
+                )
+                self._dehaze_atmos_settings_id = self._current_settings_state_id
+                logger.debug(
+                    f"Dehaze atmospheric light computed: {self._dehaze_atmos_light}"
+                )
+            atmos_light = self._dehaze_atmos_light
+
         for ty in range(ty_min, ty_max + 1):
             for tx in range(tx_min, tx_max + 1):
                 tile_key = (tx, ty, TILE_SIZE_SCENE)
@@ -342,6 +371,7 @@ class ImageProcessingPipeline(QtCore.QObject):
                     render_state_id=self._current_render_state_id,
                     calculate_lowres=needs_lowres,
                     settings_state_id=self._current_settings_state_id,
+                    dehaze_atmospheric_light=atmos_light,
                 )
                 needs_lowres = False
                 workers_queued += 1

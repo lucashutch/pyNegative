@@ -102,6 +102,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         render_state_id=0,
         calculate_lowres=True,
         settings_state_id=0,
+        dehaze_atmospheric_light=None,
     ):
         super().__init__()
         self.signals = signals
@@ -120,6 +121,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         self.render_state_id = render_state_id
         self.calculate_lowres = calculate_lowres
         self.settings_state_id = settings_state_id
+        self.dehaze_atmospheric_light = dehaze_atmospheric_light
 
     def run(self):
         try:
@@ -215,7 +217,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                 image,
                 dehaze_p["de_haze"],
                 zoom=zoom_scale,
-                fixed_atmospheric_light=None,
+                fixed_atmospheric_light=self.dehaze_atmospheric_light,
             )
             return processed
 
