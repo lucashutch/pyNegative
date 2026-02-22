@@ -174,7 +174,6 @@ class ImageProcessingPipeline(QtCore.QObject):
 
         # Capture viewport state in UI thread
         zoom_scale = self._view_ref.transform().m11()
-        self._last_requested_zoom = zoom_scale
 
         viewport_size = self._view_ref.viewport().size()
         v_w = viewport_size.width()
