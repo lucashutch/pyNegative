@@ -67,12 +67,20 @@ class ImageProcessingPipeline(QtCore.QObject):
         # Dictionary of scales (0.5, 0.25, 0.125, 0.0625)
         self.tiers = {}
 
+        self._tile_cache.clear()
+        self._current_settings_state_id += 1
+        self._current_render_state_id += 1
+
         if img_array is not None:
+            h, w = img_array.shape[:2]
+            # Instantly flush old tiles from the viewport using the new image dimensions
+            self.previewUpdated.emit(QtGui.QPixmap(), w, h, 0.0, None, None, None, True)
             # Asynchronous Pyramid Generation
             # Start background worker to generate tiers so UI isn't blocked
             worker = TierGeneratorWorker(self.signals, img_array)
             self.thread_pool.start(worker)
         else:
+            self.previewUpdated.emit(QtGui.QPixmap(), 0, 0, 0.0, None, None, None, True)
             self.uneditedPixmapUpdated.emit(QtGui.QPixmap())
 
     @QtCore.Slot(float, object)
