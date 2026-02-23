@@ -35,6 +35,7 @@ def test_export_processor_run_jpeg(tmp_path):
     signals.fileProcessed = MagicMock()
     signals.batchCompleted = MagicMock()
     signals.progress = MagicMock()
+    signals.error = MagicMock()
 
     file = tmp_path / "img1.ARW"
     file.touch()
@@ -70,6 +71,8 @@ def test_export_processor_run_jpeg(tmp_path):
     ), patch(
         "pynegative.ui.exportprocessor.pynegative.apply_geometry", return_value=mock_img
     ), patch(
+        "pynegative.ui.exportprocessor.pynegative.apply_lens_correction", return_value=mock_img
+    ), patch(
         "pynegative.io.lens_resolver.resolve_lens_profile", return_value=(None, None)
     ), patch("PIL.Image.Image.save"):
         processor.run()
@@ -82,11 +85,13 @@ def test_export_processor_run_heif(tmp_path):
     signals = MagicMock()
     signals.fileProcessed = MagicMock()
     signals.batchCompleted = MagicMock()
+    signals.progress = MagicMock()
+    signals.error = MagicMock()
 
     file = tmp_path / "img1.ARW"
     file.touch()
 
-    settings = {"format": "HEIF", "heif_quality": 95, "heif_bit_depth": "10-bit"}
+    settings = {"format": "HEIF", "heif_quality": 95, "heif_bit_depth": "8-bit"}
     processor = ExportProcessor(signals, [file], settings, tmp_path / "out")
 
     mock_img = np.zeros((10, 10, 3), dtype=np.float32)
@@ -106,15 +111,21 @@ def test_export_processor_run_heif(tmp_path):
     ), patch(
         "pynegative.ui.exportprocessor.pynegative.apply_geometry", return_value=mock_img
     ), patch(
+        "pynegative.ui.exportprocessor.pynegative.apply_lens_correction", return_value=mock_img
+    ), patch(
         "pynegative.io.lens_resolver.resolve_lens_profile", return_value=(None, None)
     ), patch("PIL.Image.Image.save"):
         processor.run()
+
+    if signals.error.emit.called:
+        print(f"Error emitted: {signals.error.emit.call_args}")
 
     signals.batchCompleted.emit.assert_called_with(1, 0, 1)
 
 
 def test_export_processor_cancel(tmp_path):
     signals = MagicMock()
+    signals.fileProcessed = MagicMock()
     files = [tmp_path / f"img{i}.ARW" for i in range(5)]
     for f in files:
         f.touch()

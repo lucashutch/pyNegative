@@ -17,7 +17,7 @@ def export_widget(qtbot, thread_pool):
         "pynegative.ui.export_tab.ExportGalleryManager"
     ) as mock_gallery_class, patch(
         "pynegative.ui.export_tab.RenameSettingsManager"
-    ), patch("pynegative.ui.export_tab.ExportJob"), patch(
+    ) as mock_rename_settings_class, patch("pynegative.ui.export_tab.ExportJob"), patch(
         "pynegative.ui.export_tab.RenamePreviewDialog"
     ) as mock_dialog_class:
         # Ensure gallery_manager.get_widget() returns a QWidget
@@ -28,7 +28,12 @@ def export_widget(qtbot, thread_pool):
         )
 
         widget = ExportWidget(thread_pool)
+        # Set default mock behaviors to avoid UI hangs
+        widget.settings_manager.get_current_settings.return_value = {"format": "HEIF", "jpeg_quality": 95, "heif_quality": 95}
+        widget.rename_settings_manager.get_current_settings.return_value = {"enabled": False}
+
         qtbot.addWidget(widget)
+        widget.show()
         return widget
 
 

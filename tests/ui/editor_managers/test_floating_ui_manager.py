@@ -9,7 +9,7 @@ class MockEditor(QtCore.QObject):
 
 
 @pytest.fixture
-def manager():
+def manager(qtbot):
     editor = MockEditor()
     return FloatingUIManager(editor)
 
@@ -26,6 +26,7 @@ def test_reposition(manager):
     frame = QtWidgets.QFrame()
     frame.resize(800, 600)
     manager.setup_ui(frame)
+    frame.show()
 
     view = QtWidgets.QWidget(frame)
     view.resize(600, 400)
@@ -54,6 +55,7 @@ def test_reposition(manager):
 def test_perf_visibility(manager):
     frame = QtWidgets.QFrame()
     manager.setup_ui(frame)
+    frame.show()
 
     manager.perf_label.hide()
     assert manager.toggle_perf_visibility() is True
