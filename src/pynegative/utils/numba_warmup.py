@@ -28,7 +28,11 @@ def warmup_kernels() -> tuple[bool, float]:
         Wall-clock time spent warming up, in milliseconds.
     """
     from .numba_color import preprocess_kernel, tone_map_kernel
-    from .numba_dehaze import dark_channel_kernel, dehaze_recovery_kernel
+    from .numba_dehaze import (
+        dark_channel_kernel,
+        dehaze_recovery_kernel,
+        transmission_dark_channel_kernel,
+    )
     from .numba_denoise import (
         bilateral_kernel_yuv,
         nl_means_numba,
@@ -74,7 +78,10 @@ def warmup_kernels() -> tuple[bool, float]:
     # 6. dark_channel_kernel
     dark_channel_kernel(img3.copy())
 
-    # 7. dehaze_recovery_kernel
+    # 7. transmission_dark_channel_kernel (fused normalization + dark channel)
+    transmission_dark_channel_kernel(img3.copy(), atmospheric)
+
+    # 8. dehaze_recovery_kernel
     dehaze_recovery_kernel(img3.copy(), transmission, atmospheric)
 
     elapsed_ms = (time.perf_counter() - start) * 1000.0

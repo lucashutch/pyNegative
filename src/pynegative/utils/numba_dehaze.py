@@ -29,6 +29,45 @@ def dark_channel_kernel(img):
 
 
 @njit(fastmath=True, cache=True, parallel=True)
+def transmission_dark_channel_kernel(img, atmospheric_light):
+    """
+    Fused normalization + dark channel: min(I_c / A_c) per pixel.
+
+    Combines two steps into one pass:
+      1. Normalize each channel by its atmospheric light value
+      2. Compute the dark channel (per-pixel minimum across channels)
+
+    This avoids allocating an entire HxWx3 normalized image and halves
+    the memory bandwidth compared to the two-step approach.
+    """
+    rows, cols, _ = img.shape
+    dark = np.empty((rows, cols), dtype=np.float32)
+
+    a_r = max(atmospheric_light[0], 0.001)
+    a_g = max(atmospheric_light[1], 0.001)
+    a_b = max(atmospheric_light[2], 0.001)
+
+    inv_a_r = 1.0 / a_r
+    inv_a_g = 1.0 / a_g
+    inv_a_b = 1.0 / a_b
+
+    for r in prange(rows):
+        for c in range(cols):
+            nr = img[r, c, 0] * inv_a_r
+            ng = img[r, c, 1] * inv_a_g
+            nb = img[r, c, 2] * inv_a_b
+
+            m = nr
+            if ng < m:
+                m = ng
+            if nb < m:
+                m = nb
+            dark[r, c] = m
+
+    return dark
+
+
+@njit(fastmath=True, cache=True, parallel=True)
 def dehaze_recovery_kernel(img, transmission, atmospheric_light):
     """
     Highly optimized radiance recovery: J(x) = (I(x) - A) / max(t(x), t0) + A
