@@ -13,6 +13,7 @@ from .toast import ToastWidget
 from .zoomablegraphicsview import ZoomableGraphicsView
 from .zoomcontrols import ZoomControls
 from .preview_star_rating_widget import PreviewStarRatingWidget
+from .selective_paste_dialog import SelectivePasteDialog
 
 __all__ = [
     "HorizontalListWidget",
@@ -31,4 +32,5 @@ __all__ = [
     "ComparisonHandle",
     "MetadataPanel",
     "PreviewStarRatingWidget",
+    "SelectivePasteDialog",
 ]

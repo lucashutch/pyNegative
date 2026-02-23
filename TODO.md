@@ -20,9 +20,6 @@ This document tracks planned features, project goals, and areas for technical im
 
 ## Testing Improvement Areas
 
-- **All areas need more tests!**
-- **Generate Coverage Report**: Generate a coverage report to see where we need to add more tests, and add a coverage badge to the README if possible.
-
 ---
 
 ## Brainstorming: Potential Future Features
