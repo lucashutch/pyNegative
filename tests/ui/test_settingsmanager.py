@@ -55,8 +55,9 @@ def test_paste_settings_to_selected(settings_manager):
     settings_manager.settings_clipboard = {"val": 10}
     paths = ["a.ARW", "b.ARW"]
 
-    with patch("pynegative.core.save_sidecar") as mock_save, patch(
-        "pynegative.core.load_sidecar", return_value={"rating": 3}
+    with (
+        patch("pynegative.core.save_sidecar") as mock_save,
+        patch("pynegative.core.load_sidecar", return_value={"rating": 3}),
     ):
         settings_manager.paste_settings_to_selected(paths)
         assert mock_save.call_count == 2

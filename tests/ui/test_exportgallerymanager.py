@@ -21,9 +21,10 @@ def test_load_folder(manager, tmp_path):
     img2 = tmp_path / "img2.jpg"
     img2.touch()
 
-    with patch("pynegative.core.load_sidecar", return_value={"rating": 5}), patch(
-        "pynegative.ui.exportgallerymanager.ThumbnailLoader"
-    ) as mock_loader:
+    with (
+        patch("pynegative.core.load_sidecar", return_value={"rating": 5}),
+        patch("pynegative.ui.exportgallerymanager.ThumbnailLoader") as mock_loader,
+    ):
         manager.load_folder(str(tmp_path))
 
         assert manager.list_widget.count() == 2

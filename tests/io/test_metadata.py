@@ -39,9 +39,10 @@ def test_get_exif_capture_date_fallback(tmp_path):
     file_path.write_text("fake content")
 
     # Mock everything before the fallback
-    with patch("PIL.Image.open", side_effect=Exception("no PIL")), patch(
-        "rawpy.imread"
-    ) as mock_imread:
+    with (
+        patch("PIL.Image.open", side_effect=Exception("no PIL")),
+        patch("rawpy.imread") as mock_imread,
+    ):
         mock_raw = MagicMock()
         mock_raw.extract_exif.side_effect = Exception("no exif")
         mock_imread.return_value.__enter__.return_value = mock_raw

@@ -36,19 +36,26 @@ def test_image_processor_worker_update_preview_viewport(signals):
     worker.visible_scene_rect = (10, 10, 20, 20)
     worker.tiers[0.0625] = np.zeros((10, 10, 3), dtype=np.float32)
 
-    with patch(
-        "pynegative.ui.pipeline.worker.pynegative.apply_preprocess", return_value=img
-    ), patch(
-        "pynegative.ui.pipeline.worker.pynegative.apply_tone_map",
-        return_value=(img, None),
-    ), patch(
-        "pynegative.ui.pipeline.worker.pynegative.apply_defringe", return_value=img
-    ), patch(
-        "pynegative.ui.pipeline.worker.pynegative.float32_to_uint8",
-        return_value=np.zeros((10, 10, 3), dtype=np.uint8),
-    ), patch("PySide6.QtGui.QImage"), patch(
-        "PySide6.QtGui.QPixmap.fromImage"
-    ), patch.object(worker, "_calculate_histograms", return_value={}):
+    with (
+        patch(
+            "pynegative.ui.pipeline.worker.pynegative.apply_preprocess",
+            return_value=img,
+        ),
+        patch(
+            "pynegative.ui.pipeline.worker.pynegative.apply_tone_map",
+            return_value=(img, None),
+        ),
+        patch(
+            "pynegative.ui.pipeline.worker.pynegative.apply_defringe", return_value=img
+        ),
+        patch(
+            "pynegative.ui.pipeline.worker.pynegative.float32_to_uint8",
+            return_value=np.zeros((10, 10, 3), dtype=np.uint8),
+        ),
+        patch("PySide6.QtGui.QImage"),
+        patch("PySide6.QtGui.QPixmap.fromImage"),
+        patch.object(worker, "_calculate_histograms", return_value={}),
+    ):
         result = worker._update_preview()
         assert len(result) == 6
 
@@ -91,11 +98,10 @@ def test_image_processor_worker_heavy(signals):
         "sharpen_percent": 1.0,
     }
 
-    with patch(
-        "pynegative.core.de_haze_image", return_value=(img, 0.5)
-    ) as mock_dehaze, patch(
-        "pynegative.core.sharpen_image", return_value=img
-    ) as mock_sharpen:
+    with (
+        patch("pynegative.core.de_haze_image", return_value=(img, 0.5)) as mock_dehaze,
+        patch("pynegative.core.sharpen_image", return_value=img) as mock_sharpen,
+    ):
         worker._process_heavy_stage(img, "tier_1.0", heavy_params, 1.0)
         mock_dehaze.assert_called()
         mock_sharpen.assert_called()

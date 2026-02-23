@@ -45,20 +45,24 @@ def editor(qtbot):
 
     mock_floating_ui_manager = MagicMock()
 
-    with patch("pynegative.ui.editor.SettingsManager", return_value=MagicMock()), patch(
-        "pynegative.ui.editor.EditingControls", return_value=MockQWidget()
-    ), patch(
-        "pynegative.ui.editor.ImageProcessingPipeline", return_value=MagicMock()
-    ), patch(
-        "pynegative.ui.editor.CarouselManager", return_value=mock_carousel_manager
-    ), patch("pynegative.ui.editor.MetadataPanel", return_value=MockQWidget()), patch(
-        "pynegative.ui.editor.ZoomControls", return_value=MockQWidget()
-    ), patch(
-        "pynegative.ui.editor.ZoomableGraphicsView", return_value=MockQWidget()
-    ), patch(
-        "pynegative.ui.editor.ComparisonManager", return_value=mock_comparison_manager
-    ), patch(
-        "pynegative.ui.editor.FloatingUIManager", return_value=mock_floating_ui_manager
+    with (
+        patch("pynegative.ui.editor.SettingsManager", return_value=MagicMock()),
+        patch("pynegative.ui.editor.EditingControls", return_value=MockQWidget()),
+        patch("pynegative.ui.editor.ImageProcessingPipeline", return_value=MagicMock()),
+        patch(
+            "pynegative.ui.editor.CarouselManager", return_value=mock_carousel_manager
+        ),
+        patch("pynegative.ui.editor.MetadataPanel", return_value=MockQWidget()),
+        patch("pynegative.ui.editor.ZoomControls", return_value=MockQWidget()),
+        patch("pynegative.ui.editor.ZoomableGraphicsView", return_value=MockQWidget()),
+        patch(
+            "pynegative.ui.editor.ComparisonManager",
+            return_value=mock_comparison_manager,
+        ),
+        patch(
+            "pynegative.ui.editor.FloatingUIManager",
+            return_value=mock_floating_ui_manager,
+        ),
     ):
         # CarouselManager needs get_widget to return a QWidget
         widget = EditorWidget(mock_pool)

@@ -50,31 +50,48 @@ def test_export_processor_run_jpeg(tmp_path):
 
     mock_img = np.zeros((10, 10, 3), dtype=np.float32)
 
-    with patch(
-        "pynegative.ui.exportprocessor.pynegative.open_raw", return_value=mock_img
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.load_sidecar",
-        return_value={"de_haze": 10, "sharpen_value": 5},
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.apply_preprocess",
-        return_value=mock_img,
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.de_haze_image",
-        return_value=(mock_img, None),
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.sharpen_image", return_value=mock_img
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.apply_tone_map",
-        return_value=(mock_img, None),
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.apply_defringe", return_value=mock_img
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.apply_geometry", return_value=mock_img
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.apply_lens_correction", return_value=mock_img
-    ), patch(
-        "pynegative.io.lens_resolver.resolve_lens_profile", return_value=(None, None)
-    ), patch("PIL.Image.Image.save"):
+    with (
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.open_raw", return_value=mock_img
+        ),
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.load_sidecar",
+            return_value={"de_haze": 10, "sharpen_value": 5},
+        ),
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.apply_preprocess",
+            return_value=mock_img,
+        ),
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.de_haze_image",
+            return_value=(mock_img, None),
+        ),
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.sharpen_image",
+            return_value=mock_img,
+        ),
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.apply_tone_map",
+            return_value=(mock_img, None),
+        ),
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.apply_defringe",
+            return_value=mock_img,
+        ),
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.apply_geometry",
+            return_value=mock_img,
+        ),
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.apply_lens_correction",
+            return_value=mock_img,
+        ),
+        patch(
+            "pynegative.io.lens_resolver.resolve_lens_profile",
+            return_value=(None, None),
+        ),
+        patch("PIL.Image.Image.save"),
+    ):
         processor.run()
 
     signals.fileProcessed.emit.assert_called()
@@ -96,25 +113,37 @@ def test_export_processor_run_heif(tmp_path):
 
     mock_img = np.zeros((10, 10, 3), dtype=np.float32)
 
-    with patch(
-        "pynegative.ui.exportprocessor.pynegative.open_raw", return_value=mock_img
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.load_sidecar", return_value={}
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.apply_preprocess",
-        return_value=mock_img,
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.apply_tone_map",
-        return_value=(mock_img, None),
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.apply_defringe", return_value=mock_img
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.apply_geometry", return_value=mock_img
-    ), patch(
-        "pynegative.ui.exportprocessor.pynegative.apply_lens_correction", return_value=mock_img
-    ), patch(
-        "pynegative.io.lens_resolver.resolve_lens_profile", return_value=(None, None)
-    ), patch("PIL.Image.Image.save"):
+    with (
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.open_raw", return_value=mock_img
+        ),
+        patch("pynegative.ui.exportprocessor.pynegative.load_sidecar", return_value={}),
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.apply_preprocess",
+            return_value=mock_img,
+        ),
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.apply_tone_map",
+            return_value=(mock_img, None),
+        ),
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.apply_defringe",
+            return_value=mock_img,
+        ),
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.apply_geometry",
+            return_value=mock_img,
+        ),
+        patch(
+            "pynegative.ui.exportprocessor.pynegative.apply_lens_correction",
+            return_value=mock_img,
+        ),
+        patch(
+            "pynegative.io.lens_resolver.resolve_lens_profile",
+            return_value=(None, None),
+        ),
+        patch("PIL.Image.Image.save"),
+    ):
         processor.run()
 
     if signals.error.emit.called:

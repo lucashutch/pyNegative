@@ -42,13 +42,12 @@ class MockQWidget(QtWidgets.QWidget):
 @pytest.fixture
 def main_window(qtbot):
     # Mock all major sub-widgets to avoid real logic
-    with patch(
-        "pynegative.ui.main_window.GalleryWidget", return_value=MockQWidget()
-    ), patch(
-        "pynegative.ui.main_window.EditorWidget", return_value=MockQWidget()
-    ), patch(
-        "pynegative.ui.main_window.ExportWidget", return_value=MockQWidget()
-    ), patch("pynegative.ui.main_window.StarRatingWidget", return_value=MockQWidget()):
+    with (
+        patch("pynegative.ui.main_window.GalleryWidget", return_value=MockQWidget()),
+        patch("pynegative.ui.main_window.EditorWidget", return_value=MockQWidget()),
+        patch("pynegative.ui.main_window.ExportWidget", return_value=MockQWidget()),
+        patch("pynegative.ui.main_window.StarRatingWidget", return_value=MockQWidget()),
+    ):
         win = MainWindow()
         qtbot.addWidget(win)
         return win

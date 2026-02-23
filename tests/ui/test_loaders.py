@@ -17,9 +17,13 @@ def test_thumbnail_loader_cache(mock_pixmap, tmp_path):
 
     # First run to populate cache
     loader = ThumbnailLoader(str(path))
-    with patch(
-        "pynegative.core.load_cached_thumbnail", return_value=(MagicMock(), {"meta": 1})
-    ), patch("PIL.ImageQt.ImageQt"):
+    with (
+        patch(
+            "pynegative.core.load_cached_thumbnail",
+            return_value=(MagicMock(), {"meta": 1}),
+        ),
+        patch("PIL.ImageQt.ImageQt"),
+    ):
         loader.run()
 
     # Second run should hit cache
@@ -42,11 +46,12 @@ def test_thumbnail_loader_generate(mock_pixmap, tmp_path):
     mock_pil.width = 100
     mock_pil.height = 100
 
-    with patch(
-        "pynegative.core.load_cached_thumbnail", return_value=(None, None)
-    ), patch("pynegative.core.extract_thumbnail", return_value=mock_pil), patch(
-        "pynegative.core.save_cached_thumbnail"
-    ), patch("PIL.ImageQt.ImageQt"):
+    with (
+        patch("pynegative.core.load_cached_thumbnail", return_value=(None, None)),
+        patch("pynegative.core.extract_thumbnail", return_value=mock_pil),
+        patch("pynegative.core.save_cached_thumbnail"),
+        patch("PIL.ImageQt.ImageQt"),
+    ):
         loader.run()
 
     assert loader.signals.finished is not None
@@ -69,8 +74,9 @@ def test_raw_loader_basic(tmp_path):
     mock_img = MagicMock()
     mock_img.shape = (100, 100, 3)
 
-    with patch("pynegative.core.open_raw", return_value=mock_img), patch(
-        "pynegative.core.load_sidecar", return_value={"exp": 1.0}
+    with (
+        patch("pynegative.core.open_raw", return_value=mock_img),
+        patch("pynegative.core.load_sidecar", return_value={"exp": 1.0}),
     ):
         loader.run()
 
@@ -87,9 +93,11 @@ def test_raw_loader_fallback(tmp_path):
     mock_img = MagicMock()
     mock_img.shape = (100, 100, 3)
 
-    with patch("pynegative.core.open_raw", return_value=mock_img), patch(
-        "pynegative.core.load_sidecar", return_value=None
-    ), patch("pynegative.core.calculate_auto_exposure", return_value={"auto": True}):
+    with (
+        patch("pynegative.core.open_raw", return_value=mock_img),
+        patch("pynegative.core.load_sidecar", return_value=None),
+        patch("pynegative.core.calculate_auto_exposure", return_value={"auto": True}),
+    ):
         loader.run()
 
     loader.signals.finished.emit.assert_called_with(str(path), mock_img, {"auto": True})
