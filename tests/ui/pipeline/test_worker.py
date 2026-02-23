@@ -6,6 +6,14 @@ from pynegative.ui.pipeline.worker import (
     ImageProcessorWorker,
     ImageProcessorSignals,
 )
+from pynegative.ui.pipeline.stages import (
+    process_denoise_stage,
+    process_heavy_stage,
+    resolve_vignette_params,
+    get_fused_geometry,
+    apply_fused_remap,
+    calculate_histograms,
+)
 
 
 @pytest.fixture
@@ -54,7 +62,10 @@ def test_image_processor_worker_update_preview_viewport(signals):
         ),
         patch("PySide6.QtGui.QImage"),
         patch("PySide6.QtGui.QPixmap.fromImage"),
-        patch.object(worker, "_calculate_histograms", return_value={}),
+        patch("pynegative.ui.pipeline.worker.calculate_histograms", return_value={}),
+        patch("pynegative.ui.pipeline.worker.process_denoise_stage", return_value=img),
+        patch("pynegative.ui.pipeline.worker.process_heavy_stage", return_value=img),
+        patch("pynegative.ui.pipeline.worker.apply_fused_remap", return_value=img),
     ):
         result = worker._update_preview()
         assert len(result) == 6
@@ -82,7 +93,7 @@ def test_image_processor_worker_denoise(signals):
             "denoise_chroma": 5.0,
             "denoise_method": "High Quality",
         }
-        result = worker._process_denoise_stage(img, "tier_1.0", heavy_params, 1.0)
+        result = process_denoise_stage(img, "tier_1.0", heavy_params, 1.0)
         mock_denoise.assert_called()
         assert result.shape == (100, 100, 3)
 
@@ -102,7 +113,7 @@ def test_image_processor_worker_heavy(signals):
         patch("pynegative.core.de_haze_image", return_value=(img, 0.5)) as mock_dehaze,
         patch("pynegative.core.sharpen_image", return_value=img) as mock_sharpen,
     ):
-        worker._process_heavy_stage(img, "tier_1.0", heavy_params, 1.0)
+        process_heavy_stage(img, "tier_1.0", heavy_params, 1.0, "de_haze", None)
         mock_dehaze.assert_called()
         mock_sharpen.assert_called()
 
@@ -115,8 +126,8 @@ def test_resolve_vignette_params(signals):
         "vignetting": {"model": "pa", "k1": 0.1, "k2": 0.05, "k3": 0.02}
     }
 
-    vig_k1, vig_k2, vig_k3, cx, cy, fw, fh = worker._resolve_vignette_params(
-        roi_offset=(0, 0), full_size=(1000, 800)
+    vig_k1, vig_k2, vig_k3, cx, cy, fw, fh = resolve_vignette_params(
+        worker.settings, worker.lens_info, roi_offset=(0, 0), full_size=(1000, 800)
     )
     assert vig_k1 == pytest.approx(0.6)
     assert vig_k2 == 0.05
@@ -125,10 +136,10 @@ def test_resolve_vignette_params(signals):
 
 
 def test_get_fused_geometry(signals):
-    worker = ImageProcessorWorker(signals, None, {}, {"lens_enabled": False}, 1)
+    settings = {"lens_enabled": False}
     # Testing affine only path
-    fused_maps, out_w, out_h, zoom = worker._get_fused_geometry(
-        100, 100, 90, None, False, False
+    fused_maps, out_w, out_h, zoom = get_fused_geometry(
+        settings, None, 100, 100, 90, None, False, False
     )
     assert len(fused_maps) == 1
     assert out_w == 100
@@ -140,18 +151,17 @@ def test_apply_fused_remap_affine(signals):
     img = np.zeros((100, 100, 3), dtype=np.float32)
     M = np.eye(2, 3, dtype=np.float32)
 
-    result = worker._apply_fused_remap(img, [M], 100, 100)
+    result = apply_fused_remap(img, [M], 100, 100)
     assert result.shape == (100, 100, 3)
 
 
 def test_calculate_histograms(signals):
     img = np.zeros((100, 100, 3), dtype=np.uint8)
-    worker = ImageProcessorWorker(signals, None, {}, {}, 1)
 
     with patch(
-        "pynegative.ui.pipeline.worker.pynegative.numba_histogram_kernel",
+        "pynegative.ui.pipeline.stages.pynegative.numba_histogram_kernel",
         return_value=(np.zeros(256),) * 6,
     ):
-        hist = worker._calculate_histograms(img)
-        assert "R" in hist
-        assert len(hist["R"]) == 256
+        hist = calculate_histograms(img)
+        assert "r" in hist
+        assert len(hist["r"]) == 256
