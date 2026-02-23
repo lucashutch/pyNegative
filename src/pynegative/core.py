@@ -35,7 +35,7 @@ from .processing.tonemap import (
     calculate_auto_exposure,
     calculate_auto_wb,
 )
-from .utils.numba_kernels import numba_histogram_kernel
+from .utils.numba_kernels import float32_to_uint8, numba_histogram_kernel
 
 __all__ = [
     "RAW_EXTS",
@@ -70,4 +70,5 @@ __all__ = [
     "de_haze_image",
     "estimate_atmospheric_light",
     "numba_histogram_kernel",
+    "float32_to_uint8",
 ]

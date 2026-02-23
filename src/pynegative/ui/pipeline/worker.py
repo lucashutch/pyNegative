@@ -756,7 +756,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         )
         bg_output = pynegative.apply_defringe(bg_output, self.settings)
 
-        img_uint8 = (np.clip(bg_output, 0, 1) * 255).astype(np.uint8)
+        img_uint8 = pynegative.float32_to_uint8(bg_output)
 
         # -- STEP 3: Handle LowRes Pan Background & Histograms --
         bg_lowres_pix = None
@@ -804,7 +804,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
                     )
                     low_out = pynegative.apply_defringe(low_out, self.settings)
 
-                    low_uint8 = (np.clip(low_out, 0, 1) * 255).astype(np.uint8)
+                    low_uint8 = pynegative.float32_to_uint8(low_out)
 
                     if self.calculate_histogram:
                         hist_data = self._calculate_histograms(low_uint8)

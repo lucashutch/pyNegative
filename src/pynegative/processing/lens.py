@@ -68,12 +68,14 @@ class LensMapCache:
 _LENS_MAP_CACHE = LensMapCache()
 
 
-@njit(parallel=True)
+@njit(fastmath=True, cache=True, parallel=True)
 def generate_ptlens_map(w, h, a, b, c, cx, cy, full_w, full_h, zoom=1.0):
     map_x = np.zeros((h, w), dtype=np.float32)
     map_y = np.zeros((h, w), dtype=np.float32)
 
-    max_r = np.sqrt((full_w / 2.0) ** 2 + (full_h / 2.0) ** 2)
+    hw = full_w / 2.0
+    hh = full_h / 2.0
+    max_r = np.sqrt(hw * hw + hh * hh)
     inv_max_r = 1.0 / max_r
     d = 1.0 - a - b - c
 
@@ -94,7 +96,8 @@ def generate_ptlens_map(w, h, a, b, c, cx, cy, full_w, full_h, zoom=1.0):
                 continue
 
             # PTLens model: r_src = r_dist * (a*rn^3 + b*rn^2 + c*rn + d)
-            rescale = a * rn**3 + b * rn**2 + c * rn + d
+            rn2 = rn * rn
+            rescale = a * rn2 * rn + b * rn2 + c * rn + d
 
             map_x[y, x] = cx + dx * rescale
             map_y[y, x] = cy + dy * rescale
@@ -102,12 +105,14 @@ def generate_ptlens_map(w, h, a, b, c, cx, cy, full_w, full_h, zoom=1.0):
     return map_x, map_y
 
 
-@njit(parallel=True)
+@njit(fastmath=True, cache=True, parallel=True)
 def generate_poly3_map(w, h, k1, cx, cy, full_w, full_h, zoom=1.0):
     map_x = np.zeros((h, w), dtype=np.float32)
     map_y = np.zeros((h, w), dtype=np.float32)
 
-    max_r2 = (full_w / 2.0) ** 2 + (full_h / 2.0) ** 2
+    hw = full_w / 2.0
+    hh = full_h / 2.0
+    max_r2 = hw * hw + hh * hh
     inv_max_r2 = 1.0 / max_r2
 
     inv_zoom = 1.0 / zoom
@@ -128,7 +133,7 @@ def generate_poly3_map(w, h, k1, cx, cy, full_w, full_h, zoom=1.0):
     return map_x, map_y
 
 
-@njit(inline="always")
+@njit(fastmath=True, cache=True, inline="always")
 def _bilinear_sample(img, x, y, c, h, w):
     x0 = int(np.floor(x))
     y0 = int(np.floor(y))
@@ -154,25 +159,26 @@ def _bilinear_sample(img, x, y, c, h, w):
     )
 
 
-@njit(inline="always")
+@njit(fastmath=True, cache=True, inline="always")
 def _get_distortion_rescale(rn, model_type, p):
     if model_type == 0:  # ptlens
         # p = [a, b, c, d]
-        return p[0] * rn**3 + p[1] * rn**2 + p[2] * rn + p[3]
+        rn2 = rn * rn
+        return p[0] * rn2 * rn + p[1] * rn2 + p[2] * rn + p[3]
     elif model_type == 1:  # poly3
         # p = [k1]
-        return 1.0 + p[0] * rn**2
+        return 1.0 + p[0] * rn * rn
     return 1.0
 
 
-@njit(inline="always")
+@njit(fastmath=True, cache=True, inline="always")
 def _get_tca_rescale(rn, p):
     # Lensfun poly3 TCA: r_src = r_dist * (v0 + v1*r^2 + v2*r^4)
     rn2 = rn * rn
     return p[0] + p[1] * rn2 + p[2] * rn2 * rn2
 
 
-@njit(parallel=True)
+@njit(fastmath=True, cache=True, parallel=True)
 def remap_tca_distortion_kernel(
     img,
     out,
@@ -187,7 +193,9 @@ def remap_tca_distortion_kernel(
     zoom=1.0,
 ):
     h, w, channels = img.shape
-    max_r = np.sqrt((full_w / 2.0) ** 2 + (full_h / 2.0) ** 2)
+    hw = full_w / 2.0
+    hh = full_h / 2.0
+    max_r = np.sqrt(hw * hw + hh * hh)
     inv_max_r = 1.0 / max_r
     inv_zoom = 1.0 / zoom
 
@@ -289,7 +297,7 @@ def calculate_autocrop_scale(model, params, fw, fh):
     return max_rescale
 
 
-@njit(parallel=True)
+@njit(fastmath=True, cache=True, parallel=True)
 def vignette_kernel(img, k1, k2, k3, cx, cy, full_w, full_h):
     h, w, c = img.shape
     max_r2 = (full_w / 2.0) ** 2 + (full_h / 2.0) ** 2
@@ -307,11 +315,13 @@ def vignette_kernel(img, k1, k2, k3, cx, cy, full_w, full_h):
             # I_corr = I_dist * (1 + k1*r^2 + k2*r^4 + k3*r^6)
             gain = 1.0 + k1 * rn2 + k2 * rn4 + k3 * rn6
 
-            for i in range(c):
-                img[y, x, i] *= gain
+            # Explicit channel unrolling for better ILP
+            img[y, x, 0] *= gain
+            img[y, x, 1] *= gain
+            img[y, x, 2] *= gain
 
 
-@njit(parallel=True)
+@njit(fastmath=True, cache=True, parallel=True)
 def generate_tca_maps(
     w, h, model_type, dist_params, tca_red, tca_blue, cx, cy, full_w, full_h, zoom=1.0
 ):
@@ -325,7 +335,9 @@ def generate_tca_maps(
     map_xb = np.zeros((h, w), dtype=np.float32)
     map_yb = np.zeros((h, w), dtype=np.float32)
 
-    max_r = np.sqrt((full_w / 2.0) ** 2 + (full_h / 2.0) ** 2)
+    hw = full_w / 2.0
+    hh = full_h / 2.0
+    max_r = np.sqrt(hw * hw + hh * hh)
     inv_max_r = 1.0 / max_r
     inv_zoom = 1.0 / zoom
 

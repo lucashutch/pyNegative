@@ -55,9 +55,9 @@ def apply_preprocess(
 
     t_scale = 0.4
     tint_scale = 0.2
-    r_mult = np.exp(temperature * t_scale - tint * (tint_scale / 2))
-    g_mult = np.exp(tint * tint_scale)
-    b_mult = np.exp(-temperature * t_scale - tint * (tint_scale / 2))
+    r_mult = math.exp(temperature * t_scale - tint * (tint_scale / 2))
+    g_mult = math.exp(tint * tint_scale)
+    b_mult = math.exp(-temperature * t_scale - tint * (tint_scale / 2))
 
     preprocess_kernel(
         img,
@@ -193,9 +193,14 @@ def calculate_auto_wb(img):
     """
     Calculates relative temperature and tint to neutralize the image (Gray World).
     """
-    r_avg = np.mean(img[:, :, 0])
-    g_avg = np.mean(img[:, :, 1])
-    b_avg = np.mean(img[:, :, 2])
+    h, w = img.shape[:2]
+    # Stride to limit to ~1M pixels for speed on large images
+    stride = max(1, int(np.sqrt(h * w / (1000 * 1000))))
+    img_s = img[::stride, ::stride]
+
+    r_avg = np.mean(img_s[:, :, 0])
+    g_avg = np.mean(img_s[:, :, 1])
+    b_avg = np.mean(img_s[:, :, 2])
 
     if r_avg < 1e-6:
         r_avg = 1e-6
