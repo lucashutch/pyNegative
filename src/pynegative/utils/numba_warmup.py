@@ -27,7 +27,7 @@ def warmup_kernels() -> tuple[bool, float]:
     elapsed_ms : float
         Wall-clock time spent warming up, in milliseconds.
     """
-    from .numba_color import preprocess_kernel, tone_map_kernel
+    from .numba_color import float32_to_uint8, preprocess_kernel, tone_map_kernel
     from .numba_dehaze import (
         dark_channel_kernel,
         dehaze_recovery_kernel,
@@ -39,6 +39,13 @@ def warmup_kernels() -> tuple[bool, float]:
         nl_means_numba_multichannel,
     )
     from .numba_detail import sharpen_kernel
+    from .numba_defringe import defringe_kernel
+    from ..processing.lens import (
+        vignette_kernel,
+        generate_ptlens_map,
+        generate_poly3_map,
+        generate_tca_maps,
+    )
 
     start = time.perf_counter()
 
@@ -83,6 +90,30 @@ def warmup_kernels() -> tuple[bool, float]:
 
     # 8. dehaze_recovery_kernel
     dehaze_recovery_kernel(img3.copy(), transmission, atmospheric)
+
+    # 9. defringe_kernel(img, out, purple_thresh, green_thresh, edge_thresh, radius)
+    defringe_kernel(img3.copy(), np.empty_like(img3), 0.5, 0.5, 0.05, 1.0)
+
+    # 10. Lens kernels
+    vignette_kernel(img3.copy(), 0.1, 0.0, 0.0, 2.0, 2.0, 4.0, 4.0)
+    generate_ptlens_map(4, 4, 0.0, 0.0, 0.0, 2.0, 2.0, 4.0, 4.0, 1.0)
+    generate_poly3_map(4, 4, 0.0, 2.0, 2.0, 4.0, 4.0, 1.0)
+    generate_tca_maps(
+        4,
+        4,
+        0,
+        np.zeros(4, dtype=np.float32),
+        np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        2.0,
+        2.0,
+        4.0,
+        4.0,
+        1.0,
+    )
+
+    # 11. float32_to_uint8 conversion kernel
+    float32_to_uint8(img3.copy())
 
     elapsed_ms = (time.perf_counter() - start) * 1000.0
 

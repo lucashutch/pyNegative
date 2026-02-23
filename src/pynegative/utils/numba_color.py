@@ -1,3 +1,5 @@
+import numpy as np
+
 from ..processing.constants import LUMA_B, LUMA_G, LUMA_R
 from ._numba_base import njit, prange
 
@@ -182,3 +184,27 @@ def tone_map_kernel(
             pixel_sum += (r_val + g_val + b_val) * 0.33333333
 
     return clipped_shadows, clipped_highlights, pixel_sum
+
+
+@njit(fastmath=True, cache=True, parallel=True)
+def float32_to_uint8(img):
+    """
+    Fused clip + scale + cast: converts float32 [0,1] image to uint8 [0,255].
+    Avoids two intermediate array allocations from np.clip() and *255.
+    """
+    rows, cols, channels = img.shape
+    out = np.empty((rows, cols, channels), dtype=np.uint8)
+
+    for r in prange(rows):
+        for c in range(cols):
+            for ch in range(channels):
+                val = img[r, c, ch]
+                # Clamp to [0, 1] and scale to [0, 255]
+                if val <= 0.0:
+                    out[r, c, ch] = 0
+                elif val >= 1.0:
+                    out[r, c, ch] = 255
+                else:
+                    out[r, c, ch] = np.uint8(val * 255.0 + 0.5)
+
+    return out

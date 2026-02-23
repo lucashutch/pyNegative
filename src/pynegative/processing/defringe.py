@@ -23,7 +23,7 @@ def apply_defringe(img, settings):
 
     start_time = time.perf_counter()
 
-    out = np.zeros_like(img)
+    out = np.empty_like(img)
 
     # Thresholds from sliders are typically 0-100 or 0-1
     # We expect 0.0 to 1.0 here for the kernel.
