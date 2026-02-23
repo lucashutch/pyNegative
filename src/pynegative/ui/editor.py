@@ -24,6 +24,7 @@ from .widgets import (
     ZoomableGraphicsView,
     ZoomControls,
     PreviewStarRatingWidget,
+    SelectivePasteDialog,
 )
 
 logger = logging.getLogger(__name__)
@@ -620,6 +621,48 @@ class EditorWidget(QtWidgets.QWidget):
 
     def _on_undo_state_changed(self):
         pass
+
+    def show_selective_paste_dialog(self):
+        """Show the selective paste dialog and apply selected settings."""
+        if not self.settings_manager.has_clipboard_content():
+            self.show_toast("Clipboard is empty")
+            return
+
+        dialog = SelectivePasteDialog(self)
+        dialog.setWindowTitle("Paste Settings Selective")
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            selected_keys = dialog.get_selected_keys()
+            if not selected_keys:
+                return
+
+            selected_paths = self.carousel_manager.get_selected_paths()
+            if selected_paths:
+                self.settings_manager.paste_settings_to_selected(
+                    selected_paths,
+                    current_settings_callback=self.editing_controls.apply_settings,
+                    keys_to_include=selected_keys,
+                )
+            else:
+                self.settings_manager.paste_settings_to_current(
+                    self.editing_controls.apply_settings, keys_to_include=selected_keys
+                )
+            self._request_update_from_view()
+
+    def show_selective_copy_dialog(self):
+        """Show the selective copy dialog and copy selected settings."""
+        if not self.raw_path:
+            return
+
+        dialog = SelectivePasteDialog(self)
+        dialog.setWindowTitle("Copy Settings Selective")
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            selected_keys = dialog.get_selected_keys()
+            if not selected_keys:
+                return
+
+            self.settings_manager.copy_settings_selective(
+                self.image_processor.get_current_settings(), selected_keys
+            )
 
     def _on_unedited_pixmap_updated(self, pixmap):
         self.comparison_manager.update_pixmaps(unedited=pixmap)

@@ -19,7 +19,17 @@ class ShortcutManager:
             QtGui.QKeySequence.StandardKey.Copy, editor, self.handle_copy_shortcut
         )
         QtGui.QShortcut(
+            QtGui.QKeySequence("Ctrl+Shift+C"),
+            editor,
+            editor.show_selective_copy_dialog,
+        )
+        QtGui.QShortcut(
             QtGui.QKeySequence.StandardKey.Paste, editor, self.handle_paste_shortcut
+        )
+        QtGui.QShortcut(
+            QtGui.QKeySequence("Ctrl+Shift+V"),
+            editor,
+            editor.show_selective_paste_dialog,
         )
         QtGui.QShortcut(
             QtGui.QKeySequence("F12"), editor, self.toggle_performance_overlay

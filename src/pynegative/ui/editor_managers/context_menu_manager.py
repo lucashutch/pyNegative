@@ -19,6 +19,11 @@ class ContextMenuManager:
             )
         )
         copy_action.setShortcut(QtGui.QKeySequence.StandardKey.Copy)
+
+        copy_selective_action = menu.addAction("Copy Settings Selective...")
+        copy_selective_action.triggered.connect(self.editor.show_selective_copy_dialog)
+        copy_selective_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+C"))
+
         paste_action = menu.addAction("Paste Settings")
         paste_action.triggered.connect(
             lambda: self.editor.settings_manager.paste_settings_to_current(
@@ -27,6 +32,16 @@ class ContextMenuManager:
         )
         paste_action.setEnabled(self.editor.settings_manager.has_clipboard_content())
         paste_action.setShortcut(QtGui.QKeySequence.StandardKey.Paste)
+
+        paste_selective_action = menu.addAction("Paste Settings Selective...")
+        paste_selective_action.triggered.connect(
+            self.editor.show_selective_paste_dialog
+        )
+        paste_selective_action.setEnabled(
+            self.editor.settings_manager.has_clipboard_content()
+        )
+        paste_selective_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+V"))
+
         menu.exec_(self.editor.view.mapToGlobal(pos))
 
     def handle_carousel_context_menu(self, context_type, data):
@@ -42,6 +57,12 @@ class ContextMenuManager:
                     )
                 )
                 copy_action.setShortcut(QtGui.QKeySequence.StandardKey.Copy)
+
+                copy_selective_action = menu.addAction("Copy Settings Selective...")
+                copy_selective_action.triggered.connect(
+                    self.editor.show_selective_copy_dialog
+                )
+                copy_selective_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+C"))
             else:
                 copy_action = menu.addAction(
                     f"Copy Settings from {Path(item_path).name}"
@@ -51,6 +72,13 @@ class ContextMenuManager:
                         item_path
                     )
                 )
+
+                copy_selective_action = menu.addAction("Copy Settings Selective...")
+                copy_selective_action.triggered.connect(
+                    self.editor.show_selective_copy_dialog
+                )
+                copy_selective_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+C"))
+
             paste_action = menu.addAction("Paste Settings to Selected")
             paste_action.triggered.connect(
                 lambda: self.editor.settings_manager.paste_settings_to_selected(
@@ -62,6 +90,17 @@ class ContextMenuManager:
                 and len(selected_paths) > 0
             )
             paste_action.setShortcut(QtGui.QKeySequence.StandardKey.Paste)
+
+            paste_selective_action = menu.addAction("Paste Settings Selective...")
+            paste_selective_action.triggered.connect(
+                self.editor.show_selective_paste_dialog
+            )
+            paste_selective_action.setEnabled(
+                self.editor.settings_manager.has_clipboard_content()
+                and len(selected_paths) > 0
+            )
+            paste_selective_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+V"))
+
             menu.addSeparator()
             select_all_action = menu.addAction("Select All")
             select_all_action.triggered.connect(carousel_widget.select_all_items)
