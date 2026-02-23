@@ -102,23 +102,23 @@ def test_editor_widget_coverage(mock_start, qapp):
     # Undo / Redo
     with patch.object(editor.settings_manager, "undo") as mock_undo:
         mock_undo.return_value = {"settings": {}, "rating": 0}
-        editor._undo()
+        editor.shortcut_manager.undo()
 
     with patch.object(editor.settings_manager, "redo") as mock_redo:
         mock_redo.return_value = {"settings": {}, "rating": 0}
-        editor._redo()
+        editor.shortcut_manager.redo()
 
     # Perf
     editor._on_performance_measured(10.5)
-    editor._toggle_performance_overlay()
+    editor.shortcut_manager.toggle_performance_overlay()
 
     # Context menus
     with patch("PySide6.QtWidgets.QMenu.exec_"):
-        editor._show_main_photo_context_menu(QtCore.QPoint(0, 0))
+        editor.context_menu_manager.show_main_photo_context_menu(QtCore.QPoint(0, 0))
 
         carousel_mock = MagicMock()
         carousel_mock.get_selected_paths.return_value = ["/tmp/test.cr2"]
-        editor._handle_carousel_context_menu(
+        editor.context_menu_manager.handle_carousel_context_menu(
             "carousel", (QtCore.QPoint(0, 0), "/tmp/test.cr2", carousel_mock)
         )
 
@@ -126,5 +126,5 @@ def test_editor_widget_coverage(mock_start, qapp):
     editor.carousel_manager.get_selected_paths = MagicMock(
         return_value=["/tmp/test.cr2"]
     )
-    editor._handle_copy_shortcut()
-    editor._handle_paste_shortcut()
+    editor.shortcut_manager.handle_copy_shortcut()
+    editor.shortcut_manager.handle_paste_shortcut()

@@ -85,7 +85,6 @@ def test_image_processor_worker_run(signals):
 
 def test_image_processor_worker_denoise(signals):
     img = np.zeros((100, 100, 3), dtype=np.float32)
-    worker = ImageProcessorWorker(signals, img, {}, {}, 1)
 
     with patch("pynegative.core.de_noise_image", return_value=img) as mock_denoise:
         heavy_params = {
@@ -100,7 +99,6 @@ def test_image_processor_worker_denoise(signals):
 
 def test_image_processor_worker_heavy(signals):
     img = np.zeros((100, 100, 3), dtype=np.float32)
-    worker = ImageProcessorWorker(signals, img, {}, {}, 1)
 
     heavy_params = {
         "de_haze": 50,
@@ -147,7 +145,6 @@ def test_get_fused_geometry(signals):
 
 
 def test_apply_fused_remap_affine(signals):
-    worker = ImageProcessorWorker(signals, None, {}, {}, 1)
     img = np.zeros((100, 100, 3), dtype=np.float32)
     M = np.eye(2, 3, dtype=np.float32)
 

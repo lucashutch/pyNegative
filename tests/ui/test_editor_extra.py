@@ -103,9 +103,9 @@ def test_editor_undo_redo(editor):
     state = {"settings": {"exposure": 1.0}, "rating": 5}
     editor.settings_manager.undo.return_value = state
 
-    editor._undo()
+    editor.shortcut_manager.undo()
     editor.settings_manager.undo.assert_called()
 
     editor.settings_manager.redo.return_value = state
-    editor._redo()
+    editor.shortcut_manager.redo()
     editor.settings_manager.redo.assert_called()

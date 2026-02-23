@@ -12,6 +12,7 @@ from .starrating import StarRatingWidget
 from .toast import ToastWidget
 from .zoomablegraphicsview import ZoomableGraphicsView
 from .zoomcontrols import ZoomControls
+from .preview_star_rating_widget import PreviewStarRatingWidget
 
 __all__ = [
     "HorizontalListWidget",
@@ -29,4 +30,5 @@ __all__ = [
     "ComparisonOverlay",
     "ComparisonHandle",
     "MetadataPanel",
+    "PreviewStarRatingWidget",
 ]
