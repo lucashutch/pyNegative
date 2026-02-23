@@ -12,3 +12,5 @@ task.md
 data/
 .ignore
 
+
+.coverage

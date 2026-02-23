@@ -56,7 +56,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 1
     container:
       image: ghcr.io/astral-sh/ruff:alpine
     steps:
@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository_owner }}/pynegative-ci-test:latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
@@ -92,19 +92,23 @@ jobs:
 
     - name: Install dependencies
       run: uv sync --all-groups --verbose
-      timeout-minutes: 5
+      timeout-minutes: 2
 
     - name: Run tests
       run: |
         uv run xvfb-run -a pytest -v --cov=pynegative --cov-report=term | tee pytest_output.txt
+      timeout-minutes: 2
+      env:
+        QT_QPA_PLATFORM: offscreen
+        NUMBA_DISABLE_JIT: "1"
+
+    - name: format coverage report
+      run: |
         echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
         echo '```text' >> $GITHUB_STEP_SUMMARY
         # Extract only the coverage section from the output
         sed -n '/coverage: platform/,/TOTAL/p' pytest_output.txt >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
-      timeout-minutes: 10
-      env:
-        QT_QPA_PLATFORM: offscreen
 
   check-success:
     name: Check Success

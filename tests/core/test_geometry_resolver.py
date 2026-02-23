@@ -1,3 +1,5 @@
+import pynegative
+
 import cv2
 import numpy as np
 
