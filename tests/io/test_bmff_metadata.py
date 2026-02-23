@@ -1,13 +1,11 @@
-import pytest
-from unittest.mock import MagicMock, patch
-from io import BytesIO
+from unittest.mock import patch
 from pynegative.io.bmff_metadata import extract_bmff_metadata, get_exposure_info
+
 
 def test_extract_bmff_metadata(tmp_path):
     path = tmp_path / "test.cr3"
     # Create a fake file with a TIFF header "II*\0" at some offset
     content = b"random data" * 10
-    header_pos = len(content)
     content += b"II\x2a\x00" + b"fake tiff data"
     path.write_bytes(content)
 
@@ -17,6 +15,7 @@ def test_extract_bmff_metadata(tmp_path):
         tags = extract_bmff_metadata(path)
         assert tags["EXIF ISOSpeedRatings"] == 400
 
+
 def test_get_exposure_info():
     tags = {
         "EXIF ISOSpeedRatings": 100,
@@ -25,7 +24,7 @@ def test_get_exposure_info():
         "EXIF FocalLength": "24",
         "Image Make": "Sony",
         "Image Model": "A7RIII",
-        "EXIF LensModel": "FE 24-70mm"
+        "EXIF LensModel": "FE 24-70mm",
     }
     info = get_exposure_info(tags)
     assert info["iso"] == 100
@@ -35,6 +34,7 @@ def test_get_exposure_info():
     assert info["camera_make"] == "Sony"
     assert info["camera_model"] == "A7RIII"
     assert info["lens_model"] == "FE 24-70mm"
+
 
 def test_extract_bmff_metadata_error(tmp_path):
     path = tmp_path / "error.cr3"

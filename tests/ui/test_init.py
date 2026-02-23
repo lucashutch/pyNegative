@@ -1,8 +1,8 @@
 import sys
 import pytest
 from unittest.mock import MagicMock, patch
-from pathlib import Path
 from pynegative.ui import main
+
 
 def test_ui_main_help():
     # Test that --help works (it will raise SystemExit)
@@ -11,11 +11,13 @@ def test_ui_main_help():
             main()
         assert e.value.code == 0
 
+
 def test_ui_main_version():
     with patch.object(sys, "argv", ["pynegative", "--version"]):
         with pytest.raises(SystemExit) as e:
             main()
         assert e.value.code == 0
+
 
 @patch("PySide6.QtWidgets.QApplication")
 @patch("PySide6.QtWidgets.QSplashScreen")
@@ -24,7 +26,15 @@ def test_ui_main_version():
 @patch("PySide6.QtGui.QGuiApplication")
 @patch("pynegative.utils.numba_warmup.warmup_kernels")
 @patch("pynegative.io.lens_db_xml.load_database")
-def test_ui_main_flow(mock_load_db, mock_warmup, mock_qgui, mock_painter, mock_pixmap, mock_splash, mock_app):
+def test_ui_main_flow(
+    mock_load_db,
+    mock_warmup,
+    mock_qgui,
+    mock_painter,
+    mock_pixmap,
+    mock_splash,
+    mock_app,
+):
     mock_warmup.return_value = (True, 100)
 
     # Mock QPixmap to return something with a rect() method for splash.move

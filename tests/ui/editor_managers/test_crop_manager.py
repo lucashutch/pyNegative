@@ -1,9 +1,7 @@
-import pytest
-import math
-from unittest.mock import MagicMock, patch
-from PySide6 import QtCore
+from unittest.mock import MagicMock
 from PySide6.QtCore import QRectF, QObject
 from pynegative.ui.editor_managers.crop_manager import CropManager
+
 
 class MockEditor(QObject):
     def __init__(self):
@@ -14,9 +12,15 @@ class MockEditor(QObject):
         self.settings_manager = MagicMock()
         self.save_timer = MagicMock()
 
-    def _request_update_from_view(self): pass
-    def show_toast(self, msg): pass
-    def _auto_save_sidecar(self): pass
+    def _request_update_from_view(self):
+        pass
+
+    def show_toast(self, msg):
+        pass
+
+    def _auto_save_sidecar(self):
+        pass
+
 
 def test_crop_manager_toggle_crop():
     editor = MockEditor()
@@ -41,17 +45,21 @@ def test_crop_manager_toggle_crop():
     editor.view.set_crop_mode.assert_called_with(False)
     editor.image_processor.set_processing_params.assert_called()
 
+
 def test_crop_manager_rotation():
     editor = MockEditor()
     manager = CropManager(editor)
 
     manager.handle_rotation_changed(15.0)
     assert manager._pending_rotation_from_handle == 15.0
-    editor.editing_controls.set_slider_value.assert_called_with("rotation", 15.0, silent=True)
+    editor.editing_controls.set_slider_value.assert_called_with(
+        "rotation", 15.0, silent=True
+    )
 
     manager._apply_pending_rotation()
     editor.image_processor.set_processing_params.assert_called_with(rotation=15.0)
     assert manager._pending_rotation_from_handle is None
+
 
 def test_text_to_ratio():
     manager = CropManager(MockEditor())
