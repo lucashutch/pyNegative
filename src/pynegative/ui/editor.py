@@ -1,6 +1,5 @@
 import logging
 import math
-from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -10,49 +9,24 @@ from PySide6.QtCore import Qt
 from .. import core as pynegative
 from .carouselmanager import CarouselManager
 from .editingcontrols import EditingControls
-from .editor_managers.comparison_manager import ComparisonManager
-from .editor_managers.crop_manager import CropManager
-from .editor_managers.floating_ui_manager import FloatingUIManager
+from .editor_managers import (
+    ComparisonManager,
+    ContextMenuManager,
+    CropManager,
+    FloatingUIManager,
+    ShortcutManager,
+)
 from .imageprocessing import ImageProcessingPipeline
 from .loaders import RawLoader
 from .settingsmanager import SettingsManager
 from .widgets import (
     MetadataPanel,
-    StarRatingWidget,
     ZoomableGraphicsView,
     ZoomControls,
+    PreviewStarRatingWidget,
 )
 
 logger = logging.getLogger(__name__)
-
-
-class PreviewStarRatingWidget(StarRatingWidget):
-    """A larger star rating widget for preview mode with 30px stars."""
-
-    def _create_star_pixmap(self, filled):
-        size = 30
-        self.setFixedHeight(size)
-        pixmap = QtGui.QPixmap(size, size)
-        pixmap.fill(QtCore.Qt.transparent)
-        painter = QtGui.QPainter(pixmap)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-
-        font = self.font()
-        try:
-            font.setPointSize(24)
-        except Exception:
-            pass
-        painter.setFont(font)
-
-        if filled:
-            painter.setPen(QtGui.QColor("#f0c419"))
-            painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "★")
-        else:
-            painter.setPen(QtGui.QColor("#808080"))
-            painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "☆")
-
-        painter.end()
-        return pixmap
 
 
 class EditorWidget(QtWidgets.QWidget):
@@ -81,7 +55,7 @@ class EditorWidget(QtWidgets.QWidget):
         self._init_components()
         self._init_ui()
         self._setup_connections()
-        self._setup_keyboard_shortcuts()
+        self.shortcut_manager.setup_shortcuts()
 
     def _init_components(self):
         """Initialize all component instances."""
@@ -93,6 +67,8 @@ class EditorWidget(QtWidgets.QWidget):
         self.comparison_manager = ComparisonManager(self)
         self.crop_manager = CropManager(self)
         self.floating_ui_manager = FloatingUIManager(self)
+        self.shortcut_manager = ShortcutManager(self)
+        self.context_menu_manager = ContextMenuManager(self)
 
     def _init_ui(self):
         """Initialize the user interface."""
@@ -195,7 +171,9 @@ class EditorWidget(QtWidgets.QWidget):
 
         # Context menus
         self.view.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self.view.customContextMenuRequested.connect(self._show_main_photo_context_menu)
+        self.view.customContextMenuRequested.connect(
+            self.context_menu_manager.show_main_photo_context_menu
+        )
 
         self.image_processor.set_view_reference(self.view)
         self.view.zoomChanged.connect(self._request_update_from_view)
@@ -266,47 +244,12 @@ class EditorWidget(QtWidgets.QWidget):
             self._on_carousel_keyboard_navigation
         )
         self.carousel_manager.contextMenuRequested.connect(
-            self._handle_carousel_context_menu
+            self.context_menu_manager.handle_carousel_context_menu
         )
 
         self.preview_rating_widget.ratingChanged.connect(
             self._on_preview_rating_changed
         )
-
-    def _setup_keyboard_shortcuts(self):
-        QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Undo, self, self._undo)
-        QtGui.QShortcut(QtGui.QKeySequence.StandardKey.Redo, self, self._redo)
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Z"), self, self._redo)
-        QtGui.QShortcut(
-            QtGui.QKeySequence.StandardKey.Copy, self, self._handle_copy_shortcut
-        )
-        QtGui.QShortcut(
-            QtGui.QKeySequence.StandardKey.Paste, self, self._handle_paste_shortcut
-        )
-        QtGui.QShortcut(
-            QtGui.QKeySequence("F12"), self, self._toggle_performance_overlay
-        )
-        QtGui.QShortcut(QtGui.QKeySequence("F10"), self, self._cycle_denoise_mode)
-        QtGui.QShortcut(
-            QtGui.QKeySequence("U"),
-            self,
-            self.comparison_manager.comparison_btn.animateClick,
-        )
-
-        for key in [Qt.Key_1, Qt.Key_2, Qt.Key_3, Qt.Key_4, Qt.Key_5, Qt.Key_0]:
-            rating = 0 if key == Qt.Key_0 else key.value - Qt.Key_0.value
-            QtGui.QShortcut(key, self, partial(self._set_rating_by_number, rating))
-
-        nav_left = QtGui.QShortcut(Qt.Key_Left, self, self._navigate_previous)
-        nav_left.setContext(Qt.ApplicationShortcut)
-        nav_right = QtGui.QShortcut(Qt.Key_Right, self, self._navigate_next)
-        nav_right.setContext(Qt.ApplicationShortcut)
-
-        # Zoom shortcuts
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+="), self, self.view.zoom_in)
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl++"), self, self.view.zoom_in)
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+-"), self, self.view.zoom_out)
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+0"), self, self.view.reset_zoom)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -677,108 +620,6 @@ class EditorWidget(QtWidgets.QWidget):
 
     def _on_undo_state_changed(self):
         pass
-
-    def _show_main_photo_context_menu(self, pos):
-        if not self.raw_path:
-            return
-        menu = QtWidgets.QMenu(self)
-        copy_action = menu.addAction("Copy Settings")
-        copy_action.triggered.connect(
-            lambda: self.settings_manager.copy_settings_from_current(
-                self.image_processor.get_current_settings()
-            )
-        )
-        copy_action.setShortcut(QtGui.QKeySequence.StandardKey.Copy)
-        paste_action = menu.addAction("Paste Settings")
-        paste_action.triggered.connect(
-            lambda: self.settings_manager.paste_settings_to_current(
-                self.editing_controls.apply_settings
-            )
-        )
-        paste_action.setEnabled(self.settings_manager.has_clipboard_content())
-        paste_action.setShortcut(QtGui.QKeySequence.StandardKey.Paste)
-        menu.exec_(self.view.mapToGlobal(pos))
-
-    def _handle_carousel_context_menu(self, context_type, data):
-        if context_type == "carousel":
-            pos, item_path, carousel_widget = data
-            menu = QtWidgets.QMenu(self)
-            selected_paths = carousel_widget.get_selected_paths()
-            if item_path in selected_paths:
-                copy_action = menu.addAction("Copy Settings from Selected")
-                copy_action.triggered.connect(
-                    lambda: self.settings_manager.copy_settings_from_path(
-                        Path(selected_paths[0]) if selected_paths else Path(item_path)
-                    )
-                )
-                copy_action.setShortcut(QtGui.QKeySequence.StandardKey.Copy)
-            else:
-                copy_action = menu.addAction(
-                    f"Copy Settings from {Path(item_path).name}"
-                )
-                copy_action.triggered.connect(
-                    lambda: self.settings_manager.copy_settings_from_path(item_path)
-                )
-            paste_action = menu.addAction("Paste Settings to Selected")
-            paste_action.triggered.connect(
-                lambda: self.settings_manager.paste_settings_to_selected(
-                    selected_paths, self.editing_controls.apply_settings
-                )
-            )
-            paste_action.setEnabled(
-                self.settings_manager.has_clipboard_content()
-                and len(selected_paths) > 0
-            )
-            paste_action.setShortcut(QtGui.QKeySequence.StandardKey.Paste)
-            menu.addSeparator()
-            select_all_action = menu.addAction("Select All")
-            select_all_action.triggered.connect(carousel_widget.select_all_items)
-            select_all_action.setShortcut(QtGui.QKeySequence.StandardKey.SelectAll)
-            menu.exec_(carousel_widget.mapToGlobal(pos))
-
-    def _handle_copy_shortcut(self):
-        selected_paths = self.carousel_manager.get_selected_paths()
-        if len(selected_paths) > 0:
-            if self.raw_path and str(self.raw_path) in selected_paths:
-                self.settings_manager.copy_settings_from_current(
-                    self.image_processor.get_current_settings()
-                )
-            else:
-                self.settings_manager.copy_settings_from_path(Path(selected_paths[0]))
-        else:
-            self.settings_manager.copy_settings_from_current(
-                self.image_processor.get_current_settings()
-            )
-
-    def _handle_paste_shortcut(self):
-        selected_paths = self.carousel_manager.get_selected_paths()
-        if len(selected_paths) > 0:
-            self.settings_manager.paste_settings_to_selected(
-                selected_paths, self.editing_controls.apply_settings
-            )
-        else:
-            self.settings_manager.paste_settings_to_current(
-                self.editing_controls.apply_settings
-            )
-
-    def _undo(self):
-        state = self.settings_manager.undo()
-        if state:
-            self._restore_state(state)
-
-    def _redo(self):
-        state = self.settings_manager.redo()
-        if state:
-            self._restore_state(state)
-
-    def _restore_state(self, state):
-        settings = state["settings"]
-        rating = state["rating"]
-        self.editing_controls.apply_settings(settings)
-        self.image_processor.set_processing_params(**settings)
-        self._request_update_from_view()
-        self.editing_controls.set_rating(rating)
-        self.settings_manager.set_current_settings(settings, rating)
 
     def _on_unedited_pixmap_updated(self, pixmap):
         self.comparison_manager.update_pixmaps(unedited=pixmap)

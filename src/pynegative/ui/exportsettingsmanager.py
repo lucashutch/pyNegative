@@ -1,13 +1,14 @@
 from pathlib import Path
 
-from PySide6 import QtCore
+import PySide6.QtCore as QtCore
+
+from .base_settings_manager import BaseSettingsManager
 
 
-class ExportSettingsManager(QtCore.QObject):
+class ExportSettingsManager(BaseSettingsManager):
     """Manages export settings, presets, and destination configuration."""
 
     # Signals
-    settingsChanged = QtCore.Signal(dict)
     presetApplied = QtCore.Signal(str)
     presetSaved = QtCore.Signal(str)
     destinationChanged = QtCore.Signal(str)
@@ -15,7 +16,6 @@ class ExportSettingsManager(QtCore.QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.settings = QtCore.QSettings("pyNegative", "Export")
-        self._current_settings = self._get_default_settings()
         self._custom_destination = ""
         # Load persisted open_folder_on_complete setting
         self._current_settings["open_folder_on_complete"] = self.settings.value(
@@ -38,22 +38,11 @@ class ExportSettingsManager(QtCore.QObject):
             "open_folder_on_complete": False,
         }
 
-    def get_current_settings(self):
-        """Get current export settings as a dictionary."""
-        return self._current_settings.copy()
-
     def update_setting(self, key, value):
         """Update a single setting value."""
-        if key in self._current_settings:
-            self._current_settings[key] = value
-            if key == "open_folder_on_complete":
-                self.settings.setValue(key, value)
-            self.settingsChanged.emit(self._current_settings)
-
-    def update_settings(self, settings_dict):
-        """Update multiple settings at once."""
-        self._current_settings.update(settings_dict)
-        self.settingsChanged.emit(self._current_settings)
+        super().update_setting(key, value)
+        if key == "open_folder_on_complete":
+            self.settings.setValue(key, value)
 
     def load_presets(self):
         """Load all available preset names."""
@@ -137,11 +126,6 @@ class ExportSettingsManager(QtCore.QObject):
         self.settings.beginGroup("presets")
         self.settings.remove(preset_name)
         self.settings.endGroup()
-
-    def reset_to_defaults(self):
-        """Reset settings to defaults."""
-        self._current_settings = self._get_default_settings()
-        self.settingsChanged.emit(self._current_settings)
 
     def get_destination(self, use_default=True, gallery_folder=None):
         """Get export destination folder."""

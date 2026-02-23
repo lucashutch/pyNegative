@@ -2,10 +2,11 @@ from datetime import datetime
 from pathlib import Path
 
 import rawpy
-from PySide6 import QtCore
+
+from .base_settings_manager import BaseSettingsManager
 
 
-class RenameSettingsManager(QtCore.QObject):
+class RenameSettingsManager(BaseSettingsManager):
     """Manages batch renaming settings and preview generation for exports."""
 
     # Naming pattern presets
@@ -16,10 +17,6 @@ class RenameSettingsManager(QtCore.QObject):
         "Date + Sequence": "{date}_{seq:03d}",
     }
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._current_settings = self._get_default_settings()
-
     def _get_default_settings(self):
         """Get default rename settings."""
         return {
@@ -28,15 +25,6 @@ class RenameSettingsManager(QtCore.QObject):
             "prefix": "",
             "start_seq": 1,
         }
-
-    def get_current_settings(self):
-        """Get current rename settings as a dictionary."""
-        return self._current_settings.copy()
-
-    def update_setting(self, key, value):
-        """Update a single rename setting."""
-        if key in self._current_settings:
-            self._current_settings[key] = value
 
     def set_enabled(self, enabled: bool):
         """Enable or disable renaming."""
