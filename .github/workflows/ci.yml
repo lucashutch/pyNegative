@@ -95,8 +95,14 @@ jobs:
       timeout-minutes: 5
 
     - name: Run tests
-      run: uv run xvfb-run -a pytest -v
-      timeout-minutes: 5
+      run: |
+        uv run xvfb-run -a pytest -v --cov=pynegative --cov-report=term | tee pytest_output.txt
+        echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
+        echo '```text' >> $GITHUB_STEP_SUMMARY
+        # Extract only the coverage section from the output
+        sed -n '/coverage: platform/,/TOTAL/p' pytest_output.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+      timeout-minutes: 10
       env:
         QT_QPA_PLATFORM: offscreen
 
