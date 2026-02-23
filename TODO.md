@@ -16,8 +16,7 @@ This document tracks planned features, project goals, and areas for technical im
 ## Bugs
 
 - **Crop UI Sync with Viewport Rendering**: If the UI needs to support active zooming/panning while cropping, we might need to improve the floating pixmap coordinate translation (currently viewport rendering is paused while cropping).
-- **icon in alt tab**: the icon in alt tab is not the pyNegative icon, it is just a generic gear icon.
-- **Historgram is broken**: when you open the histogram it doesnt show anything.
+- **Historgram is broken**: when you open the histogram it doesnt show anything. it just says no data
 
 ## Testing Improvement Areas
 

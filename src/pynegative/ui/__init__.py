@@ -47,9 +47,14 @@ def main():
     # Note: We pass unknown args to QApplication so it can handle standard Qt flags
     app = QtWidgets.QApplication([sys.argv[0]] + unknown)
 
-    # Show Splash Screen
     # Path is relative to src/pynegative/ui/__init__.py -> go up 4 levels to reach root
     icon_path = Path(__file__).parent.parent.parent.parent / "pynegative_icon.png"
+
+    # Set Application Icon (shows in taskbar and alt-tab)
+    if icon_path.exists():
+        app.setWindowIcon(QtGui.QIcon(str(icon_path)))
+
+    # Show Splash Screen
     raw_icon = QtGui.QPixmap(str(icon_path))
 
     # Create a nice canvas for the splash screen
