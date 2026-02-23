@@ -50,17 +50,25 @@ def test_defringe_no_contrast():
     # Should be untouched because contrast is 0
     assert np.all(img == out)
 
+
 def test_apply_defringe_no_settings():
     img = np.ones((10, 10, 3), dtype=np.float32)
     settings = {}
     out = apply_defringe(img, settings)
     assert np.array_equal(img, out)
 
+
 def test_apply_defringe_with_settings():
     img = np.ones((10, 10, 3), dtype=np.float32)
-    settings = {"defringe_purple": 50, "defringe_green": 1.5, "defringe_edge": 0.05, "defringe_radius": 1.0}
+    settings = {
+        "defringe_purple": 50,
+        "defringe_green": 1.5,
+        "defringe_edge": 0.05,
+        "defringe_radius": 1.0,
+    }
     out = apply_defringe(img, settings)
     assert out.shape == (10, 10, 3)
+
 
 def test_apply_defringe_zero_threshold():
     img = np.ones((10, 10, 3), dtype=np.float32)
