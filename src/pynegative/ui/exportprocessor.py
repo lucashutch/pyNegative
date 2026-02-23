@@ -94,9 +94,9 @@ class ExportProcessor(QtCore.QRunnable):
         # 2. Get sidecar settings
         sidecar_settings = pynegative.load_sidecar(str(file_path)) or {}
 
-        from ..io.lens_resolver import resolve_lens_for_file
+        from ..io.lens_resolver import resolve_lens_profile
 
-        lens_info = resolve_lens_for_file(file_path)
+        _, lens_info = resolve_lens_profile(file_path)
 
         # Resolve vignette params for preprocess
         vig_k1, vig_k2, vig_k3 = 0.0, 0.0, 0.0

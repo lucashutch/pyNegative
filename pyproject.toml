@@ -35,6 +35,7 @@ test = [
     "pytest",
     "pytest-qt",
     "pytest-sugar>=1.1.1",
+    "pytest-cov",
 ]
 
 [project.scripts]
@@ -48,3 +49,16 @@ pynegative = "pynegative.ui:main"
 where = ["src"]
 
 [tool.setuptools_scm]
+
+[tool.coverage.run]
+source = ["pynegative"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]

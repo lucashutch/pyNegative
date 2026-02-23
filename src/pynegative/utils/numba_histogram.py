@@ -22,9 +22,9 @@ def numba_histogram_kernel(img, stride):
 
     for r in range(0, rows, stride):
         for c in range(0, cols, stride):
-            r_val = img[r, c, 0]
-            g_val = img[r, c, 1]
-            b_val = img[r, c, 2]
+            r_val = int(img[r, c, 0])
+            g_val = int(img[r, c, 1])
+            b_val = int(img[r, c, 2])
 
             hist_r[r_val] += 1
             hist_g[g_val] += 1

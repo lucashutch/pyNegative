@@ -12,3 +12,7 @@ task.md
 data/
 .ignore
 
+
+.coverage
+
+.pyNegative/

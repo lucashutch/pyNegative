@@ -1,3 +1,4 @@
+import pynegative  # noqa: F401
 import cv2
 import numpy as np
 
