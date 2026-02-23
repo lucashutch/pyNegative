@@ -11,6 +11,7 @@ from ..utils.numba_kernels import (
     nl_means_numba,
     nl_means_numba_multichannel,
     sharpen_kernel,
+    transmission_dark_channel_kernel,
 )
 
 logger = logging.getLogger(__name__)
@@ -293,13 +294,11 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
 
         # 3. Transmission map estimation
         # t(x) = 1 - omega * min_c(I_c(x) / A_c)
-        omega = 0.95 * (strength / 50.0 if strength > 1.0 else strength)
+        omega = 0.95 * strength
 
-        # Avoid division by zero in A
-        a_safe = np.maximum(atmospheric_light, 0.001)
-
-        normalized_img = img_array / a_safe
-        dark_normalized = dark_channel_kernel(normalized_img)
+        # Fused kernel: computes min(I_c / A_c) per pixel in one pass,
+        # avoiding a full HxWx3 normalized_img intermediate allocation.
+        dark_normalized = transmission_dark_channel_kernel(img_array, atmospheric_light)
 
         # Morphology (Erode) - OpenCV CPU is very fast for this
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
@@ -311,10 +310,10 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
             transmission, (kernel_size * 2 + 1, kernel_size * 2 + 1), 0
         )
 
-        transmission = np.maximum(transmission, 0.1)  # Lower bound for transmission
-
         # 4. Recover radiance
         # J(x) = (I(x) - A) / max(t(x), t0) + A
+        # Note: dehaze_recovery_kernel already clamps transmission to
+        # max(t, 0.1) internally, so no explicit lower-bound needed here.
         result = dehaze_recovery_kernel(img_array, transmission, atmospheric_light)
 
         elapsed = (time.perf_counter() - start_time) * 1000
