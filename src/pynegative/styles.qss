@@ -237,8 +237,8 @@ QPushButton {
     color: #e5e5e5;
     font-size: 14px;
     font-weight: 500;
-    padding: 10px 20px;
-    min-height: 36px;
+    padding: 4px 10px;
+    min-height: 24px;
 }
 
 QPushButton:hover {
@@ -487,8 +487,8 @@ QComboBox#ExportComboBox {
     background-color: #303030;
     border: 1px solid #404040;
     border-radius: 6px;
-    padding: 8px 12px;
-    min-height: 36px;
+    padding: 4px 10px;
+    min-height: 24px;
 }
 
 QComboBox#ExportComboBox:hover {
@@ -510,8 +510,8 @@ QLineEdit#ExportLineEdit {
     background-color: #303030;
     border: 1px solid #404040;
     border-radius: 6px;
-    padding: 8px 12px;
-    min-height: 36px;
+    padding: 4px 10px;
+    min-height: 24px;
 }
 
 QLineEdit#ExportLineEdit:focus {
@@ -523,8 +523,8 @@ QComboBox {
     background-color: #303030;
     border: 1px solid #404040;
     border-radius: 6px;
-    padding: 8px 12px;
-    min-height: 36px;
+    padding: 4px 10px;
+    min-height: 24px;
     color: #e5e5e5;
 }
 
@@ -555,9 +555,9 @@ QComboBox QAbstractItemView {
 
 /* ========== Preset Buttons ========== */
 QPushButton#SavePresetButton {
-    min-height: 30px;
+    min-height: 24px;
     font-size: 13px;
-    padding: 8px 16px;
+    padding: 4px 12px;
 }
 
 /* ========== Splitter ========== */
