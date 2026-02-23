@@ -1,0 +1,224 @@
+src/pynegative/
+├── cli/
+│   ├── download_lens_database.py
+│   ├── __init__.py
+│   └── __pycache__/
+│       ├── download_lens_database.cpython-311.pyc
+│       └── __init__.cpython-311.pyc
+├── core.py
+├── gpu/
+├── __init__.py
+├── io/
+│   ├── bmff_metadata.py
+│   ├── __init__.py
+│   ├── lens_db_xml.py
+│   ├── lens_metadata.py
+│   ├── lens_resolver.py
+│   ├── metadata.py
+│   ├── __pycache__/
+│   │   ├── bmff_metadata.cpython-311.pyc
+│   │   ├── __init__.cpython-311.pyc
+│   │   ├── lens_db_xml.cpython-311.pyc
+│   │   ├── lens_metadata.cpython-311.pyc
+│   │   ├── lens_resolver.cpython-311.pyc
+│   │   ├── metadata.cpython-311.pyc
+│   │   ├── raw.cpython-311.pyc
+│   │   └── sidecar.cpython-311.pyc
+│   ├── raw.py
+│   └── sidecar.py
+├── logic/
+├── processing/
+│   ├── constants.py
+│   ├── defringe.py
+│   ├── effects.py
+│   ├── geometry.py
+│   ├── __init__.py
+│   ├── lens.py
+│   ├── __pycache__/
+│   │   ├── constants.cpython-311.pyc
+│   │   ├── defringe.cpython-311.pyc
+│   │   ├── effects.cpython-311.pyc
+│   │   ├── geometry.cpython-311.pyc
+│   │   ├── __init__.cpython-311.pyc
+│   │   ├── lens._bilinear_sample-136.py311.1.nbc
+│   │   ├── lens._bilinear_sample-136.py311.nbi
+│   │   ├── lens.cpython-311.pyc
+│   │   ├── lens.generate_poly3_map-108.py311.1.nbc
+│   │   ├── lens.generate_poly3_map-108.py311.2.nbc
+│   │   ├── lens.generate_poly3_map-108.py311.3.nbc
+│   │   ├── lens.generate_poly3_map-108.py311.nbi
+│   │   ├── lens.generate_ptlens_map-71.py311.1.nbc
+│   │   ├── lens.generate_ptlens_map-71.py311.2.nbc
+│   │   ├── lens.generate_ptlens_map-71.py311.nbi
+│   │   ├── lens.generate_tca_maps-324.py311.1.nbc
+│   │   ├── lens.generate_tca_maps-324.py311.2.nbc
+│   │   ├── lens.generate_tca_maps-324.py311.nbi
+│   │   ├── lens._get_distortion_rescale-162.py311.1.nbc
+│   │   ├── lens._get_distortion_rescale-162.py311.nbi
+│   │   ├── lens._get_tca_rescale-174.py311.1.nbc
+│   │   ├── lens._get_tca_rescale-174.py311.nbi
+│   │   ├── lens.remap_tca_distortion_kernel-181.py311.1.nbc
+│   │   ├── lens.remap_tca_distortion_kernel-181.py311.2.nbc
+│   │   ├── lens.remap_tca_distortion_kernel-181.py311.nbi
+│   │   ├── lens.vignette_kernel-300.py311.1.nbc
+│   │   ├── lens.vignette_kernel-300.py311.2.nbc
+│   │   ├── lens.vignette_kernel-300.py311.3.nbc
+│   │   ├── lens.vignette_kernel-300.py311.nbi
+│   │   └── tonemap.cpython-311.pyc
+│   └── tonemap.py
+├── __pycache__/
+│   ├── core.cpython-311.pyc
+│   └── __init__.cpython-311.pyc
+├── styles.qss
+├── ui/
+│   ├── carouselmanager.py
+│   ├── controls/
+│   │   ├── base.py
+│   │   ├── color_controls.py
+│   │   ├── detail_controls.py
+│   │   ├── geometry_controls.py
+│   │   ├── __init__.py
+│   │   ├── lens_controls.py
+│   │   ├── __pycache__/
+│   │   │   ├── base.cpython-311.pyc
+│   │   │   ├── color_controls.cpython-311.pyc
+│   │   │   ├── detail_controls.cpython-311.pyc
+│   │   │   ├── geometry_controls.cpython-311.pyc
+│   │   │   ├── __init__.cpython-311.pyc
+│   │   │   ├── lens_controls.cpython-311.pyc
+│   │   │   └── tone_controls.cpython-311.pyc
+│   │   └── tone_controls.py
+│   ├── editingcontrols.py
+│   ├── editor_managers/
+│   │   ├── comparison_manager.py
+│   │   ├── crop_manager.py
+│   │   ├── floating_ui_manager.py
+│   │   ├── __init__.py
+│   │   └── __pycache__/
+│   │       ├── comparison_manager.cpython-311.pyc
+│   │       ├── crop_manager.cpython-311.pyc
+│   │       ├── floating_ui_manager.cpython-311.pyc
+│   │       └── __init__.cpython-311.pyc
+│   ├── editor.py
+│   ├── exportgallerymanager.py
+│   ├── exportprocessor.py
+│   ├── exportsettingsmanager.py
+│   ├── export_tab.py
+│   ├── gallery.py
+│   ├── imageprocessing.py
+│   ├── __init__.py
+│   ├── loaders.py
+│   ├── main_window.py
+│   ├── pipeline/
+│   │   ├── __init__.py
+│   │   ├── __pycache__/
+│   │   │   ├── __init__.cpython-311.pyc
+│   │   │   └── worker.cpython-311.pyc
+│   │   └── worker.py
+│   ├── __pycache__/
+│   │   ├── carouselmanager.cpython-311.pyc
+│   │   ├── editingcontrols.cpython-311.pyc
+│   │   ├── editor.cpython-311.pyc
+│   │   ├── exportgallerymanager.cpython-311.pyc
+│   │   ├── exportprocessor.cpython-311.pyc
+│   │   ├── exportsettingsmanager.cpython-311.pyc
+│   │   ├── export_tab.cpython-311.pyc
+│   │   ├── gallery.cpython-311.pyc
+│   │   ├── imageprocessing.cpython-311.pyc
+│   │   ├── __init__.cpython-311.pyc
+│   │   ├── loaders.cpython-311.pyc
+│   │   ├── main_window.cpython-311.pyc
+│   │   ├── renamepreviewdialog.cpython-311.pyc
+│   │   ├── renamesettingsmanager.cpython-311.pyc
+│   │   ├── settingsmanager.cpython-311.pyc
+│   │   └── undomanager.cpython-311.pyc
+│   ├── renamepreviewdialog.py
+│   ├── renamesettingsmanager.py
+│   ├── settingsmanager.py
+│   ├── undomanager.py
+│   └── widgets/
+│       ├── carouseldelegate.py
+│       ├── collapsiblesection.py
+│       ├── combobox.py
+│       ├── comparisonoverlay.py
+│       ├── crop_item.py
+│       ├── galleryitemdelegate.py
+│       ├── gallerylistwidget.py
+│       ├── histogram.py
+│       ├── horizontallist.py
+│       ├── __init__.py
+│       ├── metadata_panel.py
+│       ├── __pycache__/
+│       │   ├── carouseldelegate.cpython-311.pyc
+│       │   ├── collapsiblesection.cpython-311.pyc
+│       │   ├── combobox.cpython-311.pyc
+│       │   ├── comparisonoverlay.cpython-311.pyc
+│       │   ├── crop_item.cpython-311.pyc
+│       │   ├── galleryitemdelegate.cpython-311.pyc
+│       │   ├── gallerylistwidget.cpython-311.pyc
+│       │   ├── histogram.cpython-311.pyc
+│       │   ├── horizontallist.cpython-311.pyc
+│       │   ├── __init__.cpython-311.pyc
+│       │   ├── metadata_panel.cpython-311.pyc
+│       │   ├── resetableslider.cpython-311.pyc
+│       │   ├── starrating.cpython-311.pyc
+│       │   ├── toast.cpython-311.pyc
+│       │   ├── zoomablegraphicsview.cpython-311.pyc
+│       │   └── zoomcontrols.cpython-311.pyc
+│       ├── resetableslider.py
+│       ├── starrating.py
+│       ├── toast.py
+│       ├── zoomablegraphicsview.py
+│       └── zoomcontrols.py
+├── utils/
+│   ├── _numba_base.py
+│   ├── numba_color.py
+│   ├── numba_defringe.py
+│   ├── numba_dehaze.py
+│   ├── numba_denoise.py
+│   ├── numba_detail.py
+│   ├── numba_histogram.py
+│   ├── numba_kernels.py
+│   ├── numba_warmup.py
+│   └── __pycache__/
+│       ├── _numba_base.cpython-311.pyc
+│       ├── numba_color.cpython-311.pyc
+│       ├── numba_color.float32_to_uint8-189.py311.1.nbc
+│       ├── numba_color.float32_to_uint8-189.py311.nbi
+│       ├── numba_color.preprocess_kernel-5.py311.1.nbc
+│       ├── numba_color.preprocess_kernel-5.py311.nbi
+│       ├── numba_color.preprocess_kernel-7.py311.1.nbc
+│       ├── numba_color.preprocess_kernel-7.py311.2.nbc
+│       ├── numba_color.preprocess_kernel-7.py311.nbi
+│       ├── numba_color.tone_map_kernel-63.py311.1.nbc
+│       ├── numba_color.tone_map_kernel-63.py311.nbi
+│       ├── numba_color.tone_map_kernel-65.py311.1.nbc
+│       ├── numba_color.tone_map_kernel-65.py311.nbi
+│       ├── numba_defringe.cpython-311.pyc
+│       ├── numba_defringe.defringe_kernel-12.py311.1.nbc
+│       ├── numba_defringe.defringe_kernel-12.py311.nbi
+│       ├── numba_dehaze.cpython-311.pyc
+│       ├── numba_dehaze.dark_channel_kernel-6.py311.1.nbc
+│       ├── numba_dehaze.dark_channel_kernel-6.py311.nbi
+│       ├── numba_dehaze.dehaze_recovery_kernel-70.py311.1.nbc
+│       ├── numba_dehaze.dehaze_recovery_kernel-70.py311.nbi
+│       ├── numba_dehaze.transmission_dark_channel_kernel-31.py311.1.nbc
+│       ├── numba_dehaze.transmission_dark_channel_kernel-31.py311.nbi
+│       ├── numba_denoise.bilateral_kernel_yuv-33.py311.1.nbc
+│       ├── numba_denoise.bilateral_kernel_yuv-33.py311.nbi
+│       ├── numba_denoise.cpython-311.pyc
+│       ├── numba_denoise.nl_means_numba-249.py311.1.nbc
+│       ├── numba_denoise.nl_means_numba-249.py311.nbi
+│       ├── numba_denoise.nl_means_numba_multichannel-342.py311.1.nbc
+│       ├── numba_denoise.nl_means_numba_multichannel-342.py311.nbi
+│       ├── numba_detail.cpython-311.pyc
+│       ├── numba_detail.sharpen_kernel-4.py311.1.nbc
+│       ├── numba_detail.sharpen_kernel-4.py311.nbi
+│       ├── numba_histogram.cpython-311.pyc
+│       ├── numba_histogram.numba_histogram_kernel-7.py311.1.nbc
+│       ├── numba_histogram.numba_histogram_kernel-7.py311.nbi
+│       ├── numba_kernels.cpython-311.pyc
+│       └── numba_warmup.cpython-311.pyc
+└── widgets/
+
+23 directories, 199 files
