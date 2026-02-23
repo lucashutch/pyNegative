@@ -150,6 +150,10 @@ class ImageProcessingPipeline(QtCore.QObject):
     def set_histogram_enabled(self, enabled):
         self.histogram_enabled = enabled
         if enabled:
+            # Force update even if nothing else changed so that we trigger
+            # at least one worker to calculate the histogram.
+            self._current_render_state_id += 1
+            self._tile_cache.clear()
             self.request_update()
 
     def set_lens_info(self, info):

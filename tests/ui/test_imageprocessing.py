@@ -91,3 +91,28 @@ def test_shutdown(pipeline):
     pipeline.shutdown()
     assert pipeline._shutting_down
     assert not pipeline.render_timer.isActive()
+
+
+def test_set_histogram_enabled_triggers_update(pipeline):
+    # Initialize pipeline state
+    pipeline.base_img_full = MagicMock()
+    pipeline._view_ref = MagicMock()
+
+    # Simulate a "steady state" where render is done
+    pipeline._current_render_state_id = 10
+    pipeline._tile_cache = {"some_key": "done_10"}
+
+    # Mock request_update to avoid timer side effects
+    pipeline.request_update = MagicMock()
+
+    # Enable histogram
+    pipeline.set_histogram_enabled(True)
+
+    # Check if render state ID was incremented and cache cleared
+    assert pipeline._current_render_state_id > 10, (
+        "Render state ID should increment to invalidate old tiles"
+    )
+    assert len(pipeline._tile_cache) == 0, (
+        "Tile cache should be cleared to force re-render"
+    )
+    pipeline.request_update.assert_called_once()
