@@ -403,9 +403,9 @@ def apply_fused_remap(
 
 
 def calculate_histograms(img_array):
-    """Calculate and smooth RGB histograms."""
+    """Calculate and smooth RGB, YUV histograms, and a luminance waveform."""
     histograms = {}
-    for i, col in enumerate(["r", "g", "b"]):
+    for i, col in enumerate(["R", "G", "B"]):
         histWindow = img_array[:, :, i]
         hist = cv2.calcHist([histWindow], [0], None, [256], [0, 256])
 
