@@ -17,6 +17,7 @@
 - ALWAYS check linting and formatting before committing
 - NEVER commit to main or master
 - NEVER use "fixup" commits, amend the relevant commit instead
+- ALWAYS ensure you start a new feature based branch off main.
 
 ## Quick Commands
 - Always use `uv` to run commands.
