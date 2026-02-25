@@ -160,5 +160,27 @@ def test_calculate_histograms(signals):
         return_value=(np.zeros(256),) * 6,
     ):
         hist = calculate_histograms(img)
-        assert "r" in hist
-        assert len(hist["r"]) == 256
+        expected = {
+            "R",
+            "G",
+            "B",
+            "Y",
+            "U",
+            "V",
+            "waveform_R",
+            "waveform_G",
+            "waveform_B",
+            "waveform_Y",
+        }
+        assert set(hist.keys()) == expected
+        assert len(hist["R"]) == 256
+        assert hist["waveform_R"].shape == (256, 100)  # 100-col image
+        assert hist["waveform_Y"].shape == (256, 100)
+
+
+def test_calculate_histograms_waveform_wide():
+    """Waveform should downsample to 256 columns for wide images."""
+    img = np.random.randint(0, 256, (50, 500, 3), dtype=np.uint8)
+    hist = calculate_histograms(img)
+    assert hist["waveform_R"].shape == (256, 256)
+    assert hist["waveform_Y"].shape == (256, 256)

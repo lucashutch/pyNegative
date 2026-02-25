@@ -421,4 +421,45 @@ def calculate_histograms(img_array):
         h = smooth(h)
 
         histograms[col] = h
+
+    yuv_img = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
+    for i, col in enumerate(["Y", "U", "V"]):
+        histWindow = yuv_img[:, :, i]
+        hist = cv2.calcHist([histWindow], [0], None, [256], [0, 256])
+
+        h = hist.flatten()
+
+        def smooth(h):
+            return np.convolve(h, np.ones(5) / 5, mode="same")
+
+        h = smooth(h)
+        h = smooth(h)
+        h = smooth(h)
+
+        histograms[col] = h
+
+    # Waveform: per-column brightness distribution (256 levels × n_cols)
+    n_cols = 256
+    img_w = img_array.shape[1]
+    if img_w >= n_cols:
+        col_indices = np.linspace(0, img_w - 1, n_cols, dtype=np.intp)
+    else:
+        col_indices = np.arange(img_w)
+        n_cols = img_w
+
+    # Per-channel RGB waveforms
+    for ch, key in enumerate(["waveform_R", "waveform_G", "waveform_B"]):
+        sampled = img_array[:, col_indices, ch]
+        wf = np.zeros((256, n_cols), dtype=np.float32)
+        for i in range(n_cols):
+            wf[:, i] = np.bincount(sampled[:, i].ravel(), minlength=256)[:256]
+        histograms[key] = wf
+
+    # Luma waveform
+    lum = yuv_img[:, col_indices, 0]
+    wf_luma = np.zeros((256, n_cols), dtype=np.float32)
+    for i in range(n_cols):
+        wf_luma[:, i] = np.bincount(lum[:, i].ravel(), minlength=256)[:256]
+    histograms["waveform_Y"] = wf_luma
+
     return histograms
