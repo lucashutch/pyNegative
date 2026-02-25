@@ -25,6 +25,8 @@ Or manually download `scripts/install-pynegative.sh` and run: `bash install-pyne
 
 **macOS/Linux:** `bash install-pynegative.sh --silent` (or `-s`, `--yes`, `--unattended`)
 
+Note: When the installer is run non-interactively (for example piped via `curl | bash`), it will automatically update an existing pyNegative installation and print a short status message so users see progress. If the installer fails for any reason in silent/non-interactive mode, it will print a concise failure message including the exit code and the failing command.
+
 ## What It Does
 
 1. Installs uv (Python package manager) if needed
@@ -43,7 +45,7 @@ Or manually download `scripts/install-pynegative.sh` and run: `bash install-pyne
 ## Requirements
 
 - **Windows:** Windows 10+, internet connection
-- **macOS:** 10.12+, internet connection  
+- **macOS:** 10.12+, internet connection
 - **Linux:** Modern distro with curl/wget, internet connection
 
 No need to install Python or git - the single installer file handles everything, including downloading additional components automatically.
