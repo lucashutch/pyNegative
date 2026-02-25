@@ -6,7 +6,6 @@ This document tracks planned features, project goals, and areas for technical im
 
 - **Kelvin White Balance**: Map relative temperature to absolute Kelvin values based on RAW metadata.
 - **User Presets**: Allow saving and applying named adjustment presets.
-- **Selective Copy/Paste (Sync Settings)**: specific dialog to choose *which* settings to paste (e.g. WB only, or everything except Crop/Geometry/lens, apply lens profile to all photos in selection etc..)
 
 ## Performance Optimisation
 
@@ -16,7 +15,6 @@ This document tracks planned features, project goals, and areas for technical im
 ## Bugs
 
 - **Crop UI Sync with Viewport Rendering**: If the UI needs to support active zooming/panning while cropping, we might need to improve the floating pixmap coordinate translation (currently viewport rendering is paused while cropping).
-- **Historgram is broken**: when you open the histogram it doesnt show anything. it just says no data
 
 ## Testing Improvement Areas
 

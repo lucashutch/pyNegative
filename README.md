@@ -60,6 +60,8 @@ Get your photos ready for the world with a streamlined export pipeline.
 curl -fsSL https://raw.githubusercontent.com/lucashutch/pyNegative/main/scripts/install-pynegative.sh | bash
 ```
 
+Note: When run non-interactively (for example via `curl | bash`), the installer will automatically update an existing pyNegative installation and prints concise status or failure messages to help diagnose issues when running in silent mode.
+
 The installer handles all dependencies, generates icons, and creates shortcuts for you automatically. No technical knowledge required! See the [installer README](scripts/README.md) for silent mode, troubleshooting, and more.
 
 ---

@@ -5,6 +5,7 @@
 #
 
 set -e
+set -o pipefail
 
 # Configuration
 APP_NAME="pyNegative"
@@ -40,10 +41,19 @@ if [ ! -t 0 ]; then
 	SILENT=true
 fi
 
-print_info() { [ "$SILENT" = false ] && echo -e "${CYAN}$1${NC}" >&2; }
-print_success() { [ "$SILENT" = false ] && echo -e "${GREEN}$1${NC}" >&2; }
-print_error() { echo -e "${RED}$1${NC}" >&2; }
-print_warning() { [ "$SILENT" = false ] && echo -e "${YELLOW}$1${NC}" >&2; }
+print_info() { [ "$SILENT" = false ] && echo -e "${CYAN}$1${NC}" >&2 || true; }
+print_success() { [ "$SILENT" = false ] && echo -e "${GREEN}$1${NC}" >&2 || true; }
+print_error() { echo -e "${RED}$1${NC}" >&2 || true; }
+print_warning() { [ "$SILENT" = false ] && echo -e "${YELLOW}$1${NC}" >&2 || true; }
+
+# Global error handler: always print a clear failure message (even in silent mode)
+on_error() {
+	rc=$?
+	cmd="${BASH_COMMAND:-unknown}"
+	echo -e "${RED}Install failed (exit ${rc}) while running: ${cmd}${NC}" >&2
+	exit ${rc}
+}
+trap 'on_error' ERR
 
 # Check/Install uv
 check_uv() { command -v uv &>/dev/null; }
@@ -192,6 +202,15 @@ do_uninstall() {
 }
 
 show_installed_menu() {
+	if [ "$SILENT" = true ]; then
+		# Non-interactive mode (e.g. curl | bash): automatically update to latest
+		# Print a short status message even when running non-interactively so
+		# users piping the installer get visible feedback instead of a silent error.
+		>&2 echo -e "${CYAN}Non-interactive mode detected: updating pyNegative to the latest version...${NC}"
+		do_install
+		return
+	fi
+
 	echo ""
 	print_info "pyNegative is already installed."
 	echo ""
@@ -201,11 +220,6 @@ show_installed_menu() {
 	echo "  3) Uninstall pyNegative"
 	echo "  4) Cancel"
 	echo ""
-
-	if [ "$SILENT" = true ]; then
-		do_install
-		return
-	fi
 
 	read -p "Enter your choice (1-4): " choice
 	case $choice in
