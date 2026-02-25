@@ -150,6 +150,10 @@ class ImageProcessingPipeline(QtCore.QObject):
     def set_histogram_enabled(self, enabled):
         self.histogram_enabled = enabled
         if enabled:
+            # Force a fresh pass so at least one worker recomputes histogram
+            # even when all current tiles are already marked done.
+            self._current_render_state_id += 1
+            self._tile_cache.clear()
             self.request_update()
 
     def set_lens_info(self, info):
@@ -336,8 +340,13 @@ class ImageProcessingPipeline(QtCore.QObject):
                 # for this tile_key, overwriting the old geometry string pending.
                 current_state = self._tile_cache.get(tile_key)
                 if current_state == f"pending_{self._current_render_state_id}":
-                    workers_pending += 1
-                    continue
+                    # Recover orphaned pending markers (e.g. worker error path)
+                    # so tiles are never permanently skipped.
+                    if self._active_workers == 0:
+                        self._tile_cache.pop(tile_key, None)
+                    else:
+                        workers_pending += 1
+                        continue
                 elif current_state == f"done_{self._current_render_state_id}":
                     continue
 
@@ -455,8 +464,10 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     @QtCore.Slot(dict, int)
     def _on_histogram_updated(self, hist_data, request_id):
-        # Drop stale results
-        if request_id < self._current_request_id:
+        # Drop only results older than the latest rendered request.
+        # Using _current_request_id is too aggressive during rapid queueing
+        # and can discard valid histogram payloads before display.
+        if request_id < self._last_processed_id:
             return
         self.histogramUpdated.emit(hist_data)
 

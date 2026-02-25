@@ -13,8 +13,14 @@ class HistogramWidget(QtWidgets.QWidget):
         self._is_grayscale = False
 
     def set_mode(self, mode):
-        """Set display mode."""
+        """Set display mode and rebuild cached paths."""
         self.mode = mode
+        self._cached_paths = {}
+        if self.data:
+            self._prepare_paths()
+        self._waveform_pixmap = None
+        if self.data and mode in ("Waveform (RGB)", "Waveform (Luma)"):
+            self._prepare_waveform()
         self.update()
 
     def _check_grayscale(self):
@@ -39,6 +45,10 @@ class HistogramWidget(QtWidgets.QWidget):
         if self.data:
             self._prepare_paths()
 
+        self._waveform_pixmap = None
+        if self.data and self.mode in ("Waveform (RGB)", "Waveform (Luma)"):
+            self._prepare_waveform()
+
         self.update()
 
     def _prepare_paths(self):
@@ -61,14 +71,78 @@ class HistogramWidget(QtWidgets.QWidget):
             lum = (self.data["R"] + self.data["G"] + self.data["B"]) / 3.0
             self._cached_paths["L"] = self._create_path(lum)
 
+    @staticmethod
+    def _normalise_waveform(wf):
+        """Flip, normalise with aggressive power-curve scaling for bright display."""
+        wf = wf[::-1].copy()
+        max_val = wf.max()
+        if max_val == 0:
+            max_val = 1.0
+        # Power curve 0.2 brings dim regions way up; much brighter than 0.4
+        return np.power(wf / max_val, 0.2)
+
+    def _prepare_waveform(self):
+        """Build a QPixmap from per-channel or luma waveform arrays."""
+        if self.mode == "Waveform (Luma)":
+            wf_y = self.data.get("waveform_Y")
+            if wf_y is None:
+                return
+            norm = self._normalise_waveform(wf_y)
+            h, w = norm.shape
+            rgba = np.zeros((h, w, 4), dtype=np.uint8)
+            # Scale luminance to 100–255 range for bright display
+            val = (100 + norm * 155).astype(np.uint8)
+            rgba[:, :, 0] = val
+            rgba[:, :, 1] = val
+            rgba[:, :, 2] = val
+            # Alpha based on intensity: opaque only where waveform data exists
+            rgba[:, :, 3] = (norm * 255).astype(np.uint8)
+        else:
+            # RGB waveform — overlay R, G, B with bright colors
+            wf_r = self.data.get("waveform_R")
+            wf_g = self.data.get("waveform_G")
+            wf_b = self.data.get("waveform_B")
+            if wf_r is None or wf_g is None or wf_b is None:
+                return
+            nr = self._normalise_waveform(wf_r)
+            ng = self._normalise_waveform(wf_g)
+            nb = self._normalise_waveform(wf_b)
+            h, w = nr.shape
+            rgba = np.zeros((h, w, 4), dtype=np.uint8)
+            # Scale channels to 80–255 range for bright display
+            rgba[:, :, 0] = (80 + nr * 175).astype(np.uint8)
+            rgba[:, :, 1] = (80 + ng * 175).astype(np.uint8)
+            rgba[:, :, 2] = (80 + nb * 175).astype(np.uint8)
+            # Alpha based on max channel intensity: opaque only where waveform data exists
+            combined = np.maximum(nr, np.maximum(ng, nb))
+            rgba[:, :, 3] = (combined * 255).astype(np.uint8)
+
+        qimg = QtGui.QImage(rgba.data, w, h, 4 * w, QtGui.QImage.Format_RGBA8888)
+        self._waveform_rgba = rgba  # prevent GC
+        self._waveform_pixmap = QtGui.QPixmap.fromImage(qimg)
+
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
-        # Using Antialiasing is fine for paths, but we can toggle it if needed
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
 
         painter.fillRect(self.rect(), QtGui.QColor("#1e1e1e"))
 
-        if not self.data or not hasattr(self, "_cached_paths"):
+        if not self.data:
+            painter.setPen(QtGui.QColor("#808080"))
+            painter.drawText(self.rect(), QtCore.Qt.AlignCenter, "No Data")
+            return
+
+        # Waveform mode: draw pre-rendered pixmap scaled to widget
+        if self.mode in ("Waveform (RGB)", "Waveform (Luma)"):
+            pm = getattr(self, "_waveform_pixmap", None)
+            if pm and not pm.isNull():
+                painter.drawPixmap(self.rect(), pm)
+            else:
+                painter.setPen(QtGui.QColor("#808080"))
+                painter.drawText(self.rect(), QtCore.Qt.AlignCenter, "No Data")
+            return
+
+        if not self._cached_paths:
             painter.setPen(QtGui.QColor("#808080"))
             painter.drawText(self.rect(), QtCore.Qt.AlignCenter, "No Data")
             return

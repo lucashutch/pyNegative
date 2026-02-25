@@ -394,8 +394,15 @@ class ImageProcessorWorker(QtCore.QRunnable):
         bg_lowres_pix = None
         if self.calculate_lowres:
             if is_viewport_only:
-                low_scale = 0.0625
-                low_img = self.tiers.get(low_scale)
+                # Pick the smallest available tier for lowres background / histogram.
+                # The 0.0625 tier only exists for >=40MP images; fall back gracefully.
+                low_scale = None
+                low_img = None
+                for s in sorted(self.tiers.keys()):
+                    if self.tiers[s] is not None:
+                        low_scale = s
+                        low_img = self.tiers[s]
+                        break
                 if low_img is not None:
                     low_h, low_w = low_img.shape[:2]
                     low_vig_params = resolve_vignette_params(
@@ -456,6 +463,12 @@ class ImageProcessorWorker(QtCore.QRunnable):
                         low_uint8.data, lw, lh, 3 * lw, QtGui.QImage.Format_RGB888
                     )
                     bg_lowres_pix = QtGui.QPixmap.fromImage(qimg_low)
+                else:
+                    # No lowres tier available yet — compute histogram from
+                    # the processed tile so the widget doesn't stay empty.
+                    if self.calculate_histogram:
+                        hist_data = calculate_histograms(img_uint8)
+                        self.signals.histogramUpdated.emit(hist_data, self.request_id)
             else:
                 if self.calculate_histogram:
                     hist_data = calculate_histograms(img_uint8)

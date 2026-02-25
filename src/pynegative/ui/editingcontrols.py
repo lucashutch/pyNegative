@@ -74,7 +74,9 @@ class EditingControls(QtWidgets.QWidget):
         self.histogram_section.add_widget(self.histogram_widget)
 
         self.hist_mode_combo = QtWidgets.QComboBox()
-        self.hist_mode_combo.addItems(["Auto", "Luminance", "RGB", "YUV"])
+        self.hist_mode_combo.addItems(
+            ["Auto", "Luminance", "RGB", "YUV", "Waveform (RGB)", "Waveform (Luma)"]
+        )
         self.hist_mode_combo.currentTextChanged.connect(self._on_hist_mode_changed)
         self.histogram_section.add_widget(self.hist_mode_combo)
 

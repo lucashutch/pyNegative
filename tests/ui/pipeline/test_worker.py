@@ -35,14 +35,13 @@ def test_tier_generator_worker(signals):
 def test_image_processor_worker_update_preview_viewport(signals):
     img = np.zeros((100, 100, 3), dtype=np.float32)
     worker = ImageProcessorWorker(
-        signals, img, {0.5: img, 1.0: img}, {"exposure": 1.0}, 1
+        signals, img, {0.125: img, 0.5: img, 1.0: img}, {"exposure": 1.0}, 1
     )
     worker.target_on_screen_width = 100
     worker.calculate_lowres = True
     worker.calculate_histogram = True
     worker.zoom_scale = 1.0
     worker.visible_scene_rect = (10, 10, 20, 20)
-    worker.tiers[0.0625] = np.zeros((10, 10, 3), dtype=np.float32)
 
     with (
         patch(
@@ -152,6 +151,48 @@ def test_apply_fused_remap_affine(signals):
     assert result.shape == (100, 100, 3)
 
 
+def test_histogram_emitted_without_0625_tier(signals):
+    """Histogram must be computed even when 0.0625 tier is absent."""
+    img = np.zeros((100, 100, 3), dtype=np.float32)
+    tiers = {0.125: np.zeros((12, 12, 3), dtype=np.float32), 0.5: img}
+    worker = ImageProcessorWorker(signals, img, tiers, {"exposure": 1.0}, 1)
+    worker.target_on_screen_width = 100
+    worker.calculate_lowres = True
+    worker.calculate_histogram = True
+    worker.zoom_scale = 1.0
+    worker.visible_scene_rect = (10, 10, 20, 20)
+
+    with (
+        patch(
+            "pynegative.ui.pipeline.worker.pynegative.apply_preprocess",
+            return_value=img,
+        ),
+        patch(
+            "pynegative.ui.pipeline.worker.pynegative.apply_tone_map",
+            return_value=(img, None),
+        ),
+        patch(
+            "pynegative.ui.pipeline.worker.pynegative.apply_defringe", return_value=img
+        ),
+        patch(
+            "pynegative.ui.pipeline.worker.pynegative.float32_to_uint8",
+            return_value=np.zeros((10, 10, 3), dtype=np.uint8),
+        ),
+        patch("PySide6.QtGui.QImage"),
+        patch("PySide6.QtGui.QPixmap.fromImage"),
+        patch(
+            "pynegative.ui.pipeline.worker.calculate_histograms",
+            return_value={"R": [1]},
+        ) as mock_hist,
+        patch("pynegative.ui.pipeline.worker.process_denoise_stage", return_value=img),
+        patch("pynegative.ui.pipeline.worker.process_heavy_stage", return_value=img),
+        patch("pynegative.ui.pipeline.worker.apply_fused_remap", return_value=img),
+    ):
+        worker._update_preview()
+        mock_hist.assert_called()
+        signals.histogramUpdated.emit.assert_called()
+
+
 def test_calculate_histograms(signals):
     img = np.zeros((100, 100, 3), dtype=np.uint8)
 
@@ -160,5 +201,27 @@ def test_calculate_histograms(signals):
         return_value=(np.zeros(256),) * 6,
     ):
         hist = calculate_histograms(img)
-        assert "r" in hist
-        assert len(hist["r"]) == 256
+        expected = {
+            "R",
+            "G",
+            "B",
+            "Y",
+            "U",
+            "V",
+            "waveform_R",
+            "waveform_G",
+            "waveform_B",
+            "waveform_Y",
+        }
+        assert set(hist.keys()) == expected
+        assert len(hist["R"]) == 256
+        assert hist["waveform_R"].shape == (256, 100)  # 100-col image
+        assert hist["waveform_Y"].shape == (256, 100)
+
+
+def test_calculate_histograms_waveform_wide():
+    """Waveform should downsample to 256 columns for wide images."""
+    img = np.random.randint(0, 256, (50, 500, 3), dtype=np.uint8)
+    hist = calculate_histograms(img)
+    assert hist["waveform_R"].shape == (256, 256)
+    assert hist["waveform_Y"].shape == (256, 256)
