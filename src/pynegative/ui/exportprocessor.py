@@ -141,7 +141,7 @@ class ExportProcessor(QtCore.QRunnable):
                 img,
                 luma_strength=l_str,
                 chroma_strength=c_str,
-                method=sidecar_settings.get("denoise_method", "High Quality"),
+                method=sidecar_settings.get("denoise_method", "Bilateral"),
                 zoom=1.0,
             )
 
