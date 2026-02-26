@@ -29,6 +29,10 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.render_timer = QtCore.QTimer()
         self.render_timer.setSingleShot(True)
         self.render_timer.timeout.connect(self._on_render_timer_timeout)
+        self._lowres_idle_timer = QtCore.QTimer()
+        self._lowres_idle_timer.setSingleShot(True)
+        self._lowres_idle_timer.timeout.connect(self._on_lowres_idle_timeout)
+        self._lowres_idle_ms = 500
         self._render_pending = False
         self._active_workers = 0
         self._shutting_down = False
@@ -40,7 +44,6 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._processing_params = {}
         self._last_heavy_adjusted = "de_haze"
         self._view_ref = None
-        self.perf_start_time = 0
         self.histogram_enabled = False
         self.lens_info = None
 
@@ -68,6 +71,17 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._dehaze_atmos_light = None
         self._dehaze_atmos_settings_id = -1
 
+        # ROI render cache: list of recent renders (newest first, max _CACHE_SIZE).
+        # On cache hit, crop the stored pixmap instead of launching a worker.
+        _CACHE_SIZE = 16
+        self._render_cache: list = []
+        self._cache_size = _CACHE_SIZE
+        self._last_queued_scale = 1.0
+        self._defer_lowres_until_idle = False
+
+        # Per-request perf start times so concurrent renders don't overwrite each other.
+        self._perf_start_times: dict[int, float] = {}
+
     def set_image(self, img_array):
         self.base_img_full = img_array
         self._unedited_img_full = img_array
@@ -81,6 +95,10 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._dehaze_atmos_light = None
         self._dehaze_atmos_settings_id = -1
         self._last_roi_signature = None
+        self._render_cache = []
+        self._perf_start_times = {}
+        self._defer_lowres_until_idle = False
+        self._lowres_idle_timer.stop()
 
         if img_array is not None:
             h, w = img_array.shape[:2]
@@ -114,6 +132,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             # We just request a full update so the background renderer uses the new better tier.
             self._current_render_state_id += 1
             self._last_roi_signature = None
+            self._render_cache = []
             self.request_update()
 
     def set_view_reference(self, view):
@@ -154,6 +173,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             # even when all current tiles are already marked done.
             self._current_render_state_id += 1
             self._last_roi_signature = None
+            self._render_cache = []
             self.request_update()
 
     def set_lens_info(self, info):
@@ -163,21 +183,39 @@ class ImageProcessingPipeline(QtCore.QObject):
 
     def set_processing_params(self, **kwargs):
         heavy_keys = {"de_haze", "denoise_luma", "denoise_chroma", "sharpen_value"}
+        geometry_keys = {
+            "rotation",
+            "crop",
+            "flip_h",
+            "flip_v",
+            "lens_distortion",
+            "lens_ca",
+            "lens_autocrop",
+            "lens_enabled",
+        }
 
         changed = False
+        geometry_changed = False
         for k, v in kwargs.items():
             if self._processing_params.get(k) != v:
                 self._processing_params[k] = v
                 changed = True
                 if k in heavy_keys:
                     self._last_heavy_adjusted = k
+                if k in geometry_keys:
+                    geometry_changed = True
 
         if changed:
-            # Eagerly invalidate in-flight workers so their stale results
-            # are dropped when they complete, preventing mixed-settings tiles.
-            self._current_render_state_id += 1
+            # Keep render state stable for pure settings drags so intermediate
+            # worker results can still be displayed while sliders move.
+            # Settings state still advances to invalidate ROI cache entries.
+            if geometry_changed:
+                self._current_render_state_id += 1
             self._current_settings_state_id += 1
             self._last_roi_signature = None
+            self._render_cache = []
+            self._defer_lowres_until_idle = True
+            self._lowres_idle_timer.start(self._lowres_idle_ms)
             self.request_update()
 
     def get_current_settings(self):
@@ -200,7 +238,14 @@ class ImageProcessingPipeline(QtCore.QObject):
         """Stop all pending work gracefully before app close."""
         self._shutting_down = True
         self.render_timer.stop()
+        self._lowres_idle_timer.stop()
         self._render_pending = False
+
+    def _on_lowres_idle_timeout(self):
+        if self._shutting_down or self.base_img_full is None:
+            return
+        self._defer_lowres_until_idle = False
+        self.request_update()
 
     def _on_render_timer_timeout(self):
         self._process_pending_update()
@@ -215,7 +260,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             return
 
         self._render_pending = False
-        self.perf_start_time = time.perf_counter()
+        perf_queue_start = time.perf_counter()
 
         # Capture viewport state in UI thread
         zoom_scale = self._view_ref.transform().m11()
@@ -238,10 +283,26 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._last_is_cropping = is_cropping
 
         if settings_changed or zoom_changed or fit_crop_changed:
-            self._current_render_state_id += 1
+            if zoom_changed or fit_crop_changed:
+                self._current_render_state_id += 1
             self._last_settings = current_settings
             self._last_requested_zoom = zoom_scale
             self._last_roi_signature = None
+
+            # Only drop the cache when tier changes or settings/geometry change.
+            # A zoom change within the same tier leaves cached pixmaps valid
+            # because the pixmap-to-scene-coord scale is tier-based, not zoom-based.
+            if settings_changed or fit_crop_changed:
+                self._render_cache = []
+            elif zoom_changed:
+                new_tier = 1.0
+                if zoom_scale < 1.0:
+                    for s in sorted(self.tiers.keys()) + [1.0]:
+                        if s >= zoom_scale:
+                            new_tier = s
+                            break
+                if new_tier != self._last_queued_scale:
+                    self._render_cache = []
 
         if settings_changed or fit_crop_changed:
             self._current_settings_state_id += 1
@@ -278,6 +339,67 @@ class ImageProcessingPipeline(QtCore.QObject):
         if roi_rect.width() <= 0 or roi_rect.height() <= 0:
             return
 
+        # ROI cache: iterate recent renders (newest first) and serve a crop if the
+        # new viewport falls within a previously rendered region at the same settings.
+        rx, ry, rw, rh = (
+            roi_rect.x(),
+            roi_rect.y(),
+            roi_rect.width(),
+            roi_rect.height(),
+        )
+        for entry in self._render_cache:
+            if entry["settings_id"] != self._current_settings_state_id:
+                continue
+            cx, cy, cw, ch = entry["scene_rect"]
+            # Cache hits must be fully covered by the cached scene rect.
+            if rx >= cx and ry >= cy and rx + rw <= cx + cw and ry + rh <= cy + ch:
+                pix = entry["pixmap"]
+                pix_w = pix.width()
+                pix_h = pix.height()
+                if pix_w <= 0 or pix_h <= 0 or cw <= 0 or ch <= 0:
+                    continue
+
+                # Map scene-space ROI to pixmap-space via rect ratios.
+                src_x = int(round((rx - cx) * pix_w / cw))
+                src_y = int(round((ry - cy) * pix_h / ch))
+                src_w = int(round(rw * pix_w / cw))
+                src_h = int(round(rh * pix_h / ch))
+
+                src_x = max(0, min(pix_w - 1, src_x))
+                src_y = max(0, min(pix_h - 1, src_y))
+                src_w = max(1, min(pix_w - src_x, src_w))
+                src_h = max(1, min(pix_h - src_y, src_h))
+
+                cropped = pix.copy(src_x, src_y, src_w, src_h)
+                logger.debug(f"🗃️  Cache hit | ROI {rw}x{rh} within cached {cw}x{ch}")
+                self._last_roi_signature = (
+                    rx,
+                    ry,
+                    rw,
+                    rh,
+                    round(zoom_scale, 3),
+                    int(is_fitting),
+                    int(is_cropping),
+                    self._current_settings_state_id,
+                )
+                self.previewUpdated.emit(
+                    cropped,
+                    entry["full_w"],
+                    entry["full_h"],
+                    entry["rotation"],
+                    (rx, ry, rw, rh),
+                    None,
+                    None,
+                    False,
+                )
+                return
+
+        # Never queue a second worker while one is already in-flight.
+        # The completion handler will re-schedule via _render_pending if needed.
+        if self._active_workers > 0:
+            self._render_pending = True
+            return
+
         roi_signature = (
             roi_rect.x(),
             roi_rect.y(),
@@ -288,7 +410,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             int(is_cropping),
             self._current_settings_state_id,
         )
-        if roi_signature == self._last_roi_signature and self._active_workers > 0:
+        if roi_signature == self._last_roi_signature:
             return
         self._last_roi_signature = roi_signature
 
@@ -303,6 +425,8 @@ class ImageProcessingPipeline(QtCore.QObject):
                     selected_scale = scale
                     break
 
+        self._last_queued_scale = selected_scale
+
         # Prevent 100% full-resolution processing queues when zoomed out drastically during initial file load
         # Wait for any async scaled tiers to become available before processing grid chunks.
         if zoom_scale <= 0.5 and selected_scale == 1.0 and len(self.tiers) == 0:
@@ -310,8 +434,6 @@ class ImageProcessingPipeline(QtCore.QObject):
                 f"Delaying worker threads: awaiting async downscale tiers for zoom ({zoom_scale:.4f})."
             )
             return
-
-        workers_queued = 0
 
         # Pre-compute dehaze atmospheric light from smallest available tier
         # so every tile uses the same value (prevents per-tile colour tints).
@@ -355,23 +477,44 @@ class ImageProcessingPipeline(QtCore.QObject):
             ),
             tile_key=None,
             render_state_id=self._current_render_state_id,
-            calculate_lowres=True,
+            calculate_lowres=not self._defer_lowres_until_idle,
             settings_state_id=self._current_settings_state_id,
             dehaze_atmospheric_light=atmos_light,
         )
-        workers_queued += 1
         self._active_workers += 1
+        self._perf_start_times[self._current_request_id] = perf_queue_start
         self.thread_pool.start(worker)
 
         v_w = self._view_ref.viewport().rect().width()
         v_h = self._view_ref.viewport().rect().height()
 
-        logger.info(
-            f"Viewport: {v_w}x{v_h} | Zoom Scale: {zoom_scale:.4f} | Tier: {selected_scale} | ROI: ({roi_rect.x()}, {roi_rect.y()}, {roi_rect.width()}, {roi_rect.height()})"
+        perf_schedule_time = (time.perf_counter() - perf_queue_start) * 1000
+        roi_pixels = roi_rect.width() * roi_rect.height()
+        # Compare ROI area against the expected visible scene area (viewport mapped through zoom).
+        # At zoom > 1 the scene area is smaller than screen pixels, so we compare in scene-space.
+        scene_viewport_px = (v_w * v_h) / max(zoom_scale * zoom_scale, 1e-9)
+        overscan_pct = (
+            (roi_pixels - scene_viewport_px) / scene_viewport_px * 100
+            if scene_viewport_px > 0
+            else 0
         )
 
-    def _measure_and_emit_perf(self):
-        elapsed_ms = (time.perf_counter() - self.perf_start_time) * 1000
+        logger.info(
+            f"🎨 Render Start | Viewport: {v_w}x{v_h} | "
+            f"ROI: {roi_rect.width()}x{roi_rect.height()} (+{overscan_pct:.0f}% overscan) | "
+            f"Zoom: {zoom_scale:.3f} | Tier: {selected_scale} | Schedule: {perf_schedule_time:.1f}ms"
+        )
+
+    def _measure_and_emit_perf(self, request_id: int):
+        start = self._perf_start_times.pop(request_id, None)
+        if start is None:
+            return
+        # Evict start times for older requests that were dropped (stale).
+        stale = [k for k in self._perf_start_times if k < request_id]
+        for k in stale:
+            del self._perf_start_times[k]
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        logger.info(f"✅ Render Complete | Total: {elapsed_ms:.1f}ms")
         self.performanceMeasured.emit(elapsed_ms)
 
     @QtCore.Slot(QtGui.QPixmap, int, int, float, object, object, int, object, int, int)
@@ -422,8 +565,21 @@ class ImageProcessingPipeline(QtCore.QObject):
             clear_tiles,
         )
 
+        if visible_scene_rect is not None:
+            entry = {
+                "pixmap": pix_bg,
+                "scene_rect": visible_scene_rect,
+                "scale": self._last_queued_scale,
+                "settings_id": settings_state_id,
+                "full_w": full_w,
+                "full_h": full_h,
+                "rotation": rotation,
+            }
+            self._render_cache.insert(0, entry)
+            del self._render_cache[self._cache_size :]
+
         self.editedPixmapUpdated.emit(pix_bg)
-        self._measure_and_emit_perf()
+        self._measure_and_emit_perf(request_id)
 
         if self._render_pending and not self.render_timer.isActive():
             self.render_timer.start(5 if self._active_workers == 0 else 30)

@@ -47,11 +47,69 @@ def test_get_unedited_pixmap(pipeline):
 
 
 def test_set_processing_params(pipeline):
+    pipeline._current_render_state_id = 7
+    pipeline._current_settings_state_id = 3
+
     with patch.object(pipeline, "request_update") as mock_req:
         pipeline.set_processing_params(exposure=1.5, de_haze=10)
         assert pipeline._processing_params["exposure"] == 1.5
         assert pipeline._last_heavy_adjusted == "de_haze"
+        assert pipeline._current_render_state_id == 7
+        assert pipeline._current_settings_state_id == 4
+        assert pipeline._defer_lowres_until_idle is True
         mock_req.assert_called()
+
+
+def test_set_processing_params_geometry_bumps_render_state(pipeline):
+    pipeline._current_render_state_id = 11
+    pipeline._current_settings_state_id = 5
+
+    with patch.object(pipeline, "request_update") as mock_req:
+        pipeline.set_processing_params(rotation=1.5)
+        assert pipeline._current_render_state_id == 12
+        assert pipeline._current_settings_state_id == 6
+        mock_req.assert_called_once()
+
+
+def test_lowres_deferred_while_settings_are_changing(pipeline):
+    pipeline.base_img_full = np.zeros((100, 100, 3), dtype=np.float32)
+    pipeline._processing_params = {}
+    pipeline._last_settings = {}
+    pipeline._last_requested_zoom = 1.0
+    pipeline._last_is_fitting = False
+    pipeline._last_is_cropping = False
+    pipeline._defer_lowres_until_idle = True
+
+    view = MagicMock()
+    view._is_fitting = False
+    view.transform.return_value.m11.return_value = 1.0
+    view.viewport.return_value.size.return_value = QtCore.QSize(200, 200)
+    view.viewport.return_value.rect.return_value = QtCore.QRect(0, 0, 200, 200)
+    view._crop_item.isVisible.return_value = False
+    view.mapToScene.return_value.boundingRect.return_value = QtCore.QRectF(
+        0, 0, 200, 200
+    )
+    view.sceneRect.return_value = QtCore.QRectF(0, 0, 200, 200)
+
+    pipeline.set_view_reference(view)
+    pipeline._render_pending = True
+
+    with patch("pynegative.ui.imageprocessing.ImageProcessorWorker") as mock_worker:
+        pipeline._process_pending_update()
+        mock_worker.assert_called_once()
+        kwargs = mock_worker.call_args.kwargs
+        assert kwargs["calculate_lowres"] is False
+
+
+def test_lowres_idle_timeout_reenables_lowres_and_requests_update(pipeline):
+    pipeline.base_img_full = np.zeros((10, 10, 3), dtype=np.float32)
+    pipeline._defer_lowres_until_idle = True
+
+    with patch.object(pipeline, "request_update") as mock_req:
+        pipeline._on_lowres_idle_timeout()
+
+    assert pipeline._defer_lowres_until_idle is False
+    mock_req.assert_called_once()
 
 
 def test_process_pending_update(pipeline):
@@ -193,3 +251,101 @@ def test_on_histogram_updated_drops_old_request(pipeline):
     pipeline._on_histogram_updated(payload, 9)
 
     mock_slot.assert_not_called()
+
+
+def test_roi_cache_hit_uses_rect_ratio_mapping_not_scale(pipeline):
+    pipeline.base_img_full = np.zeros((1200, 2000, 3), dtype=np.float32)
+    pipeline._processing_params = {}
+    pipeline._last_settings = {}
+    pipeline._last_requested_zoom = 1.0
+    pipeline._last_is_fitting = False
+    pipeline._last_is_cropping = False
+    pipeline._current_settings_state_id = 1
+
+    view = MagicMock()
+    view._is_fitting = False
+    view.transform.return_value.m11.return_value = 1.0
+    view.viewport.return_value.size.return_value = QtCore.QSize(100, 50)
+    view.viewport.return_value.rect.return_value = QtCore.QRect(0, 0, 100, 50)
+    view._crop_item.isVisible.return_value = False
+    view.mapToScene.return_value.boundingRect.return_value = QtCore.QRectF(
+        100, 200, 100, 50
+    )
+    view.sceneRect.return_value = QtCore.QRectF(0, 0, 2000, 1200)
+    pipeline.set_view_reference(view)
+
+    cached_pix = QtGui.QPixmap(480, 240)
+
+    pipeline._render_cache = [
+        {
+            "pixmap": cached_pix,
+            "scene_rect": (80, 190, 240, 120),
+            "scale": 3.0,
+            "settings_id": 1,
+            "full_w": 2000,
+            "full_h": 1200,
+            "rotation": 0.0,
+        }
+    ]
+
+    preview_slot = MagicMock()
+    pipeline.previewUpdated.connect(preview_slot)
+    pipeline._render_pending = True
+
+    with patch("pynegative.ui.imageprocessing.ImageProcessorWorker") as mock_worker:
+        pipeline._process_pending_update()
+        mock_worker.assert_not_called()
+
+    preview_slot.assert_called_once()
+    args = preview_slot.call_args[0]
+    assert isinstance(args[0], QtGui.QPixmap)
+    assert args[0].width() == 240
+    assert args[0].height() == 120
+    assert args[4] == (90, 195, 120, 60)
+
+
+def test_roi_cache_does_not_hit_when_roi_outside_cached_scene_rect(pipeline):
+    pipeline.base_img_full = np.zeros((1200, 2000, 3), dtype=np.float32)
+    pipeline._processing_params = {}
+    pipeline._last_settings = {}
+    pipeline._last_requested_zoom = 1.0
+    pipeline._last_is_fitting = False
+    pipeline._last_is_cropping = False
+    pipeline._current_settings_state_id = 1
+    pipeline._active_workers = 0
+
+    view = MagicMock()
+    view._is_fitting = False
+    view.transform.return_value.m11.return_value = 1.0
+    view.viewport.return_value.size.return_value = QtCore.QSize(100, 50)
+    view.viewport.return_value.rect.return_value = QtCore.QRect(0, 0, 100, 50)
+    view._crop_item.isVisible.return_value = False
+    view.mapToScene.return_value.boundingRect.return_value = QtCore.QRectF(
+        70, 200, 100, 50
+    )
+    view.sceneRect.return_value = QtCore.QRectF(0, 0, 2000, 1200)
+    pipeline.set_view_reference(view)
+
+    cached_pix = MagicMock(spec=QtGui.QPixmap)
+    cached_pix.width.return_value = 480
+    cached_pix.height.return_value = 240
+    pipeline._render_cache = [
+        {
+            "pixmap": cached_pix,
+            "scene_rect": (80, 190, 240, 120),
+            "hit_rect": (0, 0, 2000, 1200),
+            "scale": 1.0,
+            "settings_id": 1,
+            "full_w": 2000,
+            "full_h": 1200,
+            "rotation": 0.0,
+        }
+    ]
+
+    pipeline._render_pending = True
+
+    with patch("pynegative.ui.imageprocessing.ImageProcessorWorker") as mock_worker:
+        pipeline._process_pending_update()
+        mock_worker.assert_called_once()
+
+    cached_pix.copy.assert_not_called()
