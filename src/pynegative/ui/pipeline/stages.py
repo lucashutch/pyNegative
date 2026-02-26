@@ -1,7 +1,77 @@
+import threading
+from collections import OrderedDict
+
 import cv2
 import numpy as np
 from ... import core as pynegative
 from ...processing.geometry import GeometryResolver
+
+
+class FusedGeometryCache:
+    def __init__(self, max_entries: int = 8):
+        self._cache = OrderedDict()
+        self._lock = threading.Lock()
+        self._max_entries = max_entries
+
+    def get(self, key):
+        with self._lock:
+            value = self._cache.get(key)
+            if value is not None:
+                self._cache.move_to_end(key)
+            return value
+
+    def set(self, key, value):
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            self._cache[key] = value
+            if len(self._cache) > self._max_entries:
+                self._cache.popitem(last=False)
+
+    def clear(self):
+        with self._lock:
+            self._cache.clear()
+
+
+_FUSED_GEOMETRY_CACHE = FusedGeometryCache()
+
+
+def _round_opt(value, digits=6):
+    if value is None:
+        return None
+    return round(float(value), digits)
+
+
+def _normalize_crop(crop_val):
+    if not crop_val:
+        return None
+    return tuple(_round_opt(v) for v in crop_val)
+
+
+def _lens_info_signature(lens_info):
+    if not lens_info:
+        return None
+
+    dist = lens_info.get("distortion") or lens_info.get("params") or {}
+    dist_sig = (
+        dist.get("model", ""),
+        _round_opt(dist.get("a", 0.0)),
+        _round_opt(dist.get("b", 0.0)),
+        _round_opt(dist.get("c", 0.0)),
+        _round_opt(dist.get("k1", 0.0)),
+    )
+
+    tca = lens_info.get("tca") or {}
+    tca_sig = (
+        _round_opt(tca.get("vr0", 1.0)),
+        _round_opt(tca.get("vr1", 0.0)),
+        _round_opt(tca.get("vr2", 0.0)),
+        _round_opt(tca.get("vb0", 1.0)),
+        _round_opt(tca.get("vb1", 0.0)),
+        _round_opt(tca.get("vb2", 0.0)),
+    )
+
+    return dist_sig, tca_sig
 
 
 def process_denoise_stage(img, res_key, heavy_params, zoom_scale, preprocess_key=None):
@@ -159,6 +229,28 @@ def get_fused_geometry(
     Each element in list_of_maps is (map_x, map_y).
     If no maps, list_of_maps contains only [M].
     """
+    cache_key = None
+    if M_override is None and out_size_override is None:
+        cache_key = (
+            int(w_src),
+            int(h_src),
+            _round_opt(rotate_val),
+            _normalize_crop(crop_val),
+            bool(flip_h),
+            bool(flip_v),
+            _round_opt(ts_roi),
+            tuple(roi_offset) if roi_offset else None,
+            tuple(full_size) if full_size else None,
+            bool(settings.get("lens_enabled", True)),
+            _round_opt(settings.get("lens_ca", 1.0)),
+            _round_opt(settings.get("lens_distortion", 0.0)),
+            bool(settings.get("lens_autocrop", True)),
+            _lens_info_signature(lens_info),
+        )
+        cached = _FUSED_GEOMETRY_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
     # 1. Setup Resolver
     resolver = GeometryResolver(w_src, h_src)
     if M_override is not None:
@@ -184,6 +276,17 @@ def get_fused_geometry(
     out_w, out_h = resolver.get_output_size()
     out_w, out_h = int(round(out_w)), int(round(out_h))
 
+    identity_affine = (
+        abs(float(M[0, 0]) - 1.0) < 1e-6
+        and abs(float(M[0, 1])) < 1e-6
+        and abs(float(M[0, 2])) < 1e-6
+        and abs(float(M[1, 0])) < 1e-6
+        and abs(float(M[1, 1]) - 1.0) < 1e-6
+        and abs(float(M[1, 2])) < 1e-6
+        and out_w == w_src
+        and out_h == h_src
+    )
+
     # 2. Get Lens Maps (TCA aware)
     zoom_factor = 1.0
     fused_maps = []
@@ -201,22 +304,34 @@ def get_fused_geometry(
             xr, yr, xg, yg, xb, yb, zoom_factor = get_tca_distortion_maps(
                 w_src, h_src, settings, lens_info, roi_offset, full_size
             )
-            # Fuse each channel's map
-            fused_maps.append(resolver.get_fused_maps(xr, yr))
-            fused_maps.append(resolver.get_fused_maps(xg, yg))
-            fused_maps.append(resolver.get_fused_maps(xb, yb))
+            if identity_affine:
+                fused_maps.append((xr, yr))
+                fused_maps.append((xg, yg))
+                fused_maps.append((xb, yb))
+            else:
+                # Fuse each channel's map
+                fused_maps.append(resolver.get_fused_maps(xr, yr))
+                fused_maps.append(resolver.get_fused_maps(xg, yg))
+                fused_maps.append(resolver.get_fused_maps(xb, yb))
         else:
             mx, my, zoom_factor = get_lens_distortion_maps(
                 w_src, h_src, settings, lens_info, roi_offset, full_size
             )
             if mx is not None:
-                fused_maps.append(resolver.get_fused_maps(mx, my))
+                if identity_affine:
+                    fused_maps.append((mx, my))
+                else:
+                    fused_maps.append(resolver.get_fused_maps(mx, my))
 
     if not fused_maps:
         # Fallback to affine only
         fused_maps = [M]
 
-    return fused_maps, out_w, out_h, zoom_factor
+    result = (fused_maps, out_w, out_h, zoom_factor)
+    if cache_key is not None:
+        _FUSED_GEOMETRY_CACHE.set(cache_key, result)
+
+    return result
 
 
 def resolve_vignette_params(settings, lens_info, roi_offset=None, full_size=None):

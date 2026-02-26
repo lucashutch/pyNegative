@@ -1,4 +1,5 @@
 import logging
+import time
 
 import cv2
 import numpy as np
@@ -237,9 +238,11 @@ class ImageProcessorWorker(QtCore.QRunnable):
         if self.base_img_full is None:
             return QtGui.QPixmap(), 0, 0, 0.0
 
+        worker_start = time.perf_counter()
         full_h, full_w = self.base_img_full.shape[:2]
 
         # --- STEP 0: SETTINGS EXTRACTION ---
+        t0 = time.perf_counter()
         (
             rotate_val,
             flip_h,
@@ -261,6 +264,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         new_full_w, new_full_h = full_resolver.get_output_size()
 
         # --- STEP 1: RESOLUTION SELECTION ---
+        t1 = time.perf_counter()
         res_key, selected_scale, selected_img = self._select_resolution_tier(full_w)
         h_src, w_src = selected_img.shape[:2]
 
@@ -313,6 +317,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = vig_params
 
         # --- STEP 2: PROCESSING ---
+        t2 = time.perf_counter()
         source_for_preprocess = (
             selected_img[crop_y : crop_y + crop_h, crop_x : crop_x + crop_w]
             if is_viewport_only
@@ -334,10 +339,13 @@ class ImageProcessorWorker(QtCore.QRunnable):
         )
 
         # Denoise only what is seen!
+        t_denoise = time.perf_counter()
         denoised_bg = process_denoise_stage(
             preprocessed_bg, res_key, heavy_params, self.zoom_scale
         )
+        denoise_time = (time.perf_counter() - t_denoise) * 1000
 
+        t_geometry = time.perf_counter()
         fused_maps, o_w, o_h, _ = get_fused_geometry(
             self.settings,
             self.lens_info,
@@ -351,6 +359,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
             roi_offset=(0, 0),
             full_size=(w_src, h_src),
         )
+        geometry_time = (time.perf_counter() - t_geometry) * 1000
 
         if is_viewport_only:
             out_vx_s = int(np.floor(out_vx * selected_scale))
@@ -364,6 +373,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         else:
             dest_roi_scaled = None
 
+        t_remap = time.perf_counter()
         img_dest = apply_fused_remap(
             denoised_bg,
             fused_maps,
@@ -373,7 +383,9 @@ class ImageProcessorWorker(QtCore.QRunnable):
             crop_offset=(crop_x, crop_y) if is_viewport_only else (0, 0),
             dest_roi=dest_roi_scaled,
         )
+        remap_time = (time.perf_counter() - t_remap) * 1000
 
+        t_heavy = time.perf_counter()
         processed_bg = process_heavy_stage(
             img_dest,
             res_key,
@@ -382,15 +394,19 @@ class ImageProcessorWorker(QtCore.QRunnable):
             self.last_heavy_adjusted,
             self.dehaze_atmospheric_light,
         )
+        heavy_time = (time.perf_counter() - t_heavy) * 1000
 
+        t_tonemap = time.perf_counter()
         bg_output, _ = pynegative.apply_tone_map(
             processed_bg, **tone_map_settings, calculate_stats=False
         )
         bg_output = pynegative.apply_defringe(bg_output, self.settings)
+        tonemap_time = (time.perf_counter() - t_tonemap) * 1000
 
         img_uint8 = pynegative.float32_to_uint8(bg_output)
 
         # -- STEP 3: Handle LowRes Pan Background & Histograms --
+        t3 = time.perf_counter()
         bg_lowres_pix = None
         if self.calculate_lowres:
             if is_viewport_only:
@@ -482,6 +498,20 @@ class ImageProcessorWorker(QtCore.QRunnable):
 
         visible_scene_rect_out = (
             (out_vx, out_vy, out_vw, out_vh) if is_viewport_only else None
+        )
+
+        # Timing breakdown (at end to capture all work)
+        lowres_time = (time.perf_counter() - t3) * 1000
+        setup_time = (t1 - t0) * 1000
+        roi_time = (t2 - t1) * 1000
+        preprocess_time = (t_denoise - t2) * 1000
+        worker_total = (time.perf_counter() - worker_start) * 1000
+
+        logger.warning(
+            f"⚙️  Worker Pipeline | Setup: {setup_time:.1f}ms | ROI: {roi_time:.1f}ms | "
+            f"Prepro: {preprocess_time:.1f}ms | Denoise: {denoise_time:.1f}ms | "
+            f"Geo: {geometry_time:.1f}ms | Remap: {remap_time:.1f}ms | Heavy: {heavy_time:.1f}ms | "
+            f"Tonemap: {tonemap_time:.1f}ms | Lowres+Hist: {lowres_time:.1f}ms | Total: {worker_total:.1f}ms"
         )
 
         return (
