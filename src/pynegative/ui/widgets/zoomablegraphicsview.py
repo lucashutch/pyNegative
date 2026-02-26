@@ -132,37 +132,21 @@ class ZoomableGraphicsView(QtWidgets.QGraphicsView):
         if visible_scene_rect is None and tile_key is None:
             self._bg_low_item.hide()
 
-        # 2. Update Foreground Render
-        if tile_key is not None and visible_scene_rect is not None:
-            self._bg_item.hide()
+        # 2. Update Foreground Render (ROI patch or full-frame)
+        if self._tile_items:
+            for item in self._tile_items.values():
+                self._scene.removeItem(item)
+            self._tile_items.clear()
+
+        if visible_scene_rect is not None:
+            self._bg_item.show()
+            self._bg_item.setPixmap(bg_pix)
             if not bg_pix.isNull() and bg_pix.width() > 0:
-                if tile_key in self._tile_items:
-                    item = self._tile_items[tile_key]
-                    self._tile_items.move_to_end(tile_key)
-                else:
-                    item = QtWidgets.QGraphicsPixmapItem()
-                    item.setZValue(0)
-                    self._scene.addItem(item)
-                    self._tile_items[tile_key] = item
-
-                    if len(self._tile_items) > 400:
-                        oldest_k, oldest_item = self._tile_items.popitem(last=False)
-                        self._scene.removeItem(oldest_item)
-
-                item.setPixmap(bg_pix)
                 vx, vy, vw, vh = visible_scene_rect
-                # Add a tiny subpixel overlap to prevent background bleed from antialiasing seams
                 s_w = (vw + 0.5) / bg_pix.width()
                 s_h = (vh + 0.5) / bg_pix.height()
-                item.setTransform(QtGui.QTransform().scale(s_w, s_h))
-                item.setPos(vx, vy)
-
-                # Immediately map new item rotation
-                center = self._scene.sceneRect().center()
-                item.setTransformOriginPoint(item.mapFromScene(center))
-                current_angle = self._crop_item.get_rotation()
-                item.setRotation(current_angle - self._rendered_rotation)
-
+                self._bg_item.setTransform(QtGui.QTransform().scale(s_w, s_h))
+                self._bg_item.setPos(vx, vy)
         else:
             self._bg_item.show()
             self._bg_item.setPixmap(bg_pix)

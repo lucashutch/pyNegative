@@ -49,12 +49,12 @@ class ImageProcessingPipeline(QtCore.QObject):
         self._last_zoom_scale = 1.0
         self._last_requested_zoom = 1.0
 
-        self._tile_cache = {}
         self._current_render_state_id = 0
         self._last_rendered_state_id = 0
         self._current_settings_state_id = 0
         self._last_rendered_settings_state_id = 0
         self._last_settings = None
+        self._last_roi_signature = None
 
         self.signals = ImageProcessorSignals()
         self.signals.finished.connect(self._on_worker_finished)
@@ -64,7 +64,7 @@ class ImageProcessingPipeline(QtCore.QObject):
         self.signals.error.connect(self._on_worker_error)
         self._current_image_id = 0
 
-        # Pre-computed dehaze atmospheric light (shared across all tiles)
+        # Pre-computed dehaze atmospheric light (shared across updates)
         self._dehaze_atmos_light = None
         self._dehaze_atmos_settings_id = -1
 
@@ -76,11 +76,11 @@ class ImageProcessingPipeline(QtCore.QObject):
         # Dictionary of scales (0.5, 0.25, 0.125, 0.0625)
         self.tiers = {}
 
-        self._tile_cache.clear()
         self._current_settings_state_id += 1
         self._current_render_state_id += 1
         self._dehaze_atmos_light = None
         self._dehaze_atmos_settings_id = -1
+        self._last_roi_signature = None
 
         if img_array is not None:
             h, w = img_array.shape[:2]
@@ -112,8 +112,8 @@ class ImageProcessingPipeline(QtCore.QObject):
             # We don't emit uneditedPixmapUpdated here because TierGeneratorWorker
             # already emitted a fast 1:16 unedited pixmap.
             # We just request a full update so the background renderer uses the new better tier.
-            self._tile_cache.clear()
             self._current_render_state_id += 1
+            self._last_roi_signature = None
             self.request_update()
 
     def set_view_reference(self, view):
@@ -153,7 +153,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             # Force a fresh pass so at least one worker recomputes histogram
             # even when all current tiles are already marked done.
             self._current_render_state_id += 1
-            self._tile_cache.clear()
+            self._last_roi_signature = None
             self.request_update()
 
     def set_lens_info(self, info):
@@ -177,7 +177,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             # are dropped when they complete, preventing mixed-settings tiles.
             self._current_render_state_id += 1
             self._current_settings_state_id += 1
-            self._tile_cache.clear()
+            self._last_roi_signature = None
             self.request_update()
 
     def get_current_settings(self):
@@ -239,9 +239,9 @@ class ImageProcessingPipeline(QtCore.QObject):
 
         if settings_changed or zoom_changed or fit_crop_changed:
             self._current_render_state_id += 1
-            self._tile_cache.clear()
             self._last_settings = current_settings
             self._last_requested_zoom = zoom_scale
+            self._last_roi_signature = None
 
         if settings_changed or fit_crop_changed:
             self._current_settings_state_id += 1
@@ -252,9 +252,9 @@ class ImageProcessingPipeline(QtCore.QObject):
         visible_poly = self._view_ref.mapToScene(viewport_rect)
         visible_rect = visible_poly.boundingRect()
 
-        # Slight overscan for panning buffer (~5%)
-        buf_w = visible_rect.width() * 0.05
-        buf_h = visible_rect.height() * 0.05
+        # Overscan for panning buffer (~10%)
+        buf_w = visible_rect.width() * 0.10
+        buf_h = visible_rect.height() * 0.10
         visible_rect.adjust(-buf_w, -buf_h, buf_w, buf_h)
 
         scene_rect = self._view_ref.sceneRect()
@@ -268,23 +268,29 @@ class ImageProcessingPipeline(QtCore.QObject):
 
         visible_rect = visible_rect.intersected(QtCore.QRectF(0, 0, sw, sh))
 
-        # Dynamically calculate scene tile size so that chunks represent roughly 256x256 on the screen
-        ideal_scale = 1.0
-        if zoom_scale < 1.0:
-            for scale in [0.0625, 0.125, 0.25, 0.5]:
-                if scale >= zoom_scale:
-                    ideal_scale = scale
-                    break
+        roi_rect = QtCore.QRect(
+            int(np.floor(visible_rect.x())),
+            int(np.floor(visible_rect.y())),
+            max(1, int(np.ceil(visible_rect.width()))),
+            max(1, int(np.ceil(visible_rect.height()))),
+        )
+        roi_rect = roi_rect.intersected(QtCore.QRect(0, 0, sw, sh))
+        if roi_rect.width() <= 0 or roi_rect.height() <= 0:
+            return
 
-        TILE_SIZE_SCENE = int(256 / ideal_scale)
-        tx_min = int(visible_rect.x() // TILE_SIZE_SCENE)
-        ty_min = int(visible_rect.y() // TILE_SIZE_SCENE)
-        tx_max = int((visible_rect.x() + visible_rect.width()) // TILE_SIZE_SCENE)
-        ty_max = int((visible_rect.y() + visible_rect.height()) // TILE_SIZE_SCENE)
-
-        # Use sw/sh defined in bootstrap instead of pulling from scene again
-        tx_max = min(tx_max, sw // TILE_SIZE_SCENE)
-        ty_max = min(ty_max, sh // TILE_SIZE_SCENE)
+        roi_signature = (
+            roi_rect.x(),
+            roi_rect.y(),
+            roi_rect.width(),
+            roi_rect.height(),
+            round(zoom_scale, 3),
+            int(is_fitting),
+            int(is_cropping),
+            self._current_settings_state_id,
+        )
+        if roi_signature == self._last_roi_signature and self._active_workers > 0:
+            return
+        self._last_roi_signature = roi_signature
 
         # Deduce the selected tier matching what workers will use
         available_scales = sorted(self.tiers.keys()) + [1.0]
@@ -305,9 +311,7 @@ class ImageProcessingPipeline(QtCore.QObject):
             )
             return
 
-        needs_lowres = True
         workers_queued = 0
-        workers_pending = 0
 
         # Pre-compute dehaze atmospheric light from smallest available tier
         # so every tile uses the same value (prevents per-tile colour tints).
@@ -331,73 +335,40 @@ class ImageProcessingPipeline(QtCore.QObject):
                 )
             atmos_light = self._dehaze_atmos_light
 
-        for ty in range(ty_min, ty_max + 1):
-            for tx in range(tx_min, tx_max + 1):
-                tile_key = (tx, ty, TILE_SIZE_SCENE)
-
-                # If a tile is already processing or done specifically for this render_state, skip it.
-                # If the state changed (e.g. slider dragged), we want to submit a new worker
-                # for this tile_key, overwriting the old geometry string pending.
-                current_state = self._tile_cache.get(tile_key)
-                if current_state == f"pending_{self._current_render_state_id}":
-                    # Recover orphaned pending markers (e.g. worker error path)
-                    # so tiles are never permanently skipped.
-                    if self._active_workers == 0:
-                        self._tile_cache.pop(tile_key, None)
-                    else:
-                        workers_pending += 1
-                        continue
-                elif current_state == f"done_{self._current_render_state_id}":
-                    continue
-
-                self._tile_cache[tile_key] = f"pending_{self._current_render_state_id}"
-
-                vx = tx * TILE_SIZE_SCENE
-                vy = ty * TILE_SIZE_SCENE
-                vw = TILE_SIZE_SCENE
-                vh = TILE_SIZE_SCENE
-
-                vw = min(vw, sw - vx)
-                vh = min(vh, sh - vy)
-
-                if vw <= 0 or vh <= 0:
-                    continue
-
-                worker = ImageProcessorWorker(
-                    self.signals,
-                    self.base_img_full,
-                    self.tiers,
-                    current_settings,
-                    self._current_request_id,
-                    zoom_scale=zoom_scale,
-                    is_fitting=is_fitting,
-                    calculate_histogram=self.histogram_enabled and needs_lowres,
-                    last_heavy_adjusted=self._last_heavy_adjusted,
-                    lens_info=self.lens_info,
-                    target_on_screen_width=target_w,
-                    visible_scene_rect=(int(vx), int(vy), int(vw), int(vh)),
-                    tile_key=tile_key,
-                    render_state_id=self._current_render_state_id,
-                    calculate_lowres=needs_lowres,
-                    settings_state_id=self._current_settings_state_id,
-                    dehaze_atmospheric_light=atmos_light,
-                )
-                needs_lowres = False
-                workers_queued += 1
-                self._active_workers += 1
-                self.thread_pool.start(worker)
+        worker = ImageProcessorWorker(
+            self.signals,
+            self.base_img_full,
+            self.tiers,
+            current_settings,
+            self._current_request_id,
+            zoom_scale=zoom_scale,
+            is_fitting=is_fitting,
+            calculate_histogram=self.histogram_enabled,
+            last_heavy_adjusted=self._last_heavy_adjusted,
+            lens_info=self.lens_info,
+            target_on_screen_width=target_w,
+            visible_scene_rect=(
+                int(roi_rect.x()),
+                int(roi_rect.y()),
+                int(roi_rect.width()),
+                int(roi_rect.height()),
+            ),
+            tile_key=None,
+            render_state_id=self._current_render_state_id,
+            calculate_lowres=True,
+            settings_state_id=self._current_settings_state_id,
+            dehaze_atmospheric_light=atmos_light,
+        )
+        workers_queued += 1
+        self._active_workers += 1
+        self.thread_pool.start(worker)
 
         v_w = self._view_ref.viewport().rect().width()
         v_h = self._view_ref.viewport().rect().height()
 
         logger.info(
-            f"Viewport: {v_w}x{v_h} | Zoom Scale: {zoom_scale:.4f} | Tier: {selected_scale} | Queued {workers_queued} chunks (256x256)"
+            f"Viewport: {v_w}x{v_h} | Zoom Scale: {zoom_scale:.4f} | Tier: {selected_scale} | ROI: ({roi_rect.x()}, {roi_rect.y()}, {roi_rect.width()}, {roi_rect.height()})"
         )
-
-        if workers_queued == 0 and workers_pending == 0:
-            # Nothing to do; if a render is pending, re-schedule
-            if self._render_pending:
-                self.render_timer.start(5)
 
     def _measure_and_emit_perf(self):
         elapsed_ms = (time.perf_counter() - self.perf_start_time) * 1000
@@ -435,9 +406,6 @@ class ImageProcessingPipeline(QtCore.QObject):
 
         clear_tiles = False
         if settings_state_id > self._last_rendered_settings_state_id:
-            # We explicitly do NOT clear_tiles here anymore.
-            # Doing so obliterates the high-res view and causes a blurry 0.25x flash.
-            # The old tiles will simply remain on screen until the workers replace them.
             self._last_rendered_settings_state_id = settings_state_id
 
         self._last_processed_id = request_id
@@ -450,11 +418,9 @@ class ImageProcessingPipeline(QtCore.QObject):
             rotation,
             visible_scene_rect,
             bg_lowres_pix,
-            tile_key,
+            None,
             clear_tiles,
         )
-        if tile_key is not None:
-            self._tile_cache[tile_key] = f"done_{render_state_id}"
 
         self.editedPixmapUpdated.emit(pix_bg)
         self._measure_and_emit_perf()
