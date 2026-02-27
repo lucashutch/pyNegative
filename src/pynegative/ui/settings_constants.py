@@ -1,6 +1,17 @@
 """
-Constants for settings groups and keys used for selective copy/paste.
+Constants for settings groups, keys, and shared UI mappings.
 """
+
+ASPECT_RATIOS: dict[str, float | None] = {
+    "Unlocked": None,
+    "1:1": 1.0,
+    "4:3": 4.0 / 3.0,
+    "3:2": 3.0 / 2.0,
+    "16:9": 16.0 / 9.0,
+}
+
+ASPECT_RATIO_LABELS = list(ASPECT_RATIOS.keys())
+
 
 SETTINGS_GROUPS = {
     "Tone": [
