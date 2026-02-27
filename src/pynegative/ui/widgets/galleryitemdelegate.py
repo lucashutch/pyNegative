@@ -1,5 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from .compat import get_event_pos
+
 
 class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
     # Accent colors from styles.qss
@@ -298,15 +300,9 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
         )
         return circle_rect.contains(pos)
 
-    def get_event_pos(self, event):
-        """Compatibility helper for Qt6 mouse events."""
-        if hasattr(event, "position"):
-            return event.position()
-        return event.pos()
-
     def editorEvent(self, event, model, option, index):
         if event.type() == QtCore.QEvent.Type.MouseButtonPress:
-            pos = self.get_event_pos(event)
+            pos = get_event_pos(event)
             # If clicking on the selection circle
             if self.is_click_on_circle(pos.toPoint(), option.rect):
                 self._circle_clicked = True
