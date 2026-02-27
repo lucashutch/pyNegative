@@ -1,6 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from .compat import get_event_pos
+from .compat import create_star_pixmap, get_event_pos
 
 
 class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
@@ -58,27 +58,10 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
         self._show_selection_circles = show
 
     def _create_star_pixmap(self, filled):
-        pixmap = QtGui.QPixmap(self.STAR_SIZE, self.STAR_SIZE)
-        pixmap.fill(QtCore.Qt.transparent)
-        painter = QtGui.QPainter(pixmap)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        font = painter.font()
-        if font.pointSize() <= 0:
-            # If current font has invalid size (e.g. pixel size based), default to 12
-            pass
-        try:
-            font.setPointSize(12)
-        except Exception:
-            pass
-        painter.setFont(font)
-        if filled:
-            painter.setPen(QtGui.QColor("#f0c419"))
-            painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "★")
-        else:
-            painter.setPen(QtGui.QColor("#909090"))
-            painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "☆")
-        painter.end()
-        return pixmap
+        return create_star_pixmap(
+            filled, size=self.STAR_SIZE, font_size=12,
+            empty_color=QtGui.QColor("#909090"),
+        )
 
     def sizeHint(self, option, index):
         return QtCore.QSize(self._item_size, self._item_size)
