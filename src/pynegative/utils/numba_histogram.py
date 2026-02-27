@@ -1,6 +1,6 @@
 import numpy as np
 
-from ..processing.constants import LUMA_B, LUMA_G, LUMA_R
+from .constants import LUMA_B, LUMA_G, LUMA_R
 from ._numba_base import njit
 
 
