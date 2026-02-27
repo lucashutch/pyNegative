@@ -15,6 +15,13 @@ from .numba_denoise import (
 )
 from .numba_detail import sharpen_kernel
 from .numba_histogram import numba_histogram_kernel
+from .numba_lens import (
+    generate_poly3_map,
+    generate_ptlens_map,
+    generate_tca_maps,
+    remap_tca_distortion_kernel,
+    vignette_kernel,
+)
 
 __all__ = [
     "tone_map_kernel",
@@ -28,4 +35,9 @@ __all__ = [
     "dehaze_recovery_kernel",
     "transmission_dark_channel_kernel",
     "numba_histogram_kernel",
+    "generate_poly3_map",
+    "generate_ptlens_map",
+    "generate_tca_maps",
+    "remap_tca_distortion_kernel",
+    "vignette_kernel",
 ]
