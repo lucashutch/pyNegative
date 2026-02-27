@@ -147,7 +147,7 @@ class ExportProcessor(QtCore.QRunnable):
 
         # 3.3 Lens Correction (Linear, distortion only)
         img = pynegative.apply_lens_correction(
-            img, sidecar_settings, lens_info, scale=1.0, skip_vignette=True
+            img, sidecar_settings, lens_info, skip_vignette=True
         )
 
         # 3.4 Dehaze (Linear)

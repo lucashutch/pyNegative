@@ -133,6 +133,76 @@ def calculate_autocrop_scale(model, params, fw, fh):
     return max_rescale
 
 
+def _resolve_geometry(w, h, roi_offset, full_size):
+    """Resolve full-frame size and center offset for lens operations."""
+    fw, fh = full_size if full_size else (w, h)
+    rx, ry = roi_offset if roi_offset else (0, 0)
+    cx = fw / 2.0 - rx
+    cy = fh / 2.0 - ry
+    return fw, fh, cx, cy
+
+
+def _resolve_distortion_model(lens_info):
+    """Extract distortion model name and raw params from lens_info."""
+    model = "manual"
+    params = {}
+    if lens_info:
+        if "distortion" in lens_info and lens_info["distortion"]:
+            dist = lens_info["distortion"]
+            model = dist.get("model", "poly3")
+            params = dist
+        elif "params" in lens_info and lens_info["params"]:
+            params = lens_info["params"]
+            model = params.get("model", "poly3")
+    return model, params
+
+
+def _resolve_autocrop_zoom(settings, model, params, manual_k1, fw, fh):
+    """Compute autocrop zoom factor if enabled."""
+    if not settings.get("lens_autocrop", True):
+        return 1.0
+    calc_params = params.copy()
+    if model == "ptlens":
+        calc_params["c"] = params.get("c", 0.0) + manual_k1
+    else:
+        calc_params["k1"] = params.get("k1", 0.0) + manual_k1
+    return calculate_autocrop_scale(model, calc_params, fw, fh)
+
+
+def _build_tca_arrays(lens_info, ca_intensity):
+    """Build TCA coefficient arrays from lens_info. Returns (tca_red, tca_blue, has_tca)."""
+    tca_red = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    tca_blue = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    has_tca = False
+
+    if lens_info and "tca" in lens_info and lens_info["tca"]:
+        tca = lens_info["tca"]
+        tca_red[0] = 1.0 + (tca.get("vr0", 1.0) - 1.0) * ca_intensity
+        tca_red[1] = tca.get("vr1", 0.0) * ca_intensity
+        tca_red[2] = tca.get("vr2", 0.0) * ca_intensity
+        tca_blue[0] = 1.0 + (tca.get("vb0", 1.0) - 1.0) * ca_intensity
+        tca_blue[1] = tca.get("vb1", 0.0) * ca_intensity
+        tca_blue[2] = tca.get("vb2", 0.0) * ca_intensity
+        has_tca = True
+
+    return tca_red, tca_blue, has_tca
+
+
+def _build_kernel_dist_params(model, params, manual_k1):
+    """Build the flat dist_p array and model_type int for Numba kernels."""
+    dist_p = np.zeros(4, dtype=np.float32)
+    if model == "ptlens":
+        dist_p[0] = params.get("a", 0.0)
+        dist_p[1] = params.get("b", 0.0)
+        dist_p[2] = params.get("c", 0.0) + manual_k1
+        dist_p[3] = 1.0 - dist_p[0] - dist_p[1] - dist_p[2]
+        m_type = 0
+    else:
+        dist_p[0] = params.get("k1", 0.0) + manual_k1
+        m_type = 1  # poly3
+    return dist_p, m_type
+
+
 def get_tca_distortion_maps(
     w: int,
     h: int,
@@ -146,72 +216,15 @@ def get_tca_distortion_maps(
     """
     Returns 3 sets of maps for TCA + Distortion.
     """
-    if full_size:
-        fw, fh = full_size
-    else:
-        fw, fh = w, h
-
-    if roi_offset:
-        rx, ry = roi_offset
-    else:
-        rx, ry = 0, 0
-
-    cx = fw / 2.0 - rx
-    cy = fh / 2.0 - ry
-
-    # 1. Resolve model and params
-    model = "manual"
-    params = {}
-    if lens_info:
-        if "distortion" in lens_info and lens_info["distortion"]:
-            dist = lens_info["distortion"]
-            model = dist.get("model", "poly3")
-            params = dist
-        elif "params" in lens_info and lens_info["params"]:
-            params = lens_info["params"]
-            model = params.get("model", "poly3")
-
+    fw, fh, cx, cy = _resolve_geometry(w, h, roi_offset, full_size)
+    model, params = _resolve_distortion_model(lens_info)
     manual_k1 = settings.get("lens_distortion", 0.0)
     ca_intensity = settings.get("lens_ca", 1.0)
 
-    # 2. TCA Params
-    tca_red = np.array([1.0, 0.0, 0.0], dtype=np.float32)
-    tca_blue = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    tca_red, tca_blue, _ = _build_tca_arrays(lens_info, ca_intensity)
+    zoom = _resolve_autocrop_zoom(settings, model, params, manual_k1, fw, fh)
+    dist_p, m_type = _build_kernel_dist_params(model, params, manual_k1)
 
-    if lens_info and "tca" in lens_info and lens_info["tca"]:
-        tca = lens_info["tca"]
-        tca_red[0] = 1.0 + (tca.get("vr0", 1.0) - 1.0) * ca_intensity
-        tca_red[1] = tca.get("vr1", 0.0) * ca_intensity
-        tca_red[2] = tca.get("vr2", 0.0) * ca_intensity
-
-        tca_blue[0] = 1.0 + (tca.get("vb0", 1.0) - 1.0) * ca_intensity
-        tca_blue[1] = tca.get("vb1", 0.0) * ca_intensity
-        tca_blue[2] = tca.get("vb2", 0.0) * ca_intensity
-
-    # 3. Autocrop
-    zoom = 1.0
-    if settings.get("lens_autocrop", True):
-        calc_params = params.copy()
-        if model == "ptlens":
-            calc_params["c"] = params.get("c", 0.0) + manual_k1
-        else:
-            calc_params["k1"] = params.get("k1", 0.0) + manual_k1
-        zoom = calculate_autocrop_scale(model, calc_params, fw, fh)
-
-    # 4. Prepare params for kernel
-    dist_p = np.zeros(4, dtype=np.float32)
-    m_type = 0  # ptlens
-    if model == "ptlens":
-        dist_p[0] = params.get("a", 0.0)
-        dist_p[1] = params.get("b", 0.0)
-        dist_p[2] = params.get("c", 0.0) + manual_k1
-        dist_p[3] = 1.0 - dist_p[0] - dist_p[1] - dist_p[2]
-        m_type = 0
-    else:
-        dist_p[0] = params.get("k1", 0.0) + manual_k1
-        m_type = 1  # poly3
-
-    # 5. Generate
     maps = generate_tca_maps(
         w, h, m_type, dist_p, tca_red, tca_blue, cx, cy, fw, fh, zoom
     )
@@ -230,49 +243,11 @@ def get_lens_distortion_maps(
     Resolves lens parameters and retrieves (cached) distortion maps.
     Returns (map_x, map_y, zoom).
     """
-    # 1. Determine Full Tier Size (for normalization)
-    if full_size:
-        fw, fh = full_size
-    else:
-        fw, fh = w, h
-
-    if roi_offset:
-        rx, ry = roi_offset
-    else:
-        rx, ry = 0, 0
-
-    # Relative center in the current image chunk
-    cx = fw / 2.0 - rx
-    cy = fh / 2.0 - ry
-
-    # 2. Get Correction Model and Params
-    model = "manual"
-    params = {}
-
-    if lens_info:
-        if "distortion" in lens_info and lens_info["distortion"]:
-            dist = lens_info["distortion"]
-            model = dist.get("model", "poly3")
-            params = dist
-        elif "params" in lens_info and lens_info["params"]:
-            params = lens_info["params"]
-            model = params.get("model", "poly3")
-
-    # 3. Add manual slider override
+    fw, fh, cx, cy = _resolve_geometry(w, h, roi_offset, full_size)
+    model, params = _resolve_distortion_model(lens_info)
     manual_k1 = settings.get("lens_distortion", 0.0)
+    zoom = _resolve_autocrop_zoom(settings, model, params, manual_k1, fw, fh)
 
-    # 4. Handle Auto Crop
-    zoom = 1.0
-    if settings.get("lens_autocrop", True):
-        calc_params = params.copy()
-        if model == "ptlens":
-            calc_params["c"] = params.get("c", 0.0) + manual_k1
-        else:
-            calc_params["k1"] = params.get("k1", 0.0) + manual_k1
-
-        zoom = calculate_autocrop_scale(model, calc_params, fw, fh)
-
-    # 5. Retrieve Maps
     map_x, map_y = None, None
     if model == "ptlens":
         a = params.get("a", 0.0)
@@ -296,7 +271,6 @@ def apply_lens_correction(
     img,
     settings,
     lens_info=None,
-    scale=1.0,
     roi_offset=None,
     full_size=None,
     skip_vignette=False,
@@ -309,87 +283,20 @@ def apply_lens_correction(
         return None
 
     h, w = img.shape[:2]
+    fw, fh, cx, cy = _resolve_geometry(w, h, roi_offset, full_size)
 
-    # 1. Determine Full Tier Size (for normalization)
-    if full_size:
-        fw, fh = full_size
-    else:
-        fw, fh = w, h
-
-    if roi_offset:
-        rx, ry = roi_offset
-    else:
-        rx, ry = 0, 0
-
-    # Relative center in the current image chunk
-    cx = fw / 2.0 - rx
-    cy = fh / 2.0 - ry
-
-    # 2. Add manual slider override
-    manual_vig = settings.get("lens_vignette", 0.0)
-    ca_intensity = settings.get("lens_ca", 1.0)  # Default to 1.0 (full DB effect)
-
-    # 3. TCA Params
-    tca_red = np.array([1.0, 0.0, 0.0], dtype=np.float32)
-    tca_blue = np.array([1.0, 0.0, 0.0], dtype=np.float32)
-    has_tca_data = False
-
-    if lens_info and "tca" in lens_info and lens_info["tca"]:
-        tca = lens_info["tca"]
-        # Lensfun poly3: v0 + v1*r^2 + v2*r^4
-        # We apply intensity to the deviation from 1.0
-        tca_red[0] = 1.0 + (tca.get("vr0", 1.0) - 1.0) * ca_intensity
-        tca_red[1] = tca.get("vr1", 0.0) * ca_intensity
-        tca_red[2] = tca.get("vr2", 0.0) * ca_intensity
-
-        tca_blue[0] = 1.0 + (tca.get("vb0", 1.0) - 1.0) * ca_intensity
-        tca_blue[1] = tca.get("vb1", 0.0) * ca_intensity
-        tca_blue[2] = tca.get("vb2", 0.0) * ca_intensity
-        has_tca_data = True
-        logger.debug(
-            f"TCA data found for lens. Intensity: {ca_intensity:.2f}, R coeffs: {tca_red}, B coeffs: {tca_blue}"
-        )
-
-    # 4. Apply Correction
+    ca_intensity = settings.get("lens_ca", 1.0)
+    tca_red, tca_blue, has_tca_data = _build_tca_arrays(lens_info, ca_intensity)
     do_tca = has_tca_data and abs(ca_intensity) > 1e-3
-    map_x, map_y = None, None
-    zoom = 1.0
+
     manual_k1 = settings.get("lens_distortion", 0.0)
-    model = "manual"
+    model, params = _resolve_distortion_model(lens_info)
+    zoom = _resolve_autocrop_zoom(settings, model, params, manual_k1, fw, fh)
+
+    map_x, map_y = None, None
 
     if do_tca:
-        # We still need to resolve params for the kernel
-        params = {}
-        if lens_info:
-            if "distortion" in lens_info and lens_info["distortion"]:
-                dist = lens_info["distortion"]
-                model = dist.get("model", "poly3")
-                params = dist
-            elif "params" in lens_info and lens_info["params"]:
-                params = lens_info["params"]
-                model = params.get("model", "poly3")
-
-        if settings.get("lens_autocrop", True):
-            calc_params = params.copy()
-            if model == "ptlens":
-                calc_params["c"] = params.get("c", 0.0) + manual_k1
-            else:
-                calc_params["k1"] = params.get("k1", 0.0) + manual_k1
-            zoom = calculate_autocrop_scale(model, calc_params, fw, fh)
-
-        # Prepare distortion params for kernel
-        dist_p = np.zeros(4, dtype=np.float32)
-        m_type = 0  # ptlens
-        if model == "ptlens":
-            dist_p[0] = params.get("a", 0.0)
-            dist_p[1] = params.get("b", 0.0)
-            dist_p[2] = params.get("c", 0.0) + manual_k1
-            dist_p[3] = 1.0 - dist_p[0] - dist_p[1] - dist_p[2]
-            m_type = 0
-        else:
-            dist_p[0] = params.get("k1", 0.0) + manual_k1
-            m_type = 1  # poly3
-
+        m_type, dist_p = _build_kernel_dist_params(model, params, manual_k1)
         out = np.zeros_like(img)
         t0 = time.perf_counter()
         remap_tca_distortion_kernel(
@@ -399,25 +306,14 @@ def apply_lens_correction(
         elapsed = (time.perf_counter() - t0) * 1000
         logger.debug(f"Combined TCA+Distortion kernel: {elapsed:.2f}ms")
     else:
-        # Distortion only via cached maps
         map_x, map_y, zoom = get_lens_distortion_maps(
             w, h, settings, lens_info, roi_offset, full_size
         )
-
-        # Recover model for logging (optional, but let's keep it accurate)
-        if lens_info:
-            if "distortion" in lens_info and lens_info["distortion"]:
-                model = lens_info["distortion"].get("model", "poly3")
-            elif "params" in lens_info and lens_info["params"]:
-                model = lens_info["params"].get("model", "poly3")
-
         if map_x is not None:
             img = cv2.remap(img, map_x, map_y, cv2.INTER_CUBIC)
 
-    # 5. Apply Vignette Correction
-    vig_k1 = 0.0
-    vig_k2 = 0.0
-    vig_k3 = 0.0
+    # Vignette correction
+    vig_k1, vig_k2, vig_k3 = 0.0, 0.0, 0.0
 
     if not skip_vignette:
         if lens_info and "vignetting" in lens_info and lens_info["vignetting"]:
@@ -431,14 +327,12 @@ def apply_lens_correction(
         vig_k1 += manual_vig
 
     if abs(vig_k1) > 1e-6 or abs(vig_k2) > 1e-6 or abs(vig_k3) > 1e-6:
-        # If we didn't remap, we should work on a copy to avoid side effects
         if map_x is None and not do_tca:
             img = img.copy()
 
         t0 = time.perf_counter()
         vignette_kernel(img, vig_k1, vig_k2, vig_k3, cx, cy, fw, fh)
         elapsed = (time.perf_counter() - t0) * 1000
-
         logger.debug(
             f"Vignette correction: k1={vig_k1:.4f}, k2={vig_k2:.4f}, k3={vig_k3:.4f} ({elapsed:.2f}ms)"
         )

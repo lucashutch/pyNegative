@@ -142,7 +142,7 @@ def test_apply_lens_correction():
         "vignetting": {"model": "pa", "k1": -0.1},
         "tca": {"vr0": 1.001, "vb0": 0.999},
     }
-    out = apply_lens_correction(img, settings, lens_info, scale=1.0)
+    out = apply_lens_correction(img, settings, lens_info)
     assert out.shape == (10, 10, 3)
 
     lens_info_no_tca = {
