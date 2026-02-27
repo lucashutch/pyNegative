@@ -28,14 +28,13 @@ def test_lens_controls_coverage(qapp):
         "exif": {"camera_make": "Canon", "camera_model": "EOS 5D"},
         "name": "Canon EF 50mm",
     }
-    controls.set_lens_info(lens_resolver.ProfileSource.EMBEDDED, info)
     controls.set_lens_info(lens_resolver.ProfileSource.LENSFUN_DB, info)
     controls.set_lens_info(lens_resolver.ProfileSource.MANUAL, info)
     controls.set_lens_info(lens_resolver.ProfileSource.NONE, info)
 
     # manual override status
     controls.camera_combo.setCurrentIndex(1)
-    controls.set_lens_info(lens_resolver.ProfileSource.EMBEDDED, info)
+    controls.set_lens_info(lens_resolver.ProfileSource.LENSFUN_DB, info)
 
     # _on_selection_changed
     controls._on_selection_changed()

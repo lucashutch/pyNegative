@@ -30,7 +30,6 @@ def test_resolve_lens_profile_manual_fallback(mock_lens_metadata, mock_lens_db):
         "aperture": 1.8,
     }
     mock_lens_metadata.extract_lens_info.return_value = exif_info
-    mock_lens_metadata.extract_embedded_correction_params.return_value = None
 
     # Call resolver
     source, info = lens_resolver.resolve_lens_profile("test.cr3")
@@ -54,7 +53,6 @@ def test_resolve_lens_profile_manual_with_unknown_lens(
         "aperture": 1.8,
     }
     mock_lens_metadata.extract_lens_info.return_value = exif_info
-    mock_lens_metadata.extract_embedded_correction_params.return_value = None
 
     # DB returns None for match
     mock_lens_db.get_instance.return_value.find_lens.return_value = None

@@ -1,9 +1,7 @@
 import logging
-import re
 from datetime import datetime
 from pathlib import Path
 
-import rawpy
 from PIL import Image
 
 # Import STD_EXTS from raw.py to avoid duplication if possible,
@@ -40,34 +38,6 @@ def get_exif_capture_date(raw_path: str | Path) -> str | None:
                                     return f"{parts[0]}-{parts[1]}-{parts[2]}"
                             except Exception:
                                 pass
-
-        with rawpy.imread(str(raw_path)) as raw:
-            # Try to extract EXIF DateTimeOriginal
-            # rawpy stores EXIF data that we can parse
-            try:
-                # Access the raw data structure
-                if hasattr(raw, "raw_image") and hasattr(raw, "extract_exif"):
-                    exif_data = raw.extract_exif()
-                    if exif_data:
-                        # Parse DateTimeOriginal from EXIF
-                        # Format in EXIF is typically: "2024:01:15 14:30:00"
-                        exif_str = exif_data.decode("utf-8", errors="ignore")
-
-                        # Search for date patterns in EXIF
-                        date_patterns = [
-                            r"DateTimeOriginal\s*\x00*\s*(\d{4}):(\d{2}):(\d{2})",
-                            r"DateTime\s*\x00*\s*(\d{4}):(\d{2}):(\d{2})",
-                            r"(\d{4}):(\d{2}):(\d{2})\s+(\d{2}):(\d{2}):(\d{2})",
-                        ]
-
-                        for pattern in date_patterns:
-                            match = re.search(pattern, exif_str)
-                            if match:
-                                year, month, day = match.groups()[:3]
-                                return f"{year}-{month}-{day}"
-
-            except Exception as e:
-                logger.debug(f"Error extracting EXIF from {raw_path}: {e}")
 
         # Fallback: use file modification time
         mtime = raw_path.stat().st_mtime

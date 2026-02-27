@@ -17,7 +17,7 @@ from ..utils.numba_kernels import (
 logger = logging.getLogger(__name__)
 
 
-def sharpen_image(img, radius, percent, method="High Quality"):
+def sharpen_image(img, radius, percent):
     """Advanced sharpening that operates on NumPy float32 arrays."""
     if img is None:
         return None
@@ -113,15 +113,10 @@ def de_noise_image(
     img,
     luma_strength=0,
     chroma_strength=0,
-    method="High Quality",
     zoom=None,
     tier=None,
 ):
-    """
-    De-noising for NumPy float32 arrays using bilateral filter.
-    The 'method' parameter is maintained for backward compatibility but
-    only bilateral filtering is now supported.
-    """
+    """De-noising for NumPy float32 arrays using bilateral filter."""
     if img is None:
         return None
 

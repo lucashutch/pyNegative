@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 class ProfileSource(Enum):
-    EMBEDDED = auto()
     LENSFUN_DB = auto()
     MANUAL = auto()
     NONE = auto()
@@ -42,17 +41,7 @@ def resolve_lens_profile(
     focal_length = exif_info.get("focal_length")
     aperture = exif_info.get("aperture")
 
-    # Tier 1: Embedded Correction Params
-    embedded_params = lens_metadata.extract_embedded_correction_params(raw_path)
-    if embedded_params:
-        logger.info(f"Found embedded lens correction profile for {lens_model}")
-        return ProfileSource.EMBEDDED, {
-            "name": lens_model,
-            "params": embedded_params,
-            "exif": exif_info,
-        }
-
-    # Tier 2: Lensfun Database Match
+    # Tier 1: Lensfun Database Match
     db = lens_db_xml.get_instance()
     if db.loaded:
         matched_lens = db.find_lens(

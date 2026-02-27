@@ -36,7 +36,7 @@ def test_de_noise_image_zero():
 
 def test_de_noise_image_bilateral():
     img = np.random.rand(10, 10, 3).astype(np.float32)
-    out = de_noise_image(img, 10, 10, method="Bilateral")
+    out = de_noise_image(img, 10, 10)
     assert out.shape == (10, 10, 3)
     assert np.all(out >= 0.0) and np.all(out <= 1.0)
 
@@ -44,7 +44,7 @@ def test_de_noise_image_bilateral():
 def test_de_noise_image_luma_only():
     """Test bilateral denoise with luma-only processing."""
     img = np.random.rand(10, 10, 3).astype(np.float32)
-    out = de_noise_image(img, luma_strength=10, chroma_strength=0, method="Bilateral")
+    out = de_noise_image(img, luma_strength=10, chroma_strength=0)
     assert out.shape == (10, 10, 3)
     assert np.all(out >= 0.0) and np.all(out <= 1.0)
 
@@ -52,7 +52,7 @@ def test_de_noise_image_luma_only():
 def test_de_noise_image_chroma_only():
     """Test bilateral denoise with chroma-only processing."""
     img = np.random.rand(10, 10, 3).astype(np.float32)
-    out = de_noise_image(img, luma_strength=0, chroma_strength=10, method="Bilateral")
+    out = de_noise_image(img, luma_strength=0, chroma_strength=10)
     assert out.shape == (10, 10, 3)
     assert np.all(out >= 0.0) and np.all(out <= 1.0)
 
