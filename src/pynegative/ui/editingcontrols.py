@@ -13,11 +13,8 @@ from .widgets import (
 
 
 class EditingControls(QtWidgets.QWidget):
-    DENOISE_METHODS = [
-        "High Quality",
-        "NLMeans (Numba Hybrid YUV)",
-        "NLMeans (Numba Fast+ YUV)",
-    ]
+    # Only bilateral filtering is supported now
+    DENOISE_METHODS = ["Bilateral"]
 
     # Signals for changes
     settingChanged = QtCore.Signal(str, object)  # setting_name, value
@@ -31,7 +28,7 @@ class EditingControls(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.val_denoise_method = "High Quality"
+        self.val_denoise_method = "Bilateral"
         self._init_ui()
 
     def _init_ui(self):
@@ -502,4 +499,4 @@ class EditingControls(QtWidgets.QWidget):
         self.detail_controls.val_sharpen_radius = 0.5 + (s_val / 100.0) * 2.5
         self.detail_controls.val_sharpen_percent = (s_val / 100.0) * 300.0
 
-        self.val_denoise_method = settings.get("denoise_method", "High Quality")
+        self.val_denoise_method = settings.get("denoise_method", "Bilateral")

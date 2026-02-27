@@ -75,45 +75,19 @@ def _lens_info_signature(lens_info):
 
 
 def process_denoise_stage(img, res_key, heavy_params, zoom_scale, preprocess_key=None):
-    """Processes and caches the denoising stage."""
+    """Processes and caches the denoising stage using bilateral filtering."""
     l_str = float(heavy_params.get("denoise_luma", 0))
     c_str = float(heavy_params.get("denoise_chroma", 0))
 
     if l_str <= 0 and c_str <= 0:
         return img
 
-    requested_method = heavy_params.get("denoise_method", "High Quality")
-    effective_method = requested_method
-
-    if "NLMeans" in requested_method:
-        is_roi = isinstance(res_key, tuple)
-        if is_roi:
-            if zoom_scale < 0.95:
-                if "High Quality" in requested_method or "Hybrid" in requested_method:
-                    effective_method = "NLMeans (Numba Hybrid YUV)"
-            else:
-                effective_method = requested_method
-        elif res_key in [
-            "tier_0.0625",
-            "tier_0.125",
-            "tier_0.25",
-            "preview",
-            "quarter",
-        ]:
-            effective_method = "NLMeans (Numba Ultra Fast YUV)"
-        elif res_key in ["tier_0.5", "half"]:
-            effective_method = "NLMeans (Numba Fast+ YUV)"
-        elif res_key in ["tier_1.0", "full"]:
-            if "High Quality" in requested_method or "Hybrid" in requested_method:
-                effective_method = "NLMeans (Numba Hybrid YUV)"
-            else:
-                effective_method = requested_method
-
+    # Bilateral filtering is the only denoise method now
     processed = pynegative.de_noise_image(
         img,
         luma_strength=l_str,
         chroma_strength=c_str,
-        method=effective_method,
+        method="Bilateral",
         zoom=zoom_scale,
         tier=res_key,
     )

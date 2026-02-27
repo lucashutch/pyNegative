@@ -6,10 +6,10 @@ import numpy as np
 
 from ..utils.numba_kernels import (
     bilateral_kernel_yuv,
+    bilateral_kernel_luma,
+    bilateral_kernel_chroma,
     dark_channel_kernel,
     dehaze_recovery_kernel,
-    nl_means_numba,
-    nl_means_numba_multichannel,
     sharpen_kernel,
     transmission_dark_channel_kernel,
 )
@@ -57,65 +57,18 @@ def sharpen_image(img, radius, percent, method="High Quality"):
         return img
 
 
-def _apply_nl_means_path(img_array, l_str, c_str, method):
-    """Internal helper to apply NL-Means denoising path."""
-    yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
-    y, u, v = cv2.split(yuv)
-
-    # Map strength 0-50 to h parameters
-    h_y = (l_str / 50.0) * 0.01
-    h_uv = (c_str / 50.0) * 50.0
-
-    p_size, s_size = 5, 13
-    if "Ultra Fast" in method:
-        p_size, s_size = 3, 3
-    elif "Fast+" in method:
-        p_size, s_size = 3, 5
-    elif "Fast" in method:
-        p_size, s_size = 5, 9
-
-    if "Hybrid" in method:
-        # Hybrid: Fast+ for Luma (3, 5), Fast for Chroma (5, 9)
-        y_denoised = (
-            nl_means_numba(y, h=h_y, patch_size=3, search_size=5) if l_str > 0 else y
-        )
-        if c_str > 0:
-            uv_stack = np.ascontiguousarray(yuv[:, :, 1:])
-            uv_denoised = nl_means_numba_multichannel(
-                uv_stack, h=(h_uv, h_uv), patch_size=5, search_size=9
-            )
-            denoised_yuv = cv2.merge(
-                [y_denoised, uv_denoised[:, :, 0], uv_denoised[:, :, 1]]
-            )
-        else:
-            denoised_yuv = cv2.merge([y_denoised, u, v])
-    elif l_str > 0 and c_str > 0:
-        denoised_yuv = nl_means_numba_multichannel(
-            yuv, h=(h_y, h_uv, h_uv), patch_size=p_size, search_size=s_size
-        )
-    elif l_str > 0:
-        y_denoised = nl_means_numba(y, h=h_y, patch_size=p_size, search_size=s_size)
-        denoised_yuv = cv2.merge([y_denoised, u, v])
-    elif c_str > 0:
-        uv_stack = np.ascontiguousarray(yuv[:, :, 1:])
-        uv_denoised = nl_means_numba_multichannel(
-            uv_stack, h=(h_uv, h_uv), patch_size=p_size, search_size=s_size
-        )
-        denoised_yuv = cv2.merge([y, uv_denoised[:, :, 0], uv_denoised[:, :, 1]])
-    else:
-        denoised_yuv = yuv
-
-    return cv2.cvtColor(denoised_yuv, cv2.COLOR_YUV2RGB)
-
-
 def _apply_bilateral_path(img_array, l_str, c_str):
-    """Internal helper to apply Bilateral denoising path."""
+    """Internal helper to apply Bilateral denoising path.
+
+    Intelligently selects the optimal kernel variant:
+    - luma_only: Use fast bilateral_kernel_luma
+    - chroma_only: Use fast bilateral_kernel_chroma with pre-computed luma
+    - both: Use bilateral_kernel_yuv (fused) to avoid redundant processing
+    """
     s_scale = 1.0 / 255.0
     yuv = cv2.cvtColor(img_array, cv2.COLOR_RGB2YUV)
 
-    # Chroma slider has 2× sensitivity: same value yields twice the
-    # denoising strength compared to luma, since chroma noise is
-    # generally less perceptually objectionable and needs larger sigmas.
+    # Chroma slider has 2× sensitivity
     c_str = c_str * 2.0
 
     sigma_color_y = max(1e-6, l_str * 0.4 * s_scale)
@@ -123,14 +76,36 @@ def _apply_bilateral_path(img_array, l_str, c_str):
     sigma_color_uv = max(1e-6, c_str * 4.5 * s_scale)
     sigma_space_uv = 3.0 + (c_str / 8.0)
 
-    img_yuv_denoised = bilateral_kernel_yuv(
-        yuv,
-        l_str,
-        sigma_color_y,
-        sigma_space_y,
-        sigma_color_uv,
-        sigma_space_uv,
-    )
+    # Smart kernel selection for optimal performance
+    if l_str > 0 and c_str > 0:
+        # Both enabled: use fused kernel to avoid redundant luma processing
+        img_yuv_denoised = bilateral_kernel_yuv(
+            yuv,
+            l_str,
+            sigma_color_y,
+            sigma_space_y,
+            sigma_color_uv,
+            sigma_space_uv,
+        )
+    elif l_str > 0:
+        # Luma only: skip chroma processing entirely
+        img_yuv_denoised = bilateral_kernel_luma(
+            yuv,
+            l_str,
+            sigma_color_y,
+            sigma_space_y,
+        )
+    else:
+        # Chroma only: compute luma once for Y-guidance, then apply chroma filter
+        plane_y = np.ascontiguousarray(yuv[:, :, 0])
+        img_yuv_denoised = bilateral_kernel_chroma(
+            yuv,
+            plane_y,
+            c_str,
+            sigma_color_uv,
+            sigma_space_uv,
+        )
+
     return cv2.cvtColor(img_yuv_denoised, cv2.COLOR_YUV2RGB)
 
 
@@ -143,7 +118,9 @@ def de_noise_image(
     tier=None,
 ):
     """
-    De-noising for NumPy float32 arrays.
+    De-noising for NumPy float32 arrays using bilateral filter.
+    The 'method' parameter is maintained for backward compatibility but
+    only bilateral filtering is now supported.
     """
     if img is None:
         return None
@@ -161,29 +138,17 @@ def de_noise_image(
 
     start_time = time.perf_counter()
     denoised = None
-    method_name = method
 
     try:
-        if method.startswith("NLMeans (Numba"):
-            # Get clean variant name for logging (strip "YUV" suffix)
-            inner = method.split("(", 1)[1].rstrip(")")  # e.g. "Numba Fast+ YUV"
-            tokens = inner.split()
-            tokens = [t for t in tokens if t not in ("Numba", "YUV")]
-            variant = " ".join(tokens) if tokens else "Full"
-            method_name = f"NL-Means ({variant})"
-
-            denoised = _apply_nl_means_path(img, l_str, c_str, method)
-        else:
-            method_name = "Bilateral"
-            denoised = _apply_bilateral_path(img, l_str, c_str)
+        denoised = _apply_bilateral_path(img, l_str, c_str)
 
         elapsed = (time.perf_counter() - start_time) * 1000
         logger.debug(
-            f"Denoise: {method_name} | Size: {w}x{h}{tier_str} | Time: {elapsed:.2f}ms"
+            f"Denoise: Bilateral | Size: {w}x{h}{tier_str} | Time: {elapsed:.2f}ms"
         )
 
     except Exception as e:
-        logger.error(f"Core Denoise failed: {e}")
+        logger.error(f"Denoise failed: {e}")
 
     if denoised is not None:
         return np.clip(denoised, 0, 1)

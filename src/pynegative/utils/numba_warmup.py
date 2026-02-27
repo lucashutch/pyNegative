@@ -35,10 +35,9 @@ def warmup_kernels() -> tuple[bool, float]:
     )
     from .numba_denoise import (
         bilateral_kernel_yuv,
-        nl_means_numba,
-        nl_means_numba_multichannel,
+        bilateral_kernel_luma,
+        bilateral_kernel_chroma,
     )
-    from .numba_detail import sharpen_kernel
     from .numba_defringe import defringe_kernel
     from ..processing.lens import (
         vignette_kernel,
@@ -50,8 +49,6 @@ def warmup_kernels() -> tuple[bool, float]:
     start = time.perf_counter()
 
     img3 = np.zeros((4, 4, 3), dtype=np.float32)
-    img2d = np.zeros((30, 30), dtype=np.float32)
-    img3_mc = np.zeros((30, 30, 3), dtype=np.float32)
     transmission = np.full((4, 4), 0.5, dtype=np.float32)
     atmospheric = np.array([0.5, 0.5, 0.5], dtype=np.float32)
 
@@ -59,42 +56,29 @@ def warmup_kernels() -> tuple[bool, float]:
 
     tone_map_kernel(img3.copy(), 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, True)
 
-    # 2. sharpen_kernel(img, blurred, percent)
-    sharpen_kernel(img3.copy(), img3.copy(), 50.0)
-
-    # 3. bilateral_kernel_yuv(img_yuv, strength, σ_color_y, σ_space_y,
+    # 3. bilateral kernels for denoising
+    #    bilateral_kernel_yuv(img_yuv, strength, σ_color_y, σ_space_y,
     #                         σ_color_uv, σ_space_uv)
     bilateral_kernel_yuv(img3.copy(), 1.0, 0.1, 1.0, 0.1, 1.0)
 
-    # 4. nl_means_numba  (2D single-channel)
-    #    Minimum image size for defaults (patch=7, search=21):
-    #    2*(10+3)+1 = 27  → use 30×30
-    nl_means_numba(img2d, h=10.0, patch_size=7, search_size=21)
+    # Warmup the optimized luma and chroma variants
+    bilateral_kernel_luma(img3.copy(), 1.0, 0.1, 1.0)
+    plane_y = img3[:, :, 0].copy()
+    bilateral_kernel_chroma(img3.copy(), plane_y, 1.0, 0.1, 1.0)
 
-    # Also warm the specialised 3×3 patch path
-    nl_means_numba(img2d, h=10.0, patch_size=3, search_size=5)
-
-    # 5. nl_means_numba_multichannel  (3-channel)
-    nl_means_numba_multichannel(
-        img3_mc, h=(10.0, 10.0, 10.0), patch_size=7, search_size=21
-    )
-    nl_means_numba_multichannel(
-        img3_mc, h=(10.0, 10.0, 10.0), patch_size=3, search_size=5
-    )
-
-    # 6. dark_channel_kernel
+    # 4. dark_channel_kernel
     dark_channel_kernel(img3.copy())
 
-    # 7. transmission_dark_channel_kernel (fused normalization + dark channel)
+    # 5. transmission_dark_channel_kernel (fused normalization + dark channel)
     transmission_dark_channel_kernel(img3.copy(), atmospheric)
 
-    # 8. dehaze_recovery_kernel
+    # 6. dehaze_recovery_kernel
     dehaze_recovery_kernel(img3.copy(), transmission, atmospheric)
 
-    # 9. defringe_kernel(img, out, purple_thresh, green_thresh, edge_thresh, radius)
+    # 7. defringe_kernel(img, out, purple_thresh, green_thresh, edge_thresh, radius)
     defringe_kernel(img3.copy(), np.empty_like(img3), 0.5, 0.5, 0.05, 1.0)
 
-    # 10. Lens kernels
+    # 8. Lens kernels
     vignette_kernel(img3.copy(), 0.1, 0.0, 0.0, 2.0, 2.0, 4.0, 4.0)
     generate_ptlens_map(4, 4, 0.0, 0.0, 0.0, 2.0, 2.0, 4.0, 4.0, 1.0)
     generate_poly3_map(4, 4, 0.0, 2.0, 2.0, 4.0, 4.0, 1.0)
@@ -112,7 +96,7 @@ def warmup_kernels() -> tuple[bool, float]:
         1.0,
     )
 
-    # 11. float32_to_uint8 conversion kernel
+    # 9. float32_to_uint8 conversion kernel
     float32_to_uint8(img3.copy())
 
     elapsed_ms = (time.perf_counter() - start) * 1000.0

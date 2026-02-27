@@ -8,7 +8,6 @@ from pynegative.io.lens_db_xml import (
 
 
 def test_lens_db_coverage(tmp_path):
-
     # Create fake XML
     db_path = tmp_path / "lensdb"
     db_path.mkdir()

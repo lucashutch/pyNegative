@@ -10,8 +10,8 @@ from .numba_dehaze import (
 )
 from .numba_denoise import (
     bilateral_kernel_yuv,
-    nl_means_numba,
-    nl_means_numba_multichannel,
+    bilateral_kernel_luma,
+    bilateral_kernel_chroma,
 )
 from .numba_detail import sharpen_kernel
 from .numba_histogram import numba_histogram_kernel
@@ -22,8 +22,8 @@ __all__ = [
     "float32_to_uint8",
     "sharpen_kernel",
     "bilateral_kernel_yuv",
-    "nl_means_numba",
-    "nl_means_numba_multichannel",
+    "bilateral_kernel_luma",
+    "bilateral_kernel_chroma",
     "dark_channel_kernel",
     "dehaze_recovery_kernel",
     "transmission_dark_channel_kernel",

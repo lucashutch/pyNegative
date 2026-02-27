@@ -168,7 +168,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
             "de_haze": self.settings.get("de_haze", 0) / 50.0,
             "denoise_luma": self.settings.get("denoise_luma", 0),
             "denoise_chroma": self.settings.get("denoise_chroma", 0) * 2,
-            "denoise_method": self.settings.get("denoise_method", "High Quality"),
+            "denoise_method": self.settings.get("denoise_method", "Bilateral"),
             "sharpen_value": self.settings.get("sharpen_value", 0),
             "sharpen_radius": self.settings.get("sharpen_radius", 0.5),
             "sharpen_percent": self.settings.get("sharpen_percent", 0.0),
