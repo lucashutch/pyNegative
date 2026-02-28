@@ -171,6 +171,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.metadata_btn.clicked.connect(self._on_metadata_toggle)
         bar_layout.addWidget(self.metadata_btn)
 
+        # History Panel Toggle
+        self.history_btn = QtWidgets.QToolButton()
+        self.history_btn.setText("🕓")
+        self.history_btn.setObjectName("HistoryButton")
+        self.history_btn.setToolTip("Edit History")
+        self.history_btn.setCheckable(True)
+        self.history_btn.setEnabled(False)
+        self.history_btn.clicked.connect(self._on_history_toggle)
+        bar_layout.addWidget(self.history_btn)
+
         self.btn_open_folder = QtWidgets.QPushButton("Open Folder")
         self.btn_open_folder.setObjectName("OpenFolderButton")
         self.btn_open_folder.clicked.connect(self.gallery.browse_folder)
@@ -198,9 +208,18 @@ class MainWindow(QtWidgets.QMainWindow):
         if current == self.editor:
             self.editor._metadata_panel_visible = visible
             self.editor.settings.setValue("metadata_panel_visible", visible)
-            self.editor.metadata_panel.setVisible(visible)
-            if visible and self.editor.raw_path:
-                self.editor._load_metadata()
+            if visible:
+                self.editor.right_panel.show_info_tab()
+                # Uncheck history button since tabs are exclusive
+                self.editor._history_panel_visible = False
+                self.editor.settings.setValue("history_panel_visible", False)
+                self.history_btn.setChecked(False)
+                if self.editor.raw_path:
+                    self.editor._load_metadata()
+            else:
+                # Only hide the right panel if history is also off
+                if not self.editor._history_panel_visible:
+                    self.editor.right_panel.setVisible(False)
         elif current == self.gallery:
             if self.gallery._is_large_preview:
                 pw = self.gallery.preview_widget
@@ -210,35 +229,57 @@ class MainWindow(QtWidgets.QMainWindow):
                 if visible and pw.raw_path:
                     pw._load_metadata()
             else:
-                # Gallery grid view
                 self.gallery._gallery_metadata_visible = visible
                 self.gallery.settings.setValue("gallery_metadata_visible", visible)
                 self.gallery.gallery_metadata_panel.setVisible(visible)
                 if visible:
-                    # Trigger a selection update to populate metadata
                     self.gallery._on_gallery_selection_changed()
 
+    def _on_history_toggle(self):
+        """Toggle history panel on the editor view."""
+        visible = self.history_btn.isChecked()
+        current = self.stack.currentWidget()
+
+        if current == self.editor:
+            self.editor._history_panel_visible = visible
+            self.editor.settings.setValue("history_panel_visible", visible)
+            if visible:
+                self.editor.right_panel.show_history_tab()
+                # Uncheck metadata button since tabs are exclusive
+                self.editor._metadata_panel_visible = False
+                self.editor.settings.setValue("metadata_panel_visible", False)
+                self.metadata_btn.setChecked(False)
+                self.editor._refresh_history_panel()
+            else:
+                if not self.editor._metadata_panel_visible:
+                    self.editor.right_panel.setVisible(False)
+
     def _sync_metadata_btn_state(self, *args):
-        """Sync the metadata button state with the active view."""
+        """Sync the metadata and history button states with the active view."""
         current = self.stack.currentWidget()
         if current == self.editor:
             has_image = self.editor.raw_path is not None
             self.metadata_btn.setEnabled(has_image)
             self.metadata_btn.setChecked(self.editor._metadata_panel_visible)
+            self.history_btn.setEnabled(has_image)
+            self.history_btn.setChecked(self.editor._history_panel_visible)
         elif current == self.gallery:
+            self.history_btn.setEnabled(False)
+            self.history_btn.setChecked(False)
             if self.gallery._is_large_preview:
                 pw = self.gallery.preview_widget
                 has_image = pw.raw_path is not None
                 self.metadata_btn.setEnabled(has_image)
                 self.metadata_btn.setChecked(pw._metadata_panel_visible)
             else:
-                # Grid view - always enable, state depends on gallery setting
                 has_folder = self.gallery.current_folder is not None
                 self.metadata_btn.setEnabled(has_folder)
                 self.metadata_btn.setChecked(self.gallery._gallery_metadata_visible)
         else:
             self.metadata_btn.setEnabled(False)
             self.metadata_btn.setChecked(False)
+            self.history_btn.setEnabled(False)
+            self.history_btn.setChecked(False)
 
     def switch_to_gallery(self):
         logger.info("Mode switch: GALLERY")

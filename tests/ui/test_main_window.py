@@ -75,7 +75,7 @@ def test_main_window_metadata_toggle(main_window):
     with patch.object(main_window.metadata_btn, "isChecked", return_value=True):
         main_window._on_metadata_toggle()
 
-    main_window.editor.metadata_panel.setVisible.assert_called_with(True)
+    main_window.editor.right_panel.show_info_tab.assert_called()
 
 
 def test_on_gallery_list_changed(main_window):

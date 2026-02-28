@@ -21,7 +21,9 @@ from .imageprocessing import ImageProcessingPipeline
 from .loaders import RawLoader
 from .settingsmanager import SettingsManager
 from .widgets import (
+    HistoryPanel,
     MetadataPanel,
+    RightPanel,
     ZoomableGraphicsView,
     ZoomControls,
     PreviewStarRatingWidget,
@@ -126,14 +128,21 @@ class EditorWidget(QtWidgets.QWidget):
         self.canvas_splitter.addWidget(self.carousel_widget)
 
         self.metadata_panel = MetadataPanel()
-        self.main_content_splitter.addWidget(self.metadata_panel)
+        self.history_panel = HistoryPanel()
+        self.right_panel = RightPanel(self.metadata_panel, self.history_panel)
+        self.main_content_splitter.addWidget(self.right_panel)
         self.main_content_splitter.setSizes([1000, 280])
 
         self._metadata_panel_visible = self.settings.value(
             "metadata_panel_visible", False, type=bool
         )
+        self._history_panel_visible = self.settings.value(
+            "history_panel_visible", False, type=bool
+        )
         if self._metadata_panel_visible:
-            self.metadata_panel.setVisible(True)
+            self.right_panel.show_info_tab()
+        elif self._history_panel_visible:
+            self.right_panel.show_history_tab()
         self.carousel_widget.installEventFilter(self)
 
         self.canvas_splitter.setStretchFactor(0, 5)
@@ -254,6 +263,11 @@ class EditorWidget(QtWidgets.QWidget):
             self._on_preview_rating_changed
         )
 
+        # History panel signals
+        self.history_panel.snapshotSelected.connect(self._on_snapshot_selected)
+        self.history_panel.restoreRequested.connect(self._on_snapshot_restore)
+        self.version_manager.snapshotsChanged.connect(self._refresh_history_panel)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if (
@@ -282,6 +296,8 @@ class EditorWidget(QtWidgets.QWidget):
         self.carousel_manager.clear()
         self.settings_manager.clear_clipboard()
         self.metadata_panel.clear()
+        self.history_panel.clear()
+        self.version_manager.stop()
 
     def update_rating_for_path(self, path, rating):
         if self.raw_path and str(self.raw_path) == path:
@@ -569,8 +585,91 @@ class EditorWidget(QtWidgets.QWidget):
         if self._metadata_panel_visible:
             self.metadata_panel.load_for_path(self.raw_path, settings)
 
+        # Load history panel if visible
+        if self._history_panel_visible:
+            self._refresh_history_panel()
+
         # Start version autosave timer for this image
         self.version_manager.start()
+
+    def _load_metadata(self):
+        """Load metadata into the panel (called by MainWindow on toggle)."""
+        if self.raw_path:
+            current_settings = self.image_processor.get_current_settings()
+            self.metadata_panel.load_for_path(self.raw_path, current_settings)
+
+    def _refresh_history_panel(self):
+        """Reload the history panel from disk snapshots."""
+        snapshots = self.version_manager.load_snapshots()
+        self.history_panel.set_snapshots(snapshots)
+
+    # ------------------------------------------------------------------
+    # Snapshot preview / restore
+    # ------------------------------------------------------------------
+
+    _stashed_settings: dict | None = None
+    _stashed_rating: int = 0
+
+    def _on_snapshot_selected(self, snapshot_id: str):
+        """Preview a snapshot (or cancel preview on empty id)."""
+        if not snapshot_id:
+            # Cancel — revert to stashed state
+            self._revert_preview()
+            return
+
+        snap = self.history_panel.get_snapshot_by_id(snapshot_id)
+        if snap is None:
+            return
+
+        # Stash current working state on first preview
+        if self._stashed_settings is None:
+            self._stashed_settings = self.image_processor.get_current_settings()
+            self._stashed_rating = self.editing_controls.star_rating_widget.rating()
+
+        # Apply snapshot settings to the editor
+        settings = snap["settings"]
+        self.editing_controls.apply_settings(settings)
+        self.image_processor.set_processing_params(**settings)
+        self._request_update_from_view()
+
+        rating = settings.get("rating", 0)
+        self.editing_controls.set_rating(rating)
+
+        self.history_panel.set_previewing(True)
+        self.show_toast("Previewing snapshot")
+
+    def _on_snapshot_restore(self, snapshot_id: str):
+        """Commit the previewed snapshot as the current working state."""
+        snap = self.history_panel.get_snapshot_by_id(snapshot_id)
+        if snap is None:
+            return
+
+        settings = snap["settings"]
+        rating = settings.get("rating", 0)
+
+        # Push an undo state so the user can revert
+        self.settings_manager.push_immediate_undo_state("Restore snapshot", settings)
+
+        # Persist as the current working sidecar
+        self.settings_manager.auto_save_sidecar(self.raw_path, settings, rating)
+
+        # Clear stash — this is now the current state
+        self._stashed_settings = None
+        self._stashed_rating = 0
+        self.history_panel.set_previewing(False)
+        self.show_toast("Snapshot restored")
+
+    def _revert_preview(self):
+        """Revert the editor to the stashed pre-preview state."""
+        if self._stashed_settings is None:
+            return
+        self.editing_controls.apply_settings(self._stashed_settings)
+        self.image_processor.set_processing_params(**self._stashed_settings)
+        self._request_update_from_view()
+        self.editing_controls.set_rating(self._stashed_rating)
+        self._stashed_settings = None
+        self._stashed_rating = 0
+        self.history_panel.set_previewing(False)
 
     def _request_update_from_view(self):
         if (
