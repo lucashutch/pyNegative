@@ -120,6 +120,7 @@ class HistoryPanel(QtWidgets.QWidget):
         self.list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
         self.list_widget.currentItemChanged.connect(self._on_item_changed)
+        self.list_widget.viewport().installEventFilter(self)
         self.list_widget.setSpacing(2)
         self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         layout.addWidget(self.list_widget)
@@ -249,16 +250,23 @@ class HistoryPanel(QtWidgets.QWidget):
                 lambda: self.deleteRequested.emit(snapshot_id)
             )
 
-        # Comparison actions (only when comparison mode enabled)
-        if self._comparison_active:
-            menu.addSeparator()
-            left_action = menu.addAction("Set as Left Comparison Image")
-            left_action.triggered.connect(
-                lambda: self.setLeftComparison.emit(snapshot_id)
-            )
-            right_action = menu.addAction("Set as Right Comparison Image")
-            right_action.triggered.connect(
-                lambda: self.setRightComparison.emit(snapshot_id)
-            )
+        # Comparison actions (always available; selecting auto-enables compare)
+        menu.addSeparator()
+        left_action = menu.addAction("Set as Left Comparison Image")
+        left_action.triggered.connect(lambda: self.setLeftComparison.emit(snapshot_id))
+        right_action = menu.addAction("Set as Right Comparison Image")
+        right_action.triggered.connect(
+            lambda: self.setRightComparison.emit(snapshot_id)
+        )
 
-        menu.exec_(self.list_widget.mapToGlobal(pos))
+        menu.popup(self.list_widget.mapToGlobal(pos))
+
+    def eventFilter(self, obj, event):
+        if (
+            obj == self.list_widget.viewport()
+            and event.type() == QtCore.QEvent.MouseButtonPress
+        ):
+            if event.button() == Qt.RightButton:
+                # Keep current selection unchanged on right-click.
+                return True
+        return super().eventFilter(obj, event)
