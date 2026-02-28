@@ -7,6 +7,12 @@ from .base import BaseControlWidget
 class ColorControls(BaseControlWidget):
     autoWbRequested = QtCore.Signal()
 
+    _reset_params = [
+        ("val_temperature", 0.0, "temperature"),
+        ("val_tint", 0.0, "tint"),
+        ("val_saturation", 0.0, "saturation"),
+    ]
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._init_ui()
@@ -65,18 +71,8 @@ class ColorControls(BaseControlWidget):
             "Saturation", -1.0, 1.0, 0.0, "val_saturation", 0.01, self.color_section
         )
 
-    def reset_section(self):
-        params = [
-            ("val_temperature", 0.0, "temperature"),
-            ("val_tint", 0.0, "tint"),
-            ("val_saturation", 0.0, "saturation"),
-        ]
-        for var_name, default, setting_name in params:
-            self.set_slider_value(var_name, default)
-            self.settingChanged.emit(setting_name, default)
-
     def reset_wb(self):
-        self.set_slider_value("val_temperature", 0.0)
-        self.set_slider_value("val_tint", 0.0)
+        self.set_slider_value("val_temperature", 0.0, silent=True)
+        self.set_slider_value("val_tint", 0.0, silent=True)
         self.settingChanged.emit("temperature", 0.0)
         self.settingChanged.emit("tint", 0.0)

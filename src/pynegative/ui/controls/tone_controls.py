@@ -5,6 +5,15 @@ from .base import BaseControlWidget
 
 
 class ToneControls(BaseControlWidget):
+    _reset_params = [
+        ("val_exposure", 0.0, "exposure"),
+        ("val_contrast", 0.0, "contrast"),
+        ("val_highlights", 0.0, "highlights"),
+        ("val_shadows", 0.0, "shadows"),
+        ("val_whites", 0.0, "whites"),
+        ("val_blacks", 0.0, "blacks"),
+    ]
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._init_ui()
@@ -36,16 +45,3 @@ class ToneControls(BaseControlWidget):
         self._add_slider(
             "Blacks", -1.0, 1.0, 0.0, "val_blacks", 0.01, self.tone_section
         )
-
-    def reset_section(self):
-        params = [
-            ("val_exposure", 0.0, "exposure"),
-            ("val_contrast", 0.0, "contrast"),
-            ("val_highlights", 0.0, "highlights"),
-            ("val_shadows", 0.0, "shadows"),
-            ("val_whites", 0.0, "whites"),
-            ("val_blacks", 0.0, "blacks"),
-        ]
-        for var_name, default, setting_name in params:
-            self.set_slider_value(var_name, default)
-            self.settingChanged.emit(setting_name, default)
