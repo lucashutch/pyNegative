@@ -1,12 +1,30 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
+from enum import Enum
+
+
+class ComparisonSource(Enum):
+    """What is being shown on each side of the comparison split."""
+
+    UNEDITED = "unedited"
+    CURRENT = "current"
+    SNAPSHOT = "snapshot"
+
 
 class ComparisonManager(QtCore.QObject):
+    comparisonToggled = QtCore.Signal(bool)
+
     def __init__(self, editor):
         super().__init__(editor)
         self.editor = editor
         self.enabled = False
+
+        # Source tracking for left / right sides
+        self._left_source = ComparisonSource.UNEDITED
+        self._right_source = ComparisonSource.CURRENT
+        self._left_snapshot_settings: dict | None = None
+        self._right_snapshot_settings: dict | None = None
 
     def setup_ui(self, canvas_frame, view):
         self.canvas_frame = canvas_frame
@@ -75,6 +93,11 @@ class ComparisonManager(QtCore.QObject):
         if enabled:
             self.comparison_handle.show()
             self.update_handle_position()
+            # Reset to default sources on fresh enable
+            self._left_source = ComparisonSource.UNEDITED
+            self._right_source = ComparisonSource.CURRENT
+            self._left_snapshot_settings = None
+            self._right_snapshot_settings = None
             unedited_pixmap = self.editor.image_processor.get_unedited_pixmap()
             self.comparison_overlay.setUneditedPixmap(unedited_pixmap)
             if self.view._bg_item and self.view._bg_item.pixmap():
@@ -83,6 +106,8 @@ class ComparisonManager(QtCore.QObject):
         else:
             self.comparison_handle.hide()
             self.editor.show_toast("Comparison disabled")
+
+        self.comparisonToggled.emit(enabled)
 
     def update_handle_position(self):
         if hasattr(self, "comparison_handle") and hasattr(self, "comparison_overlay"):
@@ -102,7 +127,41 @@ class ComparisonManager(QtCore.QObject):
 
     def update_pixmaps(self, unedited=None, edited=None):
         if self.enabled and self.comparison_overlay:
-            if unedited:
+            if unedited and self._left_source == ComparisonSource.UNEDITED:
                 self.comparison_overlay.setUneditedPixmap(unedited)
-            if edited:
+            if edited and self._right_source == ComparisonSource.CURRENT:
                 self.comparison_overlay.setEditedPixmap(edited)
+
+    # ------------------------------------------------------------------
+    # Snapshot comparison
+    # ------------------------------------------------------------------
+
+    def set_left_snapshot(self, settings: dict):
+        """Render *settings* and use the result as the left comparison image."""
+        self._left_source = ComparisonSource.SNAPSHOT
+        self._left_snapshot_settings = settings
+        pixmap = self.editor.image_processor.render_snapshot_pixmap(settings)
+        if not pixmap.isNull():
+            self.comparison_overlay.setUneditedPixmap(pixmap)
+            self.editor.show_toast("Left comparison: snapshot")
+
+    def set_right_snapshot(self, settings: dict):
+        """Render *settings* and use the result as the right comparison image."""
+        self._right_source = ComparisonSource.SNAPSHOT
+        self._right_snapshot_settings = settings
+        pixmap = self.editor.image_processor.render_snapshot_pixmap(settings)
+        if not pixmap.isNull():
+            self.comparison_overlay.setEditedPixmap(pixmap)
+            self.editor.show_toast("Right comparison: snapshot")
+
+    def reset_sources(self):
+        """Reset both sides to the default unedited / current pair."""
+        self._left_source = ComparisonSource.UNEDITED
+        self._right_source = ComparisonSource.CURRENT
+        self._left_snapshot_settings = None
+        self._right_snapshot_settings = None
+        if self.enabled:
+            unedited = self.editor.image_processor.get_unedited_pixmap()
+            self.comparison_overlay.setUneditedPixmap(unedited)
+            if self.view._bg_item and self.view._bg_item.pixmap():
+                self.comparison_overlay.setEditedPixmap(self.view._bg_item.pixmap())

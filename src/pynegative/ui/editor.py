@@ -268,7 +268,14 @@ class EditorWidget(QtWidgets.QWidget):
         self.history_panel.restoreRequested.connect(self._on_snapshot_restore)
         self.history_panel.tagRequested.connect(self._on_snapshot_tag)
         self.history_panel.deleteRequested.connect(self._on_snapshot_delete)
+        self.history_panel.setLeftComparison.connect(self._on_set_left_comparison)
+        self.history_panel.setRightComparison.connect(self._on_set_right_comparison)
         self.version_manager.snapshotsChanged.connect(self._refresh_history_panel)
+
+        # Keep history panel comparison-menu state in sync
+        self.comparison_manager.comparisonToggled.connect(
+            self.history_panel.set_comparison_active
+        )
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -718,6 +725,24 @@ class EditorWidget(QtWidgets.QWidget):
         pynegative.delete_snapshot(self.raw_path, snapshot_id)
         self._refresh_history_panel()
         self.show_toast("Snapshot deleted")
+
+    # ------------------------------------------------------------------
+    # Snapshot comparison
+    # ------------------------------------------------------------------
+
+    def _on_set_left_comparison(self, snapshot_id: str):
+        """Set a snapshot as the left side of the comparison overlay."""
+        snap = self.history_panel.get_snapshot_by_id(snapshot_id)
+        if snap is None or not self.comparison_manager.enabled:
+            return
+        self.comparison_manager.set_left_snapshot(snap["settings"])
+
+    def _on_set_right_comparison(self, snapshot_id: str):
+        """Set a snapshot as the right side of the comparison overlay."""
+        snap = self.history_panel.get_snapshot_by_id(snapshot_id)
+        if snap is None or not self.comparison_manager.enabled:
+            return
+        self.comparison_manager.set_right_snapshot(snap["settings"])
 
     def _request_update_from_view(self):
         if (
