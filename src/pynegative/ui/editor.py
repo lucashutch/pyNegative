@@ -266,6 +266,8 @@ class EditorWidget(QtWidgets.QWidget):
         # History panel signals
         self.history_panel.snapshotSelected.connect(self._on_snapshot_selected)
         self.history_panel.restoreRequested.connect(self._on_snapshot_restore)
+        self.history_panel.tagRequested.connect(self._on_snapshot_tag)
+        self.history_panel.deleteRequested.connect(self._on_snapshot_delete)
         self.version_manager.snapshotsChanged.connect(self._refresh_history_panel)
 
     def resizeEvent(self, event):
@@ -670,6 +672,52 @@ class EditorWidget(QtWidgets.QWidget):
         self._stashed_settings = None
         self._stashed_rating = 0
         self.history_panel.set_previewing(False)
+
+    # ------------------------------------------------------------------
+    # Snapshot tagging / deletion
+    # ------------------------------------------------------------------
+
+    def _on_snapshot_tag(self, snapshot_id: str):
+        """Tag or untag a snapshot (toggle). Prompts for a label if tagging."""
+        if not self.raw_path:
+            return
+        snap = self.history_panel.get_snapshot_by_id(snapshot_id)
+        if snap is None:
+            return
+
+        if snap.get("is_tagged"):
+            # Untag
+            pynegative.update_snapshot(
+                self.raw_path, snapshot_id, is_tagged=False, label=None
+            )
+            self.show_toast("Version untagged")
+        else:
+            # Tag — prompt for a name
+            import time
+
+            default_label = pynegative.format_snapshot_timestamp(time.time())
+            label, ok = QtWidgets.QInputDialog.getText(
+                self, "Tag Version", "Version name:", text=default_label
+            )
+            if not ok:
+                return
+            pynegative.update_snapshot(
+                self.raw_path,
+                snapshot_id,
+                is_tagged=True,
+                label=label if label else default_label,
+            )
+            self.show_toast(f"Version tagged: {label or default_label}")
+
+        self._refresh_history_panel()
+
+    def _on_snapshot_delete(self, snapshot_id: str):
+        """Delete a snapshot from the history."""
+        if not self.raw_path:
+            return
+        pynegative.delete_snapshot(self.raw_path, snapshot_id)
+        self._refresh_history_panel()
+        self.show_toast("Snapshot deleted")
 
     def _request_update_from_view(self):
         if (

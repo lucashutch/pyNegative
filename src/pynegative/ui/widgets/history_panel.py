@@ -74,6 +74,10 @@ class HistoryPanel(QtWidgets.QWidget):
 
     snapshotSelected = QtCore.Signal(str)  # snapshot_id
     restoreRequested = QtCore.Signal(str)  # snapshot_id
+    tagRequested = QtCore.Signal(str)  # snapshot_id
+    deleteRequested = QtCore.Signal(str)  # snapshot_id
+    setLeftComparison = QtCore.Signal(str)  # snapshot_id
+    setRightComparison = QtCore.Signal(str)  # snapshot_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -114,6 +118,7 @@ class HistoryPanel(QtWidgets.QWidget):
         # Snapshot list
         self.list_widget = QtWidgets.QListWidget()
         self.list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
         self.list_widget.currentItemChanged.connect(self._on_item_changed)
         self.list_widget.setSpacing(2)
         self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -200,3 +205,60 @@ class HistoryPanel(QtWidgets.QWidget):
         self.list_widget.clearSelection()
         # Emit empty string to signal cancellation
         self.snapshotSelected.emit("")
+
+    # ------------------------------------------------------------------
+    # Context menu
+    # ------------------------------------------------------------------
+
+    _comparison_active: bool = False
+
+    def set_comparison_active(self, active: bool):
+        """Track whether comparison mode is enabled (for context menu)."""
+        self._comparison_active = active
+
+    def _show_context_menu(self, pos):
+        item = self.list_widget.itemAt(pos)
+        if item is None:
+            return
+        snapshot_id = item.data(Qt.UserRole)
+        snap = self.get_snapshot_by_id(snapshot_id)
+        if snap is None:
+            return
+
+        menu = QtWidgets.QMenu(self)
+
+        # Tag / Untag version
+        if snap.get("is_tagged"):
+            untag_action = menu.addAction("Untag Version")
+            untag_action.triggered.connect(lambda: self.tagRequested.emit(snapshot_id))
+        else:
+            tag_action = menu.addAction("Tag as Version…")
+            tag_action.triggered.connect(lambda: self.tagRequested.emit(snapshot_id))
+
+        # Restore
+        restore_action = menu.addAction("Restore")
+        restore_action.triggered.connect(
+            lambda: self.restoreRequested.emit(snapshot_id)
+        )
+
+        # Delete (only for non-tagged auto saves)
+        if not snap.get("is_tagged"):
+            menu.addSeparator()
+            delete_action = menu.addAction("Delete")
+            delete_action.triggered.connect(
+                lambda: self.deleteRequested.emit(snapshot_id)
+            )
+
+        # Comparison actions (only when comparison mode enabled)
+        if self._comparison_active:
+            menu.addSeparator()
+            left_action = menu.addAction("Set as Left Comparison Image")
+            left_action.triggered.connect(
+                lambda: self.setLeftComparison.emit(snapshot_id)
+            )
+            right_action = menu.addAction("Set as Right Comparison Image")
+            right_action.triggered.connect(
+                lambda: self.setRightComparison.emit(snapshot_id)
+            )
+
+        menu.exec_(self.list_widget.mapToGlobal(pos))
