@@ -6,9 +6,6 @@ from pynegative.processing.lens import (
     LensMapCache,
     generate_ptlens_map,
     generate_poly3_map,
-    _bilinear_sample,
-    _get_distortion_rescale,
-    _get_tca_rescale,
     remap_tca_distortion_kernel,
     get_distortion_maps,
     calculate_autocrop_scale,
@@ -17,6 +14,11 @@ from pynegative.processing.lens import (
     get_tca_distortion_maps,
     get_lens_distortion_maps,
     apply_lens_correction,
+)
+from pynegative.utils.numba_lens import (
+    _bilinear_sample,
+    _get_distortion_rescale,
+    _get_tca_rescale,
 )
 
 

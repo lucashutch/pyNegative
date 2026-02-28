@@ -296,7 +296,7 @@ def apply_lens_correction(
     map_x, map_y = None, None
 
     if do_tca:
-        m_type, dist_p = _build_kernel_dist_params(model, params, manual_k1)
+        dist_p, m_type = _build_kernel_dist_params(model, params, manual_k1)
         out = np.zeros_like(img)
         t0 = time.perf_counter()
         remap_tca_distortion_kernel(

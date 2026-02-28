@@ -87,7 +87,6 @@ def process_denoise_stage(img, res_key, heavy_params, zoom_scale, preprocess_key
         img,
         luma_strength=l_str,
         chroma_strength=c_str,
-        method="Bilateral",
         zoom=zoom_scale,
         tier=res_key,
     )

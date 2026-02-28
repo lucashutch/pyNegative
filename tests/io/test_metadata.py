@@ -21,15 +21,13 @@ def test_get_exif_capture_date_standard_image(tmp_path):
         assert date == "2023-05-20"
 
 
-def test_get_exif_capture_date_rawpy(tmp_path):
+def test_get_exif_capture_date_raw_file_uses_mtime(tmp_path):
+    """RAW files fall through to file mtime since rawpy extract_exif was removed."""
     raw_path = tmp_path / "test.ARW"
     raw_path.write_text("fake raw content")
 
-    with patch("rawpy.imread") as mock_imread:
-        mock_raw = MagicMock()
-        mock_raw.extract_exif.return_value = b"DateTimeOriginal 2024:02:10 12:00:00"
-        mock_imread.return_value.__enter__.return_value = mock_raw
-
+    with patch.object(Path, "stat") as mock_stat:
+        mock_stat.return_value.st_mtime = 1707523200  # 2024-02-10
         date = get_exif_capture_date(raw_path)
         assert date == "2024-02-10"
 
@@ -38,16 +36,7 @@ def test_get_exif_capture_date_fallback(tmp_path):
     file_path = tmp_path / "test.txt"
     file_path.write_text("fake content")
 
-    # Mock everything before the fallback
-    with (
-        patch("PIL.Image.open", side_effect=Exception("no PIL")),
-        patch("rawpy.imread") as mock_imread,
-    ):
-        mock_raw = MagicMock()
-        mock_raw.extract_exif.side_effect = Exception("no exif")
-        mock_imread.return_value.__enter__.return_value = mock_raw
-
-        # Mocking stat to control mtime
+    with patch("PIL.Image.open", side_effect=Exception("no PIL")):
         with patch.object(Path, "stat") as mock_stat:
             mock_stat.return_value.st_mtime = 1705320000  # 2024-01-15
 
