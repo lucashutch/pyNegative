@@ -1,7 +1,29 @@
 from pathlib import Path
-from PySide6 import QtGui, QtWidgets
+
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from ... import core as pynegative
+
+
+def _position_menu_on_screen(menu, global_pos):
+    """Position menu to stay within screen bounds."""
+    screen = QtWidgets.QApplication.screenAt(global_pos)
+    if not screen:
+        return global_pos
+
+    screen_geo = screen.availableGeometry()
+    menu_size = menu.sizeHint()
+
+    x = global_pos.x()
+    y = global_pos.y()
+
+    if y + menu_size.height() > screen_geo.bottom():
+        y = screen_geo.bottom() - menu_size.height()
+
+    if x + menu_size.width() > screen_geo.right():
+        x = screen_geo.right() - menu_size.width()
+
+    return QtCore.QPoint(x, y)
 
 
 class ContextMenuManager:
@@ -44,7 +66,8 @@ class ContextMenuManager:
         )
         paste_selective_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+V"))
 
-        menu.exec_(self.editor.view.mapToGlobal(pos))
+        adjusted_pos = _position_menu_on_screen(menu, self.editor.view.mapToGlobal(pos))
+        menu.exec_(adjusted_pos)
 
     def handle_carousel_context_menu(self, context_type, data):
         if context_type == "carousel":
@@ -122,7 +145,10 @@ class ContextMenuManager:
                 )
             )
 
-            menu.popup(carousel_widget.mapToGlobal(pos))
+            adjusted_pos = _position_menu_on_screen(
+                menu, carousel_widget.mapToGlobal(pos)
+            )
+            menu.exec_(adjusted_pos)
 
     def _set_carousel_comparison(self, image_path: str, side: str):
         """Load sidecar settings from *image_path* and set as comparison."""

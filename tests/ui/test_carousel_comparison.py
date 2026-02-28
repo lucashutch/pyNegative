@@ -61,8 +61,8 @@ class TestCarouselComparisonActions:
             assert "Set as Left Comparison Image" in added_actions
             assert "Set as Right Comparison Image" in added_actions
 
-    def test_comparison_actions_hidden_when_disabled(self):
-        """When comparison is disabled, no comparison actions should appear."""
+    def test_comparison_actions_shown_when_disabled(self):
+        """Comparison actions are always shown and can auto-enable compare mode."""
         mgr = _make_context_menu_manager()
         mgr.editor.comparison_manager.enabled = False
 
@@ -89,8 +89,8 @@ class TestCarouselComparisonActions:
                 "carousel", (QtCore.QPoint(5, 5), "/img/a.dng", carousel_widget)
             )
 
-            assert "Set as Left Comparison Image" not in added_actions
-            assert "Set as Right Comparison Image" not in added_actions
+            assert "Set as Left Comparison Image" in added_actions
+            assert "Set as Right Comparison Image" in added_actions
 
 
 class TestSetCarouselComparison:
@@ -136,3 +136,16 @@ class TestSetCarouselComparison:
         mgr._set_carousel_comparison("/img/d.dng", "right")
 
         mgr.editor.comparison_manager.set_right_snapshot.assert_called_once_with({})
+
+    @patch("pynegative.ui.editor_managers.context_menu_manager.pynegative")
+    def test_auto_enables_comparison_before_setting_snapshot(self, mock_core):
+        mock_core.load_sidecar.return_value = {"exposure": 0.25}
+        mgr = _make_context_menu_manager()
+        mgr.editor.comparison_manager.enabled = False
+
+        mgr._set_carousel_comparison("/img/e.dng", "left")
+
+        mgr.editor.comparison_manager.comparison_btn.setChecked.assert_called_once_with(
+            True
+        )
+        mgr.editor.comparison_manager.toggle_comparison.assert_called_once()

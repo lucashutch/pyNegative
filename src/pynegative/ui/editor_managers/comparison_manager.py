@@ -25,6 +25,8 @@ class ComparisonManager(QtCore.QObject):
         self._right_source = ComparisonSource.CURRENT
         self._left_snapshot_settings: dict | None = None
         self._right_snapshot_settings: dict | None = None
+        self._cached_default_left_pixmap = QtGui.QPixmap()
+        self._cached_default_left_image_id = -1
 
     def setup_ui(self, canvas_frame, view):
         self.canvas_frame = canvas_frame
@@ -98,7 +100,7 @@ class ComparisonManager(QtCore.QObject):
             self._right_source = ComparisonSource.CURRENT
             self._left_snapshot_settings = None
             self._right_snapshot_settings = None
-            unedited_pixmap = self.editor.image_processor.get_unedited_pixmap()
+            unedited_pixmap = self._default_left_pixmap()
             self.comparison_overlay.setUneditedPixmap(unedited_pixmap)
             if self.view._bg_item and self.view._bg_item.pixmap():
                 self.comparison_overlay.setEditedPixmap(self.view._bg_item.pixmap())
@@ -127,8 +129,12 @@ class ComparisonManager(QtCore.QObject):
 
     def update_pixmaps(self, unedited=None, edited=None):
         if self.enabled and self.comparison_overlay:
-            if unedited and self._left_source == ComparisonSource.UNEDITED:
-                self.comparison_overlay.setUneditedPixmap(unedited)
+            if (
+                unedited
+                and not unedited.isNull()
+                and self._left_source == ComparisonSource.UNEDITED
+            ):
+                self.comparison_overlay.setUneditedPixmap(self._default_left_pixmap())
             if edited and self._right_source == ComparisonSource.CURRENT:
                 self.comparison_overlay.setEditedPixmap(edited)
 
@@ -161,7 +167,28 @@ class ComparisonManager(QtCore.QObject):
         self._left_snapshot_settings = None
         self._right_snapshot_settings = None
         if self.enabled:
-            unedited = self.editor.image_processor.get_unedited_pixmap()
+            unedited = self._default_left_pixmap()
             self.comparison_overlay.setUneditedPixmap(unedited)
             if self.view._bg_item and self.view._bg_item.pixmap():
                 self.comparison_overlay.setEditedPixmap(self.view._bg_item.pixmap())
+
+    def _default_left_pixmap(self):
+        """Render baseline (neutral settings) for left comparison side."""
+        image_id = getattr(self.editor.image_processor, "_current_image_id", -1)
+        if (
+            image_id == self._cached_default_left_image_id
+            and not self._cached_default_left_pixmap.isNull()
+        ):
+            return self._cached_default_left_pixmap
+
+        pixmap = self.editor.image_processor.render_snapshot_pixmap({})
+        if pixmap.isNull():
+            pixmap = self.editor.image_processor.get_unedited_pixmap()
+        self._cached_default_left_pixmap = pixmap
+        self._cached_default_left_image_id = image_id
+        return pixmap
+
+    def invalidate_default_left_cache(self):
+        """Invalidate cached baseline pixmap (call on image switch)."""
+        self._cached_default_left_pixmap = QtGui.QPixmap()
+        self._cached_default_left_image_id = -1

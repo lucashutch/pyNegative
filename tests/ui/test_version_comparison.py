@@ -143,7 +143,8 @@ class TestUpdatePixmapsSourceAware:
         manager._left_source = ComparisonSource.UNEDITED
         pix = QtGui.QPixmap(5, 5)
         manager.update_pixmaps(unedited=pix)
-        manager.comparison_overlay.setUneditedPixmap.assert_called_once_with(pix)
+        manager.editor.image_processor.render_snapshot_pixmap.assert_called_with({})
+        manager.comparison_overlay.setUneditedPixmap.assert_called_once()
 
     def test_skip_unedited_when_source_is_snapshot(self, manager):
         manager.enabled = True
@@ -305,9 +306,19 @@ class TestEditorComparisonWiring:
             editor.history_panel = MagicMock()
             editor.comparison_manager = MagicMock()
             editor.comparison_manager.enabled = False
+            editor.history_panel.get_snapshot_by_id.return_value = {
+                "id": "abc",
+                "settings": {"exposure": 0.2},
+            }
 
             editor._on_set_left_comparison("abc")
-            editor.comparison_manager.set_left_snapshot.assert_not_called()
+            editor.comparison_manager.comparison_btn.setChecked.assert_called_once_with(
+                True
+            )
+            editor.comparison_manager.toggle_comparison.assert_called_once()
+            editor.comparison_manager.set_left_snapshot.assert_called_once_with(
+                {"exposure": 0.2}
+            )
 
     def test_comparison_skipped_when_snapshot_missing(self):
         from pynegative.ui.editor import EditorWidget

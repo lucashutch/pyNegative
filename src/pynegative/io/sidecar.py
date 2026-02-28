@@ -84,18 +84,24 @@ def save_sidecar(raw_path: str | Path, settings: dict) -> None:
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Ensure rating is present
-    if "rating" not in settings:
-        settings["rating"] = 0
+    save_settings = settings.copy()
+    if "rating" not in save_settings:
+        save_settings["rating"] = 0
 
-    data = {
-        "version": "1.0",
-        "last_modified": time.time(),
-        "raw_path": str(raw_path),
-        "settings": settings,
-    }
+    # Preserve existing envelope fields (especially snapshots)
+    existing = _load_sidecar_raw(raw_path)
+    data = existing if existing else {}
+    data["last_modified"] = time.time()
+    data["raw_path"] = str(raw_path)
+    data["settings"] = save_settings
 
-    with open(sidecar_path, "w") as f:
-        json.dump(data, f, indent=4)
+    # Keep schema version compatible with snapshots when present
+    if "snapshots" in data:
+        data["version"] = "1.1"
+    else:
+        data["version"] = data.get("version", "1.0")
+
+    _save_sidecar_raw(raw_path, data)
 
 
 def load_sidecar(raw_path: str | Path) -> dict | None:

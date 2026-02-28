@@ -69,13 +69,12 @@ def test_main_window_switches(main_window):
     assert main_window.btn_gallery.isChecked()
 
 
-def test_main_window_metadata_toggle(main_window):
+def test_main_window_side_panel_toggle(main_window):
     main_window.switch_to_edit()
-    # Mock isChecked since we manually set it above
-    with patch.object(main_window.metadata_btn, "isChecked", return_value=True):
-        main_window._on_metadata_toggle()
+    with patch.object(main_window.side_panel_btn, "isChecked", return_value=True):
+        main_window._on_side_panel_toggle()
 
-    main_window.editor.right_panel.show_info_tab.assert_called()
+    main_window.editor.right_panel.setVisible.assert_called_with(True)
 
 
 def test_on_gallery_list_changed(main_window):

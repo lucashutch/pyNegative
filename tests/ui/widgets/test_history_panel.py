@@ -84,6 +84,23 @@ class TestHistoryPanelSelection:
             panel.cancel_btn.click()
         assert blocker.args == [""]
 
+    def test_right_click_does_not_change_selection(self, panel, qtbot):
+        panel.set_snapshots([_make_snapshot("s1"), _make_snapshot("s2")])
+        panel.list_widget.setCurrentRow(0)
+
+        first_item = panel.list_widget.item(0)
+        second_item = panel.list_widget.item(1)
+        assert first_item.isSelected()
+
+        second_rect = panel.list_widget.visualItemRect(second_item)
+        qtbot.mouseClick(
+            panel.list_widget.viewport(),
+            Qt.RightButton,
+            pos=second_rect.center(),
+        )
+
+        assert first_item.isSelected()
+
 
 class TestHistoryPanelRestore:
     def test_emits_restore_requested(self, panel, qtbot):

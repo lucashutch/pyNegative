@@ -80,6 +80,16 @@ class TestSaveSnapshot:
         assert data["settings"]["exposure"] == 0.5
         assert len(data["snapshots"]) == 1
 
+    def test_save_sidecar_preserves_existing_snapshots(self, raw_file):
+        save_snapshot(raw_file, {"exposure": 0.1}, is_auto=False)
+        save_snapshot(raw_file, {"exposure": 0.2}, is_auto=False)
+
+        save_sidecar(raw_file, {"exposure": 1.5})
+
+        snaps = load_snapshots(raw_file)
+        assert len(snaps) == 2
+        assert snaps[0]["settings"]["exposure"] in (0.1, 0.2)
+
 
 class TestLoadSnapshots:
     def test_empty_when_no_sidecar(self, raw_file):
@@ -152,6 +162,14 @@ class TestPruneSnapshots:
         result = prune_snapshots_list(snaps, max_auto=50)
         tagged = [s for s in result if s.get("is_tagged")]
         assert len(tagged) == 1
+
+    def test_manual_snapshots_not_pruned(self):
+        snaps = [
+            {"id": f"m{i}", "timestamp": float(i), "is_auto": False, "is_tagged": False}
+            for i in range(200)
+        ]
+        result = prune_snapshots_list(snaps, max_auto=50)
+        assert len(result) == 200
 
 
 class TestFormatSnapshotTimestamp:

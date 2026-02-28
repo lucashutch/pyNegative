@@ -13,6 +13,7 @@ This document tracks planned features, project goals, and areas for technical im
 
 ## Bugs
 
+- scaling issue when zooming with compare photos feature. One size gets stretched or squished instead of both being scaled equally.
 - Visual artefacts when zoomed out and tone adjusted or at most resolutions with the sharpening filter enabled.
 - fix the image comparison view. the left side/unedited side is too dark.
 - remove any automatic adjustments and associated logic when opening a RAW file (e.g. auto WB, auto exposure) and just show the unedited image until the user makes adjustments.

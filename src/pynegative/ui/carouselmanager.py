@@ -252,6 +252,10 @@ class CarouselManager(QtCore.QObject):
     def _show_context_menu(self, pos):
         """Show context menu for carousel."""
         item = self.carousel.itemAt(pos)
+        if not item and hasattr(self.carousel, "get_hovered_item"):
+            item = self.carousel.get_hovered_item()
+        if not item:
+            item = self.carousel.currentItem()
         if not item:
             return
 

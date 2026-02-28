@@ -271,6 +271,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.history_panel.setLeftComparison.connect(self._on_set_left_comparison)
         self.history_panel.setRightComparison.connect(self._on_set_right_comparison)
         self.version_manager.snapshotsChanged.connect(self._refresh_history_panel)
+        self.right_panel.currentChanged.connect(self._on_right_panel_tab_changed)
 
         # Keep history panel comparison-menu state in sync
         self.comparison_manager.comparisonToggled.connect(
@@ -316,6 +317,9 @@ class EditorWidget(QtWidgets.QWidget):
     def load_image(self, path):
         path = Path(path)
         logger.info(f"Image selection changed: {path.name}")
+
+        if self.comparison_manager.enabled:
+            self.comparison_manager.invalidate_default_left_cache()
 
         # Ensure previous image settings are saved before switching
         if self.save_timer.isActive():
@@ -588,9 +592,7 @@ class EditorWidget(QtWidgets.QWidget):
         self._request_update_from_view()
 
         if self.comparison_manager.enabled:
-            self.comparison_manager.comparison_overlay.setUneditedPixmap(
-                self.image_processor.get_unedited_pixmap(2048)
-            )
+            self.comparison_manager.reset_sources()
         if self._metadata_panel_visible:
             self.metadata_panel.load_for_path(self.raw_path, settings)
 
@@ -606,6 +608,25 @@ class EditorWidget(QtWidgets.QWidget):
         if self.raw_path:
             current_settings = self.image_processor.get_current_settings()
             self.metadata_panel.load_for_path(self.raw_path, current_settings)
+
+    def _on_right_panel_tab_changed(self, index: int):
+        """Keep panel state in sync and lazy-load tab contents when switched."""
+        if index == self.right_panel.INFO_TAB:
+            self._metadata_panel_visible = self.right_panel.isVisible()
+            self._history_panel_visible = False
+            self.settings.setValue(
+                "metadata_panel_visible", self._metadata_panel_visible
+            )
+            self.settings.setValue("history_panel_visible", False)
+            if self.right_panel.isVisible():
+                self._load_metadata()
+        elif index == self.right_panel.HISTORY_TAB:
+            self._metadata_panel_visible = False
+            self._history_panel_visible = self.right_panel.isVisible()
+            self.settings.setValue("metadata_panel_visible", False)
+            self.settings.setValue("history_panel_visible", self._history_panel_visible)
+            if self.right_panel.isVisible():
+                self._refresh_history_panel()
 
     def _refresh_history_panel(self):
         """Reload the history panel from disk snapshots."""
@@ -733,15 +754,21 @@ class EditorWidget(QtWidgets.QWidget):
     def _on_set_left_comparison(self, snapshot_id: str):
         """Set a snapshot as the left side of the comparison overlay."""
         snap = self.history_panel.get_snapshot_by_id(snapshot_id)
-        if snap is None or not self.comparison_manager.enabled:
+        if snap is None:
             return
+        if not self.comparison_manager.enabled:
+            self.comparison_manager.comparison_btn.setChecked(True)
+            self.comparison_manager.toggle_comparison()
         self.comparison_manager.set_left_snapshot(snap["settings"])
 
     def _on_set_right_comparison(self, snapshot_id: str):
         """Set a snapshot as the right side of the comparison overlay."""
         snap = self.history_panel.get_snapshot_by_id(snapshot_id)
-        if snap is None or not self.comparison_manager.enabled:
+        if snap is None:
             return
+        if not self.comparison_manager.enabled:
+            self.comparison_manager.comparison_btn.setChecked(True)
+            self.comparison_manager.toggle_comparison()
         self.comparison_manager.set_right_snapshot(snap["settings"])
 
     def _request_update_from_view(self):

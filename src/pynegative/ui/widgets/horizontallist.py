@@ -66,6 +66,14 @@ class HorizontalListWidget(QtWidgets.QListWidget):
     def mousePressEvent(self, event):
         """Handle mouse press with multi-selection support."""
         pos = get_event_pos(event)
+
+        # Handle right-click before item checks so the context menu
+        # always fires, even when clicking on padding between items.
+        if event.button() == QtCore.Qt.RightButton:
+            self.customContextMenuRequested.emit(pos.toPoint())
+            event.accept()
+            return
+
         item = self.itemAt(pos.toPoint())
 
         if item:
@@ -84,15 +92,14 @@ class HorizontalListWidget(QtWidgets.QListWidget):
                     event.accept()
                     return
 
-            # Skip selection logic for right-click (context menu)
-            if event.button() == QtCore.Qt.RightButton:
-                super().mousePressEvent(event)
-                return
-
             # Normal selection logic - let base class handle it but track last clicked
             self._last_clicked_item = item
 
         super().mousePressEvent(event)
+
+    def contextMenuEvent(self, event):
+        """Prevent double context-menu emission (already handled in mousePressEvent)."""
+        event.accept()
 
     def toggle_selection(self, item_path):
         """Toggle selection of an item by path."""
