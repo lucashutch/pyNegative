@@ -156,6 +156,3 @@ def extract_lens_info(raw_path: str | Path) -> dict[str, Any]:
                 logger.debug(f"exifread failed to read lens info from {raw_path}: {e}")
 
     return info
-
-
-

@@ -59,7 +59,9 @@ class GalleryItemDelegate(QtWidgets.QStyledItemDelegate):
 
     def _create_star_pixmap(self, filled):
         return create_star_pixmap(
-            filled, size=self.STAR_SIZE, font_size=12,
+            filled,
+            size=self.STAR_SIZE,
+            font_size=12,
             empty_color=QtGui.QColor("#909090"),
         )
 
