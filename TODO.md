@@ -10,10 +10,12 @@ This document tracks planned features, project goals, and areas for technical im
 ## Performance Optimisation
 
 - **High-DPI Awareness**: Detect system screen scale factor (e.g. 200% for Retina) and adjust the Smart Resolution selection to provide appropriate pixel density.
-- **implement point and dimensions classes** instead of passing around raw x ans y or h and w variables instead utilised classes for these (and other common types) so it is more clear what and how these are used.
 
 ## Bugs
 
+-fix the image comparison view. the left side/unedited side is too dark.
+- remove any automatic adjustments and associated logic when opening a RAW file (e.g. auto WB, auto exposure) and just show the unedited image until the user makes adjustments.
+- **fix vignetting**: currently when applying vignetting correction with the lens profile the corners get darker instead of brighter.
 - **Crop UI Sync with Viewport Rendering**: If the UI needs to support active zooming/panning while cropping, we might need to improve the floating pixmap coordinate translation (currently viewport rendering is paused while cropping).
 
 ## Testing Improvement Areas

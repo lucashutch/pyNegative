@@ -15,6 +15,7 @@ from .editor_managers import (
     CropManager,
     FloatingUIManager,
     ShortcutManager,
+    VersionManager,
 )
 from .imageprocessing import ImageProcessingPipeline
 from .loaders import RawLoader
@@ -70,6 +71,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.floating_ui_manager = FloatingUIManager(self)
         self.shortcut_manager = ShortcutManager(self)
         self.context_menu_manager = ContextMenuManager(self)
+        self.version_manager = VersionManager(self)
 
     def _init_ui(self):
         """Initialize the user interface."""
@@ -344,6 +346,9 @@ class EditorWidget(QtWidgets.QWidget):
         self.editing_controls.set_crop_checked(False)
         self.view.set_crop_mode(False)
 
+        # Stop version autosave for previous image
+        self.version_manager.stop()
+
         # 2. Start RAW loader
         loader = RawLoader(path)
         loader.signals.finished.connect(self._on_raw_loaded)
@@ -563,6 +568,9 @@ class EditorWidget(QtWidgets.QWidget):
             )
         if self._metadata_panel_visible:
             self.metadata_panel.load_for_path(self.raw_path, settings)
+
+        # Start version autosave timer for this image
+        self.version_manager.start()
 
     def _request_update_from_view(self):
         if (

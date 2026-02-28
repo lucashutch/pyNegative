@@ -1,6 +1,8 @@
 import json
 import logging
 import time
+import uuid
+from datetime import datetime
 from pathlib import Path
 
 from PIL import Image
@@ -154,3 +156,130 @@ def get_sidecar_mtime(raw_path: str | Path) -> float | None:
     if sidecar_path.exists():
         return sidecar_path.stat().st_mtime
     return None
+
+
+# ---------------------------------------------------------------------------
+# Snapshot / Version persistence
+# ---------------------------------------------------------------------------
+
+MAX_AUTO_SNAPSHOTS = 50
+
+
+def _load_sidecar_raw(raw_path: str | Path) -> dict:
+    """Load the full sidecar envelope (not just settings)."""
+    sidecar_path = get_sidecar_path(raw_path)
+    if not sidecar_path.exists():
+        return {}
+    try:
+        with open(sidecar_path) as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading sidecar envelope {sidecar_path}: {e}")
+        return {}
+
+
+def _save_sidecar_raw(raw_path: str | Path, data: dict) -> None:
+    """Write the full sidecar envelope to disk."""
+    sidecar_path = get_sidecar_path(raw_path)
+    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(sidecar_path, "w") as f:
+        json.dump(data, f, indent=4)
+
+
+def save_snapshot(
+    raw_path: str | Path,
+    settings: dict,
+    *,
+    label: str | None = None,
+    is_auto: bool = True,
+    is_tagged: bool = False,
+) -> dict:
+    """Persist a snapshot entry to the sidecar file.
+
+    Returns the created snapshot dict (including its ``id``).
+    """
+    data = _load_sidecar_raw(raw_path)
+
+    snapshots: list = data.get("snapshots", [])
+
+    snapshot = {
+        "id": str(uuid.uuid4()),
+        "timestamp": time.time(),
+        "label": label,
+        "is_auto": is_auto,
+        "is_tagged": is_tagged,
+        "settings": settings.copy(),
+    }
+
+    snapshots.append(snapshot)
+
+    # Prune oldest auto-save entries beyond the cap
+    snapshots = prune_snapshots_list(snapshots, MAX_AUTO_SNAPSHOTS)
+
+    data["snapshots"] = snapshots
+    if "version" in data:
+        data["version"] = "1.1"
+
+    _save_sidecar_raw(raw_path, data)
+    return snapshot
+
+
+def load_snapshots(raw_path: str | Path) -> list[dict]:
+    """Return all snapshot entries for an image, newest first."""
+    data = _load_sidecar_raw(raw_path)
+    snapshots = data.get("snapshots", [])
+    return sorted(snapshots, key=lambda s: s.get("timestamp", 0), reverse=True)
+
+
+def delete_snapshot(raw_path: str | Path, snapshot_id: str) -> bool:
+    """Delete a snapshot by id. Returns True if found and removed."""
+    data = _load_sidecar_raw(raw_path)
+    snapshots: list = data.get("snapshots", [])
+    before = len(snapshots)
+    snapshots = [s for s in snapshots if s.get("id") != snapshot_id]
+    if len(snapshots) == before:
+        return False
+    data["snapshots"] = snapshots
+    _save_sidecar_raw(raw_path, data)
+    return True
+
+
+def update_snapshot(
+    raw_path: str | Path,
+    snapshot_id: str,
+    *,
+    label: str | None = ...,
+    is_tagged: bool | None = None,
+) -> bool:
+    """Update mutable fields on an existing snapshot. Returns True on success."""
+    data = _load_sidecar_raw(raw_path)
+    snapshots: list = data.get("snapshots", [])
+    for snap in snapshots:
+        if snap.get("id") == snapshot_id:
+            if label is not ...:
+                snap["label"] = label
+            if is_tagged is not None:
+                snap["is_tagged"] = is_tagged
+            data["snapshots"] = snapshots
+            _save_sidecar_raw(raw_path, data)
+            return True
+    return False
+
+
+def prune_snapshots_list(
+    snapshots: list[dict], max_auto: int = MAX_AUTO_SNAPSHOTS
+) -> list[dict]:
+    """Remove oldest auto (non-tagged) snapshots exceeding *max_auto*."""
+    auto = [s for s in snapshots if s.get("is_auto") and not s.get("is_tagged")]
+    keep = [s for s in snapshots if not s.get("is_auto") or s.get("is_tagged")]
+
+    if len(auto) > max_auto:
+        auto.sort(key=lambda s: s.get("timestamp", 0))
+        auto = auto[-max_auto:]
+
+    return keep + auto
+
+
+def format_snapshot_timestamp(timestamp: float) -> str:
+    """Format a snapshot timestamp for display."""
+    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M")
