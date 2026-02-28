@@ -2,6 +2,8 @@ import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 
@@ -90,165 +92,33 @@ class LensDatabase:
                     }
                 )
 
-    def get_distortion_params(self, lens: dict, focal_length: float) -> dict | None:
-        """
-        Extract and interpolate distortion parameters for a given focal length.
-        """
-        element = lens.get("raw_element")
-        if element is None:
-            return None
-
-        calib = element.find("calibration")
-        if calib is None:
-            return None
-
-        # Find all distortion entries
-        dist_entries = []
-        for dist in calib.findall("distortion"):
-            try:
-                model = dist.get("model")
-                f = float(dist.get("focal", 0))
-                # Collect all attributes that are floats (k1, k2, k3, a, b, c)
-                params = {"model": model, "focal": f}
-                for key, val in dist.attrib.items():
-                    if key not in ["model", "focal"]:
-                        try:
-                            params[key] = float(val)
-                        except ValueError:
-                            pass
-                dist_entries.append(params)
-            except (ValueError, TypeError):
-                continue
-
-        if not dist_entries:
-            return None
-
-        # Sort by focal length
-        dist_entries.sort(key=lambda x: x["focal"])
-
-        # Interpolate
-        if focal_length <= dist_entries[0]["focal"]:
-            return dist_entries[0]
-        if focal_length >= dist_entries[-1]["focal"]:
-            return dist_entries[-1]
-
-        # Linear interpolation between nearest points
-        for i in range(len(dist_entries) - 1):
-            d1 = dist_entries[i]
-            d2 = dist_entries[i + 1]
-            if d1["focal"] <= focal_length <= d2["focal"]:
-                # Ensure they use the same model (unlikely to change, but safety first)
-                if d1["model"] != d2["model"]:
-                    return (
-                        d1
-                        if abs(focal_length - d1["focal"])
-                        < abs(focal_length - d2["focal"])
-                        else d2
-                    )
-
-                t = (focal_length - d1["focal"]) / (d2["focal"] - d1["focal"])
-                result = {"model": d1["model"], "focal": focal_length}
-                for key in d1:
-                    if key not in ["model", "focal"]:
-                        result[key] = d1[key] + t * (d2[key] - d1[key])
-                return result
-
-        return dist_entries[0]
-
-    def get_tca_params(self, lens: dict, focal_length: float) -> dict | None:
-        """
-        Extract and interpolate TCA (Transverse Chromatic Aberration) parameters.
-        Returns coefficients for Red and Blue channels.
-        """
-        element = lens.get("raw_element")
-        if element is None:
-            return None
-
-        calib = element.find("calibration")
-        if calib is None:
-            return None
-
-        tca_entries = []
-        for tca in calib.findall("tca"):
-            try:
-                model = tca.get("model")
-                f = float(tca.get("focal", 0))
-                # Collect all attributes (vr0, vr1, vr2, vb0, vb1, vb2)
-                params = {"model": model, "focal": f}
-                for key, val in tca.attrib.items():
-                    if key not in ["model", "focal"]:
-                        try:
-                            params[key] = float(val)
-                        except ValueError:
-                            pass
-                tca_entries.append(params)
-            except (ValueError, TypeError):
-                continue
-
-        if not tca_entries:
-            return None
-
-        # Sort by focal length
-        tca_entries.sort(key=lambda x: x["focal"])
-
-        # Interpolate
-        if focal_length <= tca_entries[0]["focal"]:
-            return tca_entries[0]
-        if focal_length >= tca_entries[-1]["focal"]:
-            return tca_entries[-1]
-
-        # Linear interpolation between nearest points
-        for i in range(len(tca_entries) - 1):
-            t1 = tca_entries[i]
-            t2 = tca_entries[i + 1]
-            if t1["focal"] <= focal_length <= t2["focal"]:
-                if t1["model"] != t2["model"]:
-                    return (
-                        t1
-                        if abs(focal_length - t1["focal"])
-                        < abs(focal_length - t2["focal"])
-                        else t2
-                    )
-
-                s = (focal_length - t1["focal"]) / (t2["focal"] - t1["focal"])
-                result = {"model": t1["model"], "focal": focal_length}
-                for key in t1:
-                    if key not in ["model", "focal"]:
-                        result[key] = t1[key] + s * (t2[key] - t1[key])
-                return result
-
-        return tca_entries[0]
-
-    def get_vignette_params(
+    def _parse_calibration_entries(
         self,
         lens: dict,
-        focal_length: float,
-        aperture: float,
-        distance: float = 1000.0,
-    ) -> dict | None:
-        """
-        Extract and interpolate vignette parameters.
-        Vignetting depends on focal length, aperture, and focus distance.
-        """
+        tag_name: str,
+        extra_keys: tuple[str, ...] = (),
+    ) -> list[dict] | None:
+        """Parse calibration XML elements into a list of param dicts."""
         element = lens.get("raw_element")
         if element is None:
             return None
-
         calib = element.find("calibration")
         if calib is None:
             return None
 
+        skip_keys = {"model", "focal"} | set(extra_keys)
         entries = []
-        for vig in calib.findall("vignetting"):
+        for elem in calib.findall(tag_name):
             try:
-                model = vig.get("model", "pa")
-                f = float(vig.get("focal", 0))
-                a = float(vig.get("aperture", 0))
-                d = float(vig.get("distance", 1000.0))
-
-                params = {"model": model, "focal": f, "aperture": a, "distance": d}
-                for key, val in vig.attrib.items():
-                    if key not in ["model", "focal", "aperture", "distance"]:
+                params = {
+                    "model": elem.get("model"),
+                    "focal": float(elem.get("focal", 0)),
+                }
+                _extra_defaults = {"distance": 1000.0}
+                for k in extra_keys:
+                    params[k] = float(elem.get(k, _extra_defaults.get(k, 0)))
+                for key, val in elem.attrib.items():
+                    if key not in skip_keys:
                         try:
                             params[key] = float(val)
                         except ValueError:
@@ -257,39 +127,84 @@ class LensDatabase:
             except (ValueError, TypeError):
                 continue
 
-        if not entries:
+        return entries or None
+
+    def _interpolate_by_focal(
+        self,
+        entries: list[dict],
+        focal_length: float,
+    ) -> dict:
+        """1D linear interpolation of calibration entries by focal length."""
+        entries.sort(key=lambda x: x["focal"])
+
+        if focal_length <= entries[0]["focal"]:
+            return entries[0]
+        if focal_length >= entries[-1]["focal"]:
+            return entries[-1]
+
+        non_interp = {"model", "focal", "aperture", "distance"}
+        for i in range(len(entries) - 1):
+            lo, hi = entries[i], entries[i + 1]
+            if lo["focal"] <= focal_length <= hi["focal"]:
+                if lo["model"] != hi["model"]:
+                    return (
+                        lo
+                        if abs(focal_length - lo["focal"])
+                        < abs(focal_length - hi["focal"])
+                        else hi
+                    )
+                t = (focal_length - lo["focal"]) / (hi["focal"] - lo["focal"])
+                result = {"model": lo["model"], "focal": focal_length}
+                for key in lo:
+                    if key not in non_interp:
+                        result[key] = lo[key] + t * (hi[key] - lo[key])
+                return result
+
+        return entries[0]
+
+    def get_distortion_params(self, lens: dict, focal_length: float) -> dict | None:
+        """Extract and interpolate distortion parameters for a given focal length."""
+        entries = self._parse_calibration_entries(lens, "distortion")
+        if entries is None:
+            return None
+        return self._interpolate_by_focal(entries, focal_length)
+
+    def get_tca_params(self, lens: dict, focal_length: float) -> dict | None:
+        """Extract and interpolate TCA parameters for a given focal length."""
+        entries = self._parse_calibration_entries(lens, "tca")
+        if entries is None:
+            return None
+        return self._interpolate_by_focal(entries, focal_length)
+
+    def get_vignette_params(
+        self,
+        lens: dict,
+        focal_length: float,
+        aperture: float,
+        distance: float = 1000.0,
+    ) -> dict | None:
+        """Extract vignette parameters using nearest-neighbour in 3D space."""
+        entries = self._parse_calibration_entries(
+            lens, "vignetting", extra_keys=("aperture", "distance")
+        )
+        if entries is None:
             return None
 
-        # Filter and Interpolate
-        # Since 3D interpolation is complex without scipy, we use a tiered approach:
-        # 1. Find entries with nearest focal length
-        # 2. Within those, find entries with nearest aperture
-        # 3. Within those, find entries with nearest distance
+        for e in entries:
+            if e.get("model") is None:
+                e["model"] = "pa"
 
-        # Simplified: Just find the closest point in 3D space (normalized)
-        # or do a weighted average of K-nearest neighbors.
-        # But for lens data, usually we have a grid.
-
-        # Let's find the 'best' entry by distance in (f, a, log(d)) space
-        # We normalize weights to make them comparable.
         def get_dist(entry):
             df = abs(entry["focal"] - focal_length) / max(1.0, focal_length)
             da = abs(entry["aperture"] - aperture) / max(1.0, aperture)
-            # Distance is often exponential (1, 10, 1000)
             dd = (
                 abs(np.log10(entry["distance"]) - np.log10(distance))
                 if distance > 0 and entry["distance"] > 0
                 else 0
             )
-            return df * 10 + da * 5 + dd  # Focal length is most important
-
-        import numpy as np
+            return df * 10 + da * 5 + dd
 
         entries.sort(key=get_dist)
-
-        # For now, return the best match.
-        # TODO: Implement proper 3D interpolation if needed.
-        # Most Lensfun data only has one or two points per focal length anyway.
         return entries[0]
 
     def find_lens(
