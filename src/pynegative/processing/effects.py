@@ -17,7 +17,7 @@ from ..utils.numba_kernels import (
 logger = logging.getLogger(__name__)
 
 
-def sharpen_image(img, radius, percent, method="High Quality"):
+def sharpen_image(img, radius, percent):
     """Advanced sharpening that operates on NumPy float32 arrays."""
     if img is None:
         return None
@@ -113,15 +113,10 @@ def de_noise_image(
     img,
     luma_strength=0,
     chroma_strength=0,
-    method="High Quality",
     zoom=None,
     tier=None,
 ):
-    """
-    De-noising for NumPy float32 arrays using bilateral filter.
-    The 'method' parameter is maintained for backward compatibility but
-    only bilateral filtering is now supported.
-    """
+    """De-noising for NumPy float32 arrays using bilateral filter."""
     if img is None:
         return None
 
@@ -236,26 +231,9 @@ def de_haze_image(img, strength, zoom=None, fixed_atmospheric_light=None):
         if fixed_atmospheric_light is not None:
             atmospheric_light = fixed_atmospheric_light
         else:
-            # 1. Dark Channel estimation
-            dark_channel = dark_channel_kernel(img_array)
-
-            # Morphology (Erode) - OpenCV CPU is very fast for this
-            kernel = cv2.getStructuringElement(
-                cv2.MORPH_RECT, (kernel_size, kernel_size)
-            )
-            dark_channel = cv2.erode(dark_channel, kernel)
-
-            # 2. Atmospheric light estimation
-            # Top 0.1% brightest pixels in the dark channel
-            num_pixels = dark_channel.size
-            num_brightest = max(1, num_pixels // 1000)
-            indices = np.argpartition(dark_channel.flatten(), -num_brightest)[
-                -num_brightest:
-            ]
-
-            # Of these pixels, pick the brightest in the original image
-            brightest_pixels = img_array.reshape(-1, 3)[indices]
-            atmospheric_light = np.max(brightest_pixels, axis=0)
+            atmospheric_light = estimate_atmospheric_light(img_array)
+            if atmospheric_light is None:
+                return img, None
 
         # 3. Transmission map estimation
         # t(x) = 1 - omega * min_c(I_c(x) / A_c)

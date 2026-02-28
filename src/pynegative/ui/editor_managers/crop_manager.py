@@ -3,6 +3,7 @@ import math
 from PySide6 import QtCore
 
 from ... import core as pynegative
+from ..settings_constants import ASPECT_RATIOS
 
 
 class CropManager(QtCore.QObject):
@@ -151,12 +152,4 @@ class CropManager(QtCore.QObject):
         self._pending_rotation_from_handle = None
 
     def _text_to_ratio(self, text):
-        if text == "1:1":
-            return 1.0
-        if text == "4:3":
-            return 4.0 / 3.0
-        if text == "3:2":
-            return 3.0 / 2.0
-        if text == "16:9":
-            return 16.0 / 9.0
-        return None
+        return ASPECT_RATIOS.get(text)

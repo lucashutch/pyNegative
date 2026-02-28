@@ -232,12 +232,7 @@ class LensControls(BaseControlWidget):
 
         if not is_override:
             # Update status label - only show source, not the name
-            if source == lens_resolver.ProfileSource.EMBEDDED:
-                self.status_label.setText("Source: Embedded RAW")
-                self.status_label.setStyleSheet(
-                    "font-size: 10px; color: #4CAF50;"
-                )  # Green
-            elif source == lens_resolver.ProfileSource.LENSFUN_DB:
+            if source == lens_resolver.ProfileSource.LENSFUN_DB:
                 self.status_label.setText("Source: Lensfun Match")
                 self.status_label.setStyleSheet(
                     "font-size: 10px; color: #2196F3;"

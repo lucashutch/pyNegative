@@ -10,6 +10,15 @@ from .constants import LUMA_B, LUMA_G, LUMA_R
 logger = logging.getLogger(__name__)
 
 
+def _safe_float(val, default):
+    try:
+        if val is None:
+            return default
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
 def apply_preprocess(
     img,
     temperature=0.0,
@@ -31,24 +40,16 @@ def apply_preprocess(
     if img is None:
         return None
 
-    def safe_float(val, default):
-        try:
-            if val is None:
-                return default
-            return float(val)
-        except (ValueError, TypeError):
-            return default
-
-    temperature = safe_float(temperature, 0.0)
-    tint = safe_float(tint, 0.0)
-    exposure = safe_float(exposure, 0.0)
-    vignette_k1 = safe_float(vignette_k1, 0.0)
-    vignette_k2 = safe_float(vignette_k2, 0.0)
-    vignette_k3 = safe_float(vignette_k3, 0.0)
-    vignette_cx = safe_float(vignette_cx, 0.0)
-    vignette_cy = safe_float(vignette_cy, 0.0)
-    full_width = safe_float(full_width, 1.0)
-    full_height = safe_float(full_height, 1.0)
+    temperature = _safe_float(temperature, 0.0)
+    tint = _safe_float(tint, 0.0)
+    exposure = _safe_float(exposure, 0.0)
+    vignette_k1 = _safe_float(vignette_k1, 0.0)
+    vignette_k2 = _safe_float(vignette_k2, 0.0)
+    vignette_k3 = _safe_float(vignette_k3, 0.0)
+    vignette_cx = _safe_float(vignette_cx, 0.0)
+    vignette_cy = _safe_float(vignette_cy, 0.0)
+    full_width = _safe_float(full_width, 1.0)
+    full_height = _safe_float(full_height, 1.0)
 
     start_time = time.perf_counter()
     img = img.copy()
@@ -101,20 +102,12 @@ def apply_tone_map(
         if img is None:
             return None, None
 
-        def safe_float(val, default):
-            try:
-                if val is None:
-                    return default
-                return float(val)
-            except (ValueError, TypeError):
-                return default
-
-        contrast = safe_float(contrast, 0.0)
-        blacks = safe_float(blacks, 0.0)
-        whites = safe_float(whites, 0.0)
-        shadows = safe_float(shadows, 0.0)
-        highlights = safe_float(highlights, 0.0)
-        saturation = safe_float(saturation, 0.0)
+        contrast = _safe_float(contrast, 0.0)
+        blacks = _safe_float(blacks, 0.0)
+        whites = _safe_float(whites, 0.0)
+        shadows = _safe_float(shadows, 0.0)
+        highlights = _safe_float(highlights, 0.0)
+        saturation = _safe_float(saturation, 0.0)
 
         calculate_stats = bool(calculate_stats)
         apply_gamma = bool(apply_gamma)
@@ -174,7 +167,7 @@ def calculate_auto_exposure(img):
         p98 = 0.001
 
     exposure = math.log2(0.85 / p98)
-    exposure = float(np.clip(exposure, 0.5, 4.0))
+    exposure = max(0.5, min(4.0, exposure))
 
     base_blacks = 0.01
     base_whites = 0.0  # Neutral
@@ -213,6 +206,6 @@ def calculate_auto_wb(img):
     tint = np.log((r_avg * b_avg) / (g_avg**2)) / 0.6
 
     return {
-        "temperature": float(np.clip(temp, -1.0, 1.0)),
-        "tint": float(np.clip(tint, -1.0, 1.0)),
+        "temperature": float(max(-1.0, min(1.0, temp))),
+        "tint": float(max(-1.0, min(1.0, tint))),
     }

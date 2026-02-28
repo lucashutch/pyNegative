@@ -507,7 +507,7 @@ class ImageProcessorWorker(QtCore.QRunnable):
         preprocess_time = (t_denoise - t2) * 1000
         worker_total = (time.perf_counter() - worker_start) * 1000
 
-        logger.warning(
+        logger.debug(
             f"⚙️  Worker Pipeline | Setup: {setup_time:.1f}ms | ROI: {roi_time:.1f}ms | "
             f"Prepro: {preprocess_time:.1f}ms | Denoise: {denoise_time:.1f}ms | "
             f"Geo: {geometry_time:.1f}ms | Remap: {remap_time:.1f}ms | Heavy: {heavy_time:.1f}ms | "

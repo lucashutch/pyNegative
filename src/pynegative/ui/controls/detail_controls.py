@@ -7,6 +7,13 @@ from .base import BaseControlWidget
 class DetailControls(BaseControlWidget):
     presetApplied = QtCore.Signal(str)
 
+    _reset_params = [
+        ("val_sharpen_value", 0.0, "sharpen_value"),
+        ("val_denoise_luma", 0.0, "denoise_luma"),
+        ("val_denoise_chroma", 0.0, "denoise_chroma"),
+        ("val_de_haze", 0.0, "de_haze"),
+    ]
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.val_sharpen_radius = 0.5
@@ -73,16 +80,11 @@ class DetailControls(BaseControlWidget):
             "Chroma Denoise", 0, 50, 0.0, "val_denoise_chroma", 1, self.details_section
         )
 
-    def reset_section(self):
-        params = [
-            ("val_sharpen_value", 0.0, "sharpen_value"),
-            ("val_denoise_luma", 0.0, "denoise_luma"),
-            ("val_denoise_chroma", 0.0, "denoise_chroma"),
-            ("val_de_haze", 0.0, "de_haze"),
-        ]
-        for var_name, default, setting_name in params:
-            self.set_slider_value(var_name, default)
-            self.settingChanged.emit(setting_name, default)
+    def _reset_extra(self):
+        self.val_sharpen_radius = 0.5
+        self.val_sharpen_percent = 0.0
+        self.settingChanged.emit("sharpen_radius", self.val_sharpen_radius)
+        self.settingChanged.emit("sharpen_percent", self.val_sharpen_percent)
 
     def _apply_preset(self, preset_type):
         if preset_type == "low":

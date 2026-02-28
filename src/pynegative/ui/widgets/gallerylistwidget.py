@@ -1,5 +1,7 @@
 from PySide6 import QtCore, QtWidgets
 
+from .compat import get_event_pos
+
 
 class GalleryListWidget(QtWidgets.QListWidget):
     """ListWidget with selection changed signal for gallery."""
@@ -15,15 +17,9 @@ class GalleryListWidget(QtWidgets.QListWidget):
         # Connect builtin signal to custom signal
         self.itemSelectionChanged.connect(self.selectionChanged.emit)
 
-    def _get_event_pos(self, event):
-        """Compatibility helper for Qt6 mouse events."""
-        if hasattr(event, "position"):
-            return event.position()
-        return event.pos()
-
     def mousePressEvent(self, event):
         """Handle mouse press with multi-selection support."""
-        pos = self._get_event_pos(event)
+        pos = get_event_pos(event)
         item = self.itemAt(pos.toPoint())
 
         if item:
@@ -45,7 +41,7 @@ class GalleryListWidget(QtWidgets.QListWidget):
 
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
-        pos = self._get_event_pos(event)
+        pos = get_event_pos(event)
         item = self.itemAt(pos.toPoint())
         if item != self._hovered_item:
             if self._hovered_item:

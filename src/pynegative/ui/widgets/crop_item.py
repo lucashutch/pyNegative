@@ -1,6 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
+from .compat import get_event_pos
 from .crop_utils import (
     update_crop_geometry,
     calculate_angle_from_center,
@@ -52,12 +53,6 @@ class CropRectItem(QtWidgets.QGraphicsObject):
             QtGui.QColor(255, 255, 255, 100), 1, QtCore.Qt.DashLine
         )
         self._grid_pen.setCosmetic(True)
-
-    def get_event_pos(self, event):
-        """Compatibility helper for Qt6 mouse events."""
-        if hasattr(event, "position"):
-            return event.position()
-        return event.pos()
 
     def boundingRect(self):
         # Add padding for handles
@@ -263,7 +258,7 @@ class CropRectItem(QtWidgets.QGraphicsObject):
         }
 
     def hoverMoveEvent(self, event):
-        pos = self.get_event_pos(event)
+        pos = get_event_pos(event)
         if isinstance(pos, QtCore.QPointF):
             pos = pos.toPoint()
 
@@ -304,7 +299,7 @@ class CropRectItem(QtWidgets.QGraphicsObject):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            pos = self.get_event_pos(event)
+            pos = get_event_pos(event)
             if isinstance(pos, QtCore.QPointF):
                 pos = pos.toPoint()
 
@@ -370,7 +365,7 @@ class CropRectItem(QtWidgets.QGraphicsObject):
             if hasattr(event, "scenePos"):
                 scene_pos = event.scenePos()
             else:
-                scene_pos = self.get_event_pos(event)
+                scene_pos = get_event_pos(event)
 
             current_angle = self._calculate_angle_from_center(
                 scene_pos, scene_space=True

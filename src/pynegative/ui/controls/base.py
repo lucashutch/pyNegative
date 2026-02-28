@@ -6,11 +6,26 @@ from ..widgets import ResetableSlider
 class BaseControlWidget(QtWidgets.QWidget):
     settingChanged = QtCore.Signal(str, object)
 
+    _reset_params: list[tuple[str, float, str]] = []
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.sliders = {}
         self.labels = {}
         self.flipped_states = {}
+
+    def reset_section(self):
+        """Reset all slider params defined in _reset_params and emit signals.
+
+        Override ``_reset_extra`` for non-slider state (buttons, combos, etc.).
+        """
+        for var_name, default, setting_name in self._reset_params:
+            self.set_slider_value(var_name, default, silent=True)
+            self.settingChanged.emit(setting_name, default)
+        self._reset_extra()
+
+    def _reset_extra(self):
+        """Override in subclasses that have non-slider state to reset."""
 
     def _add_slider(
         self,

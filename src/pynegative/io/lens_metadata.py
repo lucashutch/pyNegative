@@ -156,12 +156,3 @@ def extract_lens_info(raw_path: str | Path) -> dict[str, Any]:
                 logger.debug(f"exifread failed to read lens info from {raw_path}: {e}")
 
     return info
-
-
-def extract_embedded_correction_params(raw_path: str | Path) -> dict | None:
-    """
-    Extracts embedded lens correction parameters (distortion, vignetting, CA).
-    Currently a placeholder for Phase 2.
-    """
-    # This will involve parsing MakerNotes for specific manufacturers (Sony, Olympus, etc.)
-    return None

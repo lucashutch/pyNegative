@@ -1,5 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from .compat import create_star_pixmap, get_event_pos
+
 
 class StarRatingWidget(QtWidgets.QWidget):
     ratingChanged = QtCore.Signal(int)
@@ -15,27 +17,7 @@ class StarRatingWidget(QtWidgets.QWidget):
         self._hover_rating = -1
 
     def _create_star_pixmap(self, filled):
-        pixmap = QtGui.QPixmap(24, 24)
-        pixmap.fill(QtCore.Qt.transparent)
-        painter = QtGui.QPainter(pixmap)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-
-        font = self.font()
-        try:
-            font.setPointSize(20)
-        except Exception:
-            pass
-        painter.setFont(font)
-
-        if filled:
-            painter.setPen(QtGui.QColor("#f0c419"))
-            painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "★")
-        else:
-            painter.setPen(QtGui.QColor("#808080"))  # gray
-            painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "☆")
-
-        painter.end()
-        return pixmap
+        return create_star_pixmap(filled, size=24, font_size=20)
 
     def set_rating(self, rating):
         if self._rating != rating:
@@ -71,17 +53,11 @@ class StarRatingWidget(QtWidgets.QWidget):
 
             painter.drawPixmap(x, 0, star_icon)
 
-    def _get_event_pos(self, event):
-        """Compatibility helper for Qt6 mouse events."""
-        if hasattr(event, "position"):
-            return event.position()
-        return event.pos()
-
     def mouseMoveEvent(self, event):
         if not self.isEnabled():
             return
 
-        pos = self._get_event_pos(event)
+        pos = get_event_pos(event)
         star_full_width = self.star_empty_pixmap.width() + 4  # Star width + spacing
 
         # Calculate which star is being hovered over

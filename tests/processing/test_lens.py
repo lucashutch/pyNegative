@@ -6,9 +6,6 @@ from pynegative.processing.lens import (
     LensMapCache,
     generate_ptlens_map,
     generate_poly3_map,
-    _bilinear_sample,
-    _get_distortion_rescale,
-    _get_tca_rescale,
     remap_tca_distortion_kernel,
     get_distortion_maps,
     calculate_autocrop_scale,
@@ -17,6 +14,11 @@ from pynegative.processing.lens import (
     get_tca_distortion_maps,
     get_lens_distortion_maps,
     apply_lens_correction,
+)
+from pynegative.utils.numba_lens import (
+    _bilinear_sample,
+    _get_distortion_rescale,
+    _get_tca_rescale,
 )
 
 
@@ -142,7 +144,7 @@ def test_apply_lens_correction():
         "vignetting": {"model": "pa", "k1": -0.1},
         "tca": {"vr0": 1.001, "vb0": 0.999},
     }
-    out = apply_lens_correction(img, settings, lens_info, scale=1.0)
+    out = apply_lens_correction(img, settings, lens_info)
     assert out.shape == (10, 10, 3)
 
     lens_info_no_tca = {

@@ -1,5 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from ..settings_constants import ASPECT_RATIO_LABELS
 from ..widgets import CollapsibleSection
 from .base import BaseControlWidget
 
@@ -52,7 +53,7 @@ class GeometryControls(BaseControlWidget):
         self.aspect_ratio_combo.setEditable(True)
         self.aspect_ratio_combo.lineEdit().setReadOnly(True)
         self.aspect_ratio_combo.lineEdit().setAlignment(QtCore.Qt.AlignCenter)
-        self.aspect_ratio_combo.addItems(["Unlocked", "1:1", "4:3", "3:2", "16:9"])
+        self.aspect_ratio_combo.addItems(ASPECT_RATIO_LABELS)
         for i in range(self.aspect_ratio_combo.count()):
             self.aspect_ratio_combo.setItemData(
                 i, QtCore.Qt.AlignCenter, QtCore.Qt.TextAlignmentRole

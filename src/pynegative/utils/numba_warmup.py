@@ -39,7 +39,7 @@ def warmup_kernels() -> tuple[bool, float]:
         bilateral_kernel_chroma,
     )
     from .numba_defringe import defringe_kernel
-    from ..processing.lens import (
+    from .numba_lens import (
         vignette_kernel,
         generate_ptlens_map,
         generate_poly3_map,
