@@ -1,6 +1,8 @@
 from pathlib import Path
 from PySide6 import QtGui, QtWidgets
 
+from ... import core as pynegative
+
 
 class ContextMenuManager:
     """Manages Context Menus within the EditorWidget context."""
@@ -105,4 +107,31 @@ class ContextMenuManager:
             select_all_action = menu.addAction("Select All")
             select_all_action.triggered.connect(carousel_widget.select_all_items)
             select_all_action.setShortcut(QtGui.QKeySequence.StandardKey.SelectAll)
+
+            # Comparison actions (only when comparison mode is enabled)
+            if self.editor.comparison_manager.enabled:
+                menu.addSeparator()
+                left_action = menu.addAction("Set as Left Comparison Image")
+                left_action.triggered.connect(
+                    lambda checked=False, p=item_path: self._set_carousel_comparison(
+                        p, "left"
+                    )
+                )
+                right_action = menu.addAction("Set as Right Comparison Image")
+                right_action.triggered.connect(
+                    lambda checked=False, p=item_path: self._set_carousel_comparison(
+                        p, "right"
+                    )
+                )
+
             menu.exec_(carousel_widget.mapToGlobal(pos))
+
+    def _set_carousel_comparison(self, image_path: str, side: str):
+        """Load sidecar settings from *image_path* and set as comparison."""
+        settings = pynegative.load_sidecar(image_path)
+        if settings is None:
+            settings = {}
+        if side == "left":
+            self.editor.comparison_manager.set_left_snapshot(settings)
+        else:
+            self.editor.comparison_manager.set_right_snapshot(settings)

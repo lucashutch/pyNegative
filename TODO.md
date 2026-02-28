@@ -13,7 +13,8 @@ This document tracks planned features, project goals, and areas for technical im
 
 ## Bugs
 
--fix the image comparison view. the left side/unedited side is too dark.
+- Visual artefacts when zoomed out and tone adjusted or at most resolutions with the sharpening filter enabled.
+- fix the image comparison view. the left side/unedited side is too dark.
 - remove any automatic adjustments and associated logic when opening a RAW file (e.g. auto WB, auto exposure) and just show the unedited image until the user makes adjustments.
 - **fix vignetting**: currently when applying vignetting correction with the lens profile the corners get darker instead of brighter.
 - **Crop UI Sync with Viewport Rendering**: If the UI needs to support active zooming/panning while cropping, we might need to improve the floating pixmap coordinate translation (currently viewport rendering is paused while cropping).
@@ -37,8 +38,5 @@ This document tracks planned features, project goals, and areas for technical im
 - **Hue Picker for Defringe**: Add an eyedropper to select the exact fringe color to target.
 
 ### 🗂️ Workflow & DAM (Digital Asset Management)
-- **Versions / Snapshots**: Create "Virtual Copies" of an image to try different edits without duplicating the file.
-- **Visual History Stack**: A list of all edit steps with the ability to jump back to any point (and branch from there).
 - **Metadata Editor**: User-editable fields for Copyright, Creator, Title, and Description.
-- **Compare View (Side-by-Side)**: Select two different images to view side-by-side (Reference vs Active) to choose the best one.
 - **Focus Peaking**: Highlight sharp edges in the viewer (e.g. with green contours) to quickly identify which shots are in focus without zooming.
