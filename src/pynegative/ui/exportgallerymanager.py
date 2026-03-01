@@ -3,6 +3,7 @@ from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .. import core as pynegative
+from .icons import get_heroicon
 from .loaders import ThumbnailLoader
 from .widgets import CarouselDelegate, GalleryListWidget
 
@@ -77,9 +78,7 @@ class ExportGalleryManager(QtCore.QObject):
             item = QtWidgets.QListWidgetItem(path.name)
             item.setData(QtCore.Qt.UserRole, str(path))
             item.setData(QtCore.Qt.UserRole + 1, rating)
-            item.setIcon(
-                self.list_widget.style().standardIcon(QtWidgets.QStyle.SP_FileIcon)
-            )
+            item.setIcon(get_heroicon("document", size=32, color="#8f8f95"))
             self.list_widget.addItem(item)
 
             # Async load thumbnail
@@ -114,9 +113,7 @@ class ExportGalleryManager(QtCore.QObject):
             item = QtWidgets.QListWidgetItem(path.name)
             item.setData(QtCore.Qt.UserRole, str(path))
             item.setData(QtCore.Qt.UserRole + 1, rating)
-            item.setIcon(
-                self.list_widget.style().standardIcon(QtWidgets.QStyle.SP_FileIcon)
-            )
+            item.setIcon(get_heroicon("document", size=32, color="#8f8f95"))
             self.list_widget.addItem(item)
 
             # Async load thumbnail

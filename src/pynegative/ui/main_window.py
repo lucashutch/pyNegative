@@ -7,6 +7,7 @@ from .. import core as pynegative
 from .editor import EditorWidget
 from .export_tab import ExportWidget
 from .gallery import GalleryWidget
+from .icons import get_heroicon
 from .widgets import StarRatingWidget
 
 logger = logging.getLogger(__name__)
@@ -163,7 +164,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Right-side panel toggle (single button for Info/History tabs)
         self.side_panel_btn = QtWidgets.QToolButton()
-        self.side_panel_btn.setText("▤")
+        self.side_panel_btn.setIcon(get_heroicon("view-columns", size=18))
+        self.side_panel_btn.setIconSize(QtCore.QSize(18, 18))
         self.side_panel_btn.setObjectName("SidePanelButton")
         self.side_panel_btn.setToolTip("Side Panel")
         self.side_panel_btn.setCheckable(True)

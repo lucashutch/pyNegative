@@ -1,6 +1,7 @@
 import math
 import PySide6.QtCore as QtCore
-from PySide6 import QtGui
+
+from ..icons import get_heroicon
 
 
 def update_crop_geometry(
@@ -187,78 +188,21 @@ def snap_angle(angle: float, snap_threshold: float = 5.0) -> float:
 
 
 def draw_rotation_icon(painter, center_pos, scale=1.0):
-    """Draw double curved arrow rotation icon at handle position."""
+    """Draw rotation icon at handle position."""
     painter.save()
 
-    icon_radius = 8 / scale  # 8px in screen space
+    icon_size_px = 16
+    icon = get_heroicon("arrow-path", size=icon_size_px, color="#ffffff")
+    pixmap = icon.pixmap(icon_size_px, icon_size_px)
 
-    # Draw circular arrows (rotation symbol)
-    pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 220), 1.5 / scale)
-    pen.setCosmetic(True)
-    painter.setPen(pen)
-    painter.setBrush(QtCore.Qt.NoBrush)
-
-    # Draw two arc arrows forming a rotation symbol
-    rect = QtCore.QRectF(
-        center_pos.x() - icon_radius,
-        center_pos.y() - icon_radius,
-        icon_radius * 2,
-        icon_radius * 2,
-    )
-
-    # First arc (top-right to bottom-right, clockwise)
-    start_angle = -45 * 16  # Qt uses 1/16th degree units
-    span_angle = 200 * 16
-    painter.drawArc(rect, start_angle, span_angle)
-
-    # Arrow head for first arc
-    arrow_angle = math.radians(-45 + 200)
-    arrow_x = center_pos.x() + icon_radius * math.cos(arrow_angle)
-    arrow_y = center_pos.y() - icon_radius * math.sin(arrow_angle)
-    arrow_size = 3 / scale
-
-    # Draw small arrow head
-    arrow_head = QtGui.QPolygonF(
-        [
-            QtCore.QPointF(arrow_x, arrow_y),
-            QtCore.QPointF(
-                arrow_x + arrow_size * math.cos(arrow_angle + math.radians(150)),
-                arrow_y - arrow_size * math.sin(arrow_angle + math.radians(150)),
-            ),
-            QtCore.QPointF(
-                arrow_x + arrow_size * math.cos(arrow_angle - math.radians(150)),
-                arrow_y - arrow_size * math.sin(arrow_angle - math.radians(150)),
-            ),
-        ]
-    )
-    painter.setBrush(QtGui.QColor(255, 255, 255, 220))
-    painter.drawPolygon(arrow_head)
-
-    # Second arc (bottom-left to top-left, clockwise) - mirror of first
-    start_angle2 = 135 * 16
-    span_angle2 = 200 * 16
-    painter.setBrush(QtCore.Qt.NoBrush)
-    painter.drawArc(rect, start_angle2, span_angle2)
-
-    # Arrow head for second arc
-    arrow_angle2 = math.radians(135 + 200)
-    arrow_x2 = center_pos.x() + icon_radius * math.cos(arrow_angle2)
-    arrow_y2 = center_pos.y() - icon_radius * math.sin(arrow_angle2)
-
-    arrow_head2 = QtGui.QPolygonF(
-        [
-            QtCore.QPointF(arrow_x2, arrow_y2),
-            QtCore.QPointF(
-                arrow_x2 + arrow_size * math.cos(arrow_angle2 + math.radians(150)),
-                arrow_y2 - arrow_size * math.sin(arrow_angle2 + math.radians(150)),
-            ),
-            QtCore.QPointF(
-                arrow_x2 + arrow_size * math.cos(arrow_angle2 - math.radians(150)),
-                arrow_y2 - arrow_size * math.sin(arrow_angle2 - math.radians(150)),
-            ),
-        ]
-    )
-    painter.setBrush(QtGui.QColor(255, 255, 255, 220))
-    painter.drawPolygon(arrow_head2)
+    if not pixmap.isNull():
+        scene_size = icon_size_px / max(scale, 0.001)
+        target_rect = QtCore.QRectF(
+            center_pos.x() - (scene_size / 2),
+            center_pos.y() - (scene_size / 2),
+            scene_size,
+            scene_size,
+        )
+        painter.drawPixmap(target_rect, pixmap, QtCore.QRectF(pixmap.rect()))
 
     painter.restore()

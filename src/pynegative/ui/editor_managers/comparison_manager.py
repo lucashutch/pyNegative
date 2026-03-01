@@ -1,7 +1,8 @@
 from PySide6 import QtCore, QtGui, QtWidgets
-from PySide6.QtCore import Qt
 
 from enum import Enum
+
+from ..icons import get_heroicon
 
 
 class ComparisonSource(Enum):
@@ -37,7 +38,8 @@ class ComparisonManager(QtCore.QObject):
         self.comparison_btn.setFixedSize(30, 30)
         self.comparison_btn.setCheckable(True)
         self.comparison_btn.setToolTip("Compare (U)")
-        self.comparison_btn.setIcon(self._create_comparison_icon())
+        self.comparison_btn.setIcon(get_heroicon("view-columns", size=18))
+        self.comparison_btn.setIconSize(QtCore.QSize(18, 18))
         self.comparison_btn.setStyleSheet("""
             QToolButton {
                 background-color: rgba(0, 0, 0, 128);
@@ -69,23 +71,6 @@ class ComparisonManager(QtCore.QObject):
         self.comparison_overlay = ComparisonOverlay(canvas_frame)
         self.comparison_overlay.setView(view)
         self.comparison_overlay.raise_()
-
-    def _create_comparison_icon(self):
-        pixmap = QtGui.QPixmap(24, 24)
-        pixmap.fill(Qt.transparent)
-        painter = QtGui.QPainter(pixmap)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        left_color = QtGui.QColor(100, 100, 100)
-        right_color = QtGui.QColor(150, 150, 150)
-        painter.setBrush(left_color)
-        painter.setPen(Qt.NoPen)
-        painter.drawRect(2, 4, 8, 16)
-        painter.setBrush(right_color)
-        painter.drawRect(14, 4, 8, 16)
-        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255), 2))
-        painter.drawLine(12, 2, 12, 22)
-        painter.end()
-        return QtGui.QIcon(pixmap)
 
     def toggle_comparison(self):
         enabled = self.comparison_btn.isChecked()

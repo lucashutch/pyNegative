@@ -3,6 +3,7 @@ from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .. import core as pynegative
+from .icons import get_heroicon
 from .loaders import ThumbnailLoader
 from .widgets import CarouselDelegate, HorizontalListWidget
 
@@ -88,9 +89,7 @@ class CarouselManager(QtCore.QObject):
         for path in files:
             item = QtWidgets.QListWidgetItem(path.name)
             item.setData(QtCore.Qt.UserRole, str(path))
-            item.setIcon(
-                self.carousel.style().standardIcon(QtWidgets.QStyle.SP_FileIcon)
-            )
+            item.setIcon(get_heroicon("document", size=26, color="#8f8f95"))
             self.carousel.addItem(item)
 
             # Async load thumbnail
@@ -117,9 +116,7 @@ class CarouselManager(QtCore.QObject):
             f = Path(path_str)
             item = QtWidgets.QListWidgetItem(f.name)
             item.setData(QtCore.Qt.UserRole, path_str)
-            item.setIcon(
-                self.carousel.style().standardIcon(QtWidgets.QStyle.SP_FileIcon)
-            )
+            item.setIcon(get_heroicon("document", size=26, color="#8f8f95"))
             self.carousel.addItem(item)
             if path_str == current_path_str:
                 self.carousel.setCurrentItem(item)

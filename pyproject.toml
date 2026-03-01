@@ -5,9 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pynegative"
 dynamic = ["version"]
- authors = [
-   { name="Lucas Hutchinson" },
- ]
+authors = [{ name = "Lucas Hutchinson" }]
 description = "A powerful RAW image processor and editor featuring advanced denoising, dehazing, and batch processing capabilities."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,16 +25,9 @@ dependencies = [
 
 [dependency-groups]
 dev = []
-lint = [
-    "ruff",
-]
+lint = ["ruff"]
 
-test = [
-    "pytest",
-    "pytest-qt",
-    "pytest-sugar>=1.1.1",
-    "pytest-cov",
-]
+test = ["pytest", "pytest-qt", "pytest-sugar>=1.1.1", "pytest-cov"]
 
 [project.scripts]
 pynegative-debug = "pynegative.ui:main"
@@ -47,6 +38,9 @@ pynegative = "pynegative.ui:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+pynegative = ["ui/assets/icons/**/*.svg"]
 
 [tool.setuptools_scm]
 

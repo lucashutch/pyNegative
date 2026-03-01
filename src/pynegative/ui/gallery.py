@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt
 
 from .. import core as pynegative
 from .editor import EditorWidget
+from .icons import get_heroicon
 from .loaders import ThumbnailLoader
 from .widgets import ComboBox, GalleryItemDelegate, GalleryListWidget, MetadataPanel
 
@@ -72,7 +73,8 @@ class GalleryWidget(QtWidgets.QWidget):
         top_bar.addWidget(self.sort_combo)
 
         self.sort_order_btn = QtWidgets.QToolButton()
-        self.sort_order_btn.setText("↑")
+        self.sort_order_btn.setIcon(get_heroicon("arrow-up", size=16))
+        self.sort_order_btn.setIconSize(QtCore.QSize(16, 16))
         self.sort_order_btn.setToolTip("Sort Order: Ascending")
         self.sort_order_btn.setCheckable(True)
         self.sort_order_btn.clicked.connect(self._on_sort_order_changed)
@@ -146,9 +148,11 @@ class GalleryWidget(QtWidgets.QWidget):
         self.stack.addWidget(self.preview_widget)
 
         # Floating Toggle Button
-        self.btn_toggle_view = QtWidgets.QPushButton("⊞", self)  # Grid icon placeholder
+        self.btn_toggle_view = QtWidgets.QPushButton(self)
         self.btn_toggle_view.setObjectName("ViewToggleButton")
         self.btn_toggle_view.setFixedSize(50, 50)
+        self.btn_toggle_view.setIcon(get_heroicon("squares-2x2", size=22))
+        self.btn_toggle_view.setIconSize(QtCore.QSize(22, 22))
         self.btn_toggle_view.setToolTip("Toggle Grid/Preview")
         self.btn_toggle_view.clicked.connect(self.toggle_view_mode)
         self.btn_toggle_view.hide()  # Hide until folder is loaded
@@ -166,7 +170,7 @@ class GalleryWidget(QtWidgets.QWidget):
     def toggle_view_mode(self):
         self._is_large_preview = not self._is_large_preview
         if self._is_large_preview:
-            self.btn_toggle_view.setText("❐")  # Preview icon placeholder
+            self.btn_toggle_view.setIcon(get_heroicon("photo", size=22))
             self.stack.setCurrentWidget(self.preview_widget)
 
             # Load current selection into preview
@@ -180,7 +184,7 @@ class GalleryWidget(QtWidgets.QWidget):
                 if image_list:
                     self.preview_widget.open(image_list[0], image_list)
         else:
-            self.btn_toggle_view.setText("⊞")
+            self.btn_toggle_view.setIcon(get_heroicon("squares-2x2", size=22))
             self.stack.setCurrentWidget(self.grid_container)
 
             # Sync selection back to grid
@@ -201,9 +205,9 @@ class GalleryWidget(QtWidgets.QWidget):
         empty_layout.setAlignment(QtCore.Qt.AlignCenter)
 
         # Icon or placeholder
-        icon_label = QtWidgets.QLabel("📁")
+        icon_label = QtWidgets.QLabel()
         icon_label.setAlignment(QtCore.Qt.AlignCenter)
-        icon_label.setStyleSheet("font-size: 64px; color: #666;")
+        icon_label.setPixmap(get_heroicon("folder-open", size=64).pixmap(64, 64))
         empty_layout.addWidget(icon_label)
 
         # Message
@@ -296,7 +300,7 @@ class GalleryWidget(QtWidgets.QWidget):
             item.setData(QtCore.Qt.UserRole + 2, pynegative.format_date(mtime))
             item.setData(QtCore.Qt.UserRole + 3, mtime)
 
-            item.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon))
+            item.setIcon(get_heroicon("document", size=32, color="#8f8f95"))
             self.list_widget.addItem(item)
 
             # Start async load
@@ -311,10 +315,10 @@ class GalleryWidget(QtWidgets.QWidget):
                 # Filtered out everything, fallback to grid
                 self._is_large_preview = False
                 self.stack.setCurrentWidget(self.grid_container)
-                self.btn_toggle_view.setText("⊞")
+                self.btn_toggle_view.setIcon(get_heroicon("squares-2x2", size=22))
             else:
                 self.stack.setCurrentWidget(self.preview_widget)
-                self.btn_toggle_view.setText("❐")
+                self.btn_toggle_view.setIcon(get_heroicon("photo", size=22))
 
                 # Check if current preview image is still in list
                 current_path = (
@@ -330,7 +334,7 @@ class GalleryWidget(QtWidgets.QWidget):
                     self.preview_widget.set_carousel_images(image_list, current_path)
         else:
             self.stack.setCurrentWidget(self.grid_container)
-            self.btn_toggle_view.setText("⊞")
+            self.btn_toggle_view.setIcon(get_heroicon("squares-2x2", size=22))
 
         self._apply_sort()
         self.folderLoaded.emit(str(folder))
@@ -452,10 +456,10 @@ class GalleryWidget(QtWidgets.QWidget):
     def _update_sort_order_button(self):
         """Update sort order button appearance."""
         if self._sort_ascending:
-            self.sort_order_btn.setText("↑")
+            self.sort_order_btn.setIcon(get_heroicon("arrow-up", size=16))
             self.sort_order_btn.setToolTip("Sort Order: Ascending")
         else:
-            self.sort_order_btn.setText("↓")
+            self.sort_order_btn.setIcon(get_heroicon("arrow-down", size=16))
             self.sort_order_btn.setToolTip("Sort Order: Descending")
 
     def _on_grid_size_changed(self, value):

@@ -1,5 +1,6 @@
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtWidgets
 
+from ..icons import get_heroicon
 from ..settings_constants import ASPECT_RATIO_LABELS
 from ..widgets import CollapsibleSection
 from .base import BaseControlWidget
@@ -91,56 +92,8 @@ class GeometryControls(BaseControlWidget):
             btn.setCheckable(True)
             btn.setFixedSize(26, 18)
             btn.setToolTip(f"Flip {name}")
-            pixmap = QtGui.QPixmap(32, 32)
-            pixmap.fill(QtCore.Qt.transparent)
-            painter = QtGui.QPainter(pixmap)
-            painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            pen = QtGui.QPen(QtGui.QColor("#ccc"), 2)
-            painter.setPen(pen)
-
-            if is_h:
-                painter.drawLine(16, 6, 16, 26)
-                tri_left = QtGui.QPolygonF(
-                    [
-                        QtCore.QPointF(14, 10),
-                        QtCore.QPointF(4, 16),
-                        QtCore.QPointF(14, 22),
-                    ]
-                )
-                tri_right = QtGui.QPolygonF(
-                    [
-                        QtCore.QPointF(18, 10),
-                        QtCore.QPointF(28, 16),
-                        QtCore.QPointF(18, 22),
-                    ]
-                )
-                painter.setBrush(QtGui.QColor("#ccc"))
-                painter.drawPolygon(tri_left)
-                painter.setBrush(QtCore.Qt.NoBrush)
-                painter.drawPolygon(tri_right)
-            else:
-                painter.drawLine(6, 16, 26, 16)
-                tri_top = QtGui.QPolygonF(
-                    [
-                        QtCore.QPointF(10, 14),
-                        QtCore.QPointF(16, 4),
-                        QtCore.QPointF(22, 14),
-                    ]
-                )
-                tri_bottom = QtGui.QPolygonF(
-                    [
-                        QtCore.QPointF(10, 18),
-                        QtCore.QPointF(16, 28),
-                        QtCore.QPointF(22, 18),
-                    ]
-                )
-                painter.setBrush(QtGui.QColor("#ccc"))
-                painter.drawPolygon(tri_top)
-                painter.setBrush(QtCore.Qt.NoBrush)
-                painter.drawPolygon(tri_bottom)
-
-            painter.end()
-            btn.setIcon(QtGui.QIcon(pixmap))
+            icon_name = "arrows-right-left" if is_h else "arrows-up-down"
+            btn.setIcon(get_heroicon(icon_name, size=14, color="#d1d5db"))
             btn.setIconSize(QtCore.QSize(14, 14))
             btn.setStyleSheet("""
                 QPushButton {
