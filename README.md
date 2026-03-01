@@ -126,3 +126,6 @@ This project is open source under the MIT License. See the [LICENSE](LICENSE) fi
 
 ### Data Licenses
 The lens database used by pyNegative is sourced from the [Lensfun Project](https://lensfun.github.io/) and is licensed under **CC-BY-SA 3.0**. Attribution for individual lens profiles remains with their respective contributors in the database XML files.
+
+### Icon Attribution
+UI icons are from [Heroicons](https://heroicons.com/) by Tailwind Labs, licensed under the **MIT License**. Copyright (c) 2020 Refactoring UI Inc.
