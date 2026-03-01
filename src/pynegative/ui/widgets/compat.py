@@ -1,6 +1,8 @@
 """Qt version compatibility helpers and shared widget utilities."""
 
-from PySide6 import QtCore, QtGui
+from PySide6 import QtGui
+
+from ..icons import get_heroicon
 
 
 def get_event_pos(event):
@@ -10,8 +12,8 @@ def get_event_pos(event):
     return event.pos()
 
 
-STAR_COLOR_FILLED = QtGui.QColor("#f0c419")
-STAR_COLOR_EMPTY = QtGui.QColor("#808080")
+STAR_COLOR_FILLED = "#f0c419"
+STAR_COLOR_EMPTY = "#808080"
 
 
 def create_star_pixmap(
@@ -21,22 +23,10 @@ def create_star_pixmap(
     *,
     empty_color: QtGui.QColor | None = None,
 ) -> QtGui.QPixmap:
-    """Create a star rating pixmap (filled ★ or empty ☆)."""
-    pixmap = QtGui.QPixmap(size, size)
-    pixmap.fill(QtCore.Qt.transparent)
-    painter = QtGui.QPainter(pixmap)
-    painter.setRenderHint(QtGui.QPainter.Antialiasing)
-    font = painter.font()
-    try:
-        font.setPointSize(font_size)
-    except Exception:
-        pass
-    painter.setFont(font)
+    """Create a star rating pixmap using Heroicons."""
     if filled:
-        painter.setPen(STAR_COLOR_FILLED)
-        painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "★")
+        icon = get_heroicon("star", size=size, color=STAR_COLOR_FILLED, variant="solid")
     else:
-        painter.setPen(empty_color or STAR_COLOR_EMPTY)
-        painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, "☆")
-    painter.end()
-    return pixmap
+        color = empty_color.name() if empty_color else STAR_COLOR_EMPTY
+        icon = get_heroicon("star", size=size, color=color, variant="outline")
+    return icon.pixmap(size, size)

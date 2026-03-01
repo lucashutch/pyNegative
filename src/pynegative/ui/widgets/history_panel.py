@@ -7,6 +7,7 @@ from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt
 
 from ..context_menu_positioning import get_menu_exec_position
+from ..icons import get_heroicon
 
 logger = logging.getLogger(__name__)
 
@@ -103,12 +104,16 @@ class HistoryPanel(QtWidgets.QWidget):
         action_bar.setSpacing(4)
 
         self.restore_btn = QtWidgets.QPushButton("Restore")
+        self.restore_btn.setIcon(get_heroicon("arrow-uturn-left", size=18))
+        self.restore_btn.setIconSize(QtCore.QSize(18, 18))
         self.restore_btn.setEnabled(False)
         self.restore_btn.setToolTip("Restore the selected snapshot as current edit")
         self.restore_btn.clicked.connect(self._on_restore_clicked)
         action_bar.addWidget(self.restore_btn)
 
         self.cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.cancel_btn.setIcon(get_heroicon("x-mark", size=18))
+        self.cancel_btn.setIconSize(QtCore.QSize(18, 18))
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.setToolTip("Cancel preview and return to current edit")
         self.cancel_btn.clicked.connect(self._on_cancel_clicked)
