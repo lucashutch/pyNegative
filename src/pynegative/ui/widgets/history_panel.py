@@ -6,28 +6,9 @@ from datetime import datetime
 from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt
 
+from ..context_menu_positioning import get_menu_exec_position
+
 logger = logging.getLogger(__name__)
-
-
-def _position_menu_on_screen(menu, global_pos):
-    """Position menu to stay within screen bounds."""
-    screen = QtWidgets.QApplication.screenAt(global_pos)
-    if not screen:
-        return global_pos
-
-    screen_geo = screen.availableGeometry()
-    menu_size = menu.sizeHint()
-
-    x = global_pos.x()
-    y = global_pos.y()
-
-    if y + menu_size.height() > screen_geo.bottom():
-        y = screen_geo.bottom() - menu_size.height()
-
-    if x + menu_size.width() > screen_geo.right():
-        x = screen_geo.right() - menu_size.width()
-
-    return QtCore.QPoint(x, y)
 
 
 class SnapshotItemWidget(QtWidgets.QWidget):
@@ -280,7 +261,7 @@ class HistoryPanel(QtWidgets.QWidget):
             lambda: self.setRightComparison.emit(snapshot_id)
         )
 
-        adjusted_pos = _position_menu_on_screen(menu, self.list_widget.mapToGlobal(pos))
+        adjusted_pos = get_menu_exec_position(menu, self.list_widget, pos)
         menu.exec_(adjusted_pos)
 
     def eventFilter(self, obj, event):

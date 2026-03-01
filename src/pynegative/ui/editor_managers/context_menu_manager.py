@@ -1,29 +1,10 @@
 from pathlib import Path
 
-from PySide6 import QtCore, QtGui, QtWidgets
+from PIL import ImageQt
+from PySide6 import QtGui, QtWidgets
 
 from ... import core as pynegative
-
-
-def _position_menu_on_screen(menu, global_pos):
-    """Position menu to stay within screen bounds."""
-    screen = QtWidgets.QApplication.screenAt(global_pos)
-    if not screen:
-        return global_pos
-
-    screen_geo = screen.availableGeometry()
-    menu_size = menu.sizeHint()
-
-    x = global_pos.x()
-    y = global_pos.y()
-
-    if y + menu_size.height() > screen_geo.bottom():
-        y = screen_geo.bottom() - menu_size.height()
-
-    if x + menu_size.width() > screen_geo.right():
-        x = screen_geo.right() - menu_size.width()
-
-    return QtCore.QPoint(x, y)
+from ..context_menu_positioning import get_menu_exec_position
 
 
 class ContextMenuManager:
@@ -66,7 +47,7 @@ class ContextMenuManager:
         )
         paste_selective_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+V"))
 
-        adjusted_pos = _position_menu_on_screen(menu, self.editor.view.mapToGlobal(pos))
+        adjusted_pos = get_menu_exec_position(menu, self.editor.view, pos)
         menu.exec_(adjusted_pos)
 
     def handle_carousel_context_menu(self, context_type, data):
@@ -145,16 +126,32 @@ class ContextMenuManager:
                 )
             )
 
-            adjusted_pos = _position_menu_on_screen(
-                menu, carousel_widget.mapToGlobal(pos)
-            )
+            adjusted_pos = get_menu_exec_position(menu, carousel_widget, pos)
             menu.exec_(adjusted_pos)
 
     def _set_carousel_comparison(self, image_path: str, side: str):
-        """Load sidecar settings from *image_path* and set as comparison."""
+        """Set carousel image as comparison, using image pixels for cross-photo compare."""
         if not self.editor.comparison_manager.enabled:
             self.editor.comparison_manager.comparison_btn.setChecked(True)
             self.editor.comparison_manager.toggle_comparison()
+
+        current_path = getattr(self.editor, "raw_path", None)
+        current_path_str = str(current_path) if current_path else None
+
+        # If comparing against a different photo, use that photo's thumbnail pixels.
+        if current_path_str != str(image_path):
+            compare_pixmap = self._load_comparison_pixmap(image_path)
+            if not compare_pixmap.isNull():
+                label = Path(image_path).name
+                if side == "left":
+                    self.editor.comparison_manager.set_left_pixmap(
+                        compare_pixmap, label
+                    )
+                else:
+                    self.editor.comparison_manager.set_right_pixmap(
+                        compare_pixmap, label
+                    )
+                return
 
         settings = pynegative.load_sidecar(image_path)
         if settings is None:
@@ -163,3 +160,20 @@ class ContextMenuManager:
             self.editor.comparison_manager.set_left_snapshot(settings)
         else:
             self.editor.comparison_manager.set_right_snapshot(settings)
+
+    def _load_comparison_pixmap(self, image_path: str) -> QtGui.QPixmap:
+        path = Path(image_path)
+        if not path.exists():
+            return QtGui.QPixmap()
+
+        pil_img, _ = pynegative.load_cached_thumbnail(path, 1200)
+        if pil_img is None:
+            pil_img = pynegative.extract_thumbnail(path)
+            if pil_img is not None:
+                pil_img.thumbnail((1200, 1200))
+
+        if pil_img is None:
+            return QtGui.QPixmap()
+
+        q_image = ImageQt.ImageQt(pil_img)
+        return QtGui.QPixmap.fromImage(q_image)
