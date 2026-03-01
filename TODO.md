@@ -13,6 +13,7 @@ This document tracks planned features, project goals, and areas for technical im
 
 ## Bugs
 
+- Compare images ui is a bit buggy when comparing landscape and portrait images. it doesnt correctly render both while removing background renders from old images
 - scaling issue when zooming with compare photos feature. One size gets stretched or squished instead of both being scaled equally.
 - Visual artefacts when zoomed out and tone adjusted or at most resolutions with the sharpening filter enabled.
 - fix the image comparison view. the left side/unedited side is too dark.

@@ -14,7 +14,6 @@
 - ALWAYS ask for clarification when instructions are ambiguous
 - ALWAYS add tests when adding new code
 - ALWAYS write a plan to `.opencode/plans/<plan>.md`. Include a task list
-- ALWAYS check linting and formatting before committing
 - NEVER commit to main or master
 - NEVER use "fixup" commits, amend the relevant commit instead
 - ALWAYS ensure you start a new feature based branch off main.
@@ -24,20 +23,9 @@
 - Install: `uv sync --all-groups`
 - Run Program: `uv run pynegative`
 - Run Tests: `uv run pytest`
-- Format: `uv run ruff format .`
-- Lint: `uv run ruff check --fix .`
 
 ## Project Architecture
 Refer to [CONTRIBUTING.md](CONTRIBUTING.md) for the full project architecture and directory layout.
-
-## Project Structure
-- `src/pynegative/io/`: Data persistence, RAW loading, and metadata management.
-- `src/pynegative/processing/`: Core image processing algorithms and transformations.
-- `src/pynegative/ui/`: Main application components, editor logic, and gallery view.
-- `src/pynegative/ui/controls/`: Specialized UI components for image adjustments.
-- `src/pynegative/ui/widgets/`: Generic, reusable UI elements used across the application.
-- `src/pynegative/utils/`: High-performance Numba kernels and utility functions.
-- `tests/`: Comprehensive test suite mirroring the source directory structure.
 
 ## Documentation Reference
 - `README.md`: User-facing features, installation, and keyboard shortcuts.
@@ -46,5 +34,4 @@ Refer to [CONTRIBUTING.md](CONTRIBUTING.md) for the full project architecture an
 
 ## Common Patterns
 - Image Data: Work on copies. Use NumPy for operations. Validate 0.0–1.0 ranges for normalized data.
-- ALWAYS use pathlib over os.path
 - Logic/UI Separation: Keep image processing logic separate from widget state management.

@@ -44,6 +44,7 @@ class TestCarouselComparisonActions:
         ) as MockMenu:
             menu_instance = MagicMock()
             MockMenu.return_value = menu_instance
+            menu_instance.sizeHint.return_value = QtCore.QSize(200, 120)
             added_actions = []
 
             def track_action(text):
@@ -75,6 +76,7 @@ class TestCarouselComparisonActions:
         ) as MockMenu:
             menu_instance = MagicMock()
             MockMenu.return_value = menu_instance
+            menu_instance.sizeHint.return_value = QtCore.QSize(200, 120)
             added_actions = []
 
             def track_action(text):
@@ -98,6 +100,7 @@ class TestSetCarouselComparison:
     def test_set_left_with_sidecar(self, mock_core):
         mock_core.load_sidecar.return_value = {"exposure": 1.5, "contrast": 0.5}
         mgr = _make_context_menu_manager()
+        mgr.editor.raw_path = "/img/a.dng"
 
         mgr._set_carousel_comparison("/img/a.dng", "left")
 
@@ -110,6 +113,7 @@ class TestSetCarouselComparison:
     def test_set_right_with_sidecar(self, mock_core):
         mock_core.load_sidecar.return_value = {"exposure": -0.5}
         mgr = _make_context_menu_manager()
+        mgr.editor.raw_path = "/img/b.dng"
 
         mgr._set_carousel_comparison("/img/b.dng", "right")
 
@@ -123,6 +127,7 @@ class TestSetCarouselComparison:
         """When no sidecar exists, use empty settings (defaults)."""
         mock_core.load_sidecar.return_value = None
         mgr = _make_context_menu_manager()
+        mgr.editor.raw_path = "/img/c.dng"
 
         mgr._set_carousel_comparison("/img/c.dng", "left")
 
@@ -132,6 +137,7 @@ class TestSetCarouselComparison:
     def test_set_right_no_sidecar(self, mock_core):
         mock_core.load_sidecar.return_value = None
         mgr = _make_context_menu_manager()
+        mgr.editor.raw_path = "/img/d.dng"
 
         mgr._set_carousel_comparison("/img/d.dng", "right")
 
@@ -142,6 +148,7 @@ class TestSetCarouselComparison:
         mock_core.load_sidecar.return_value = {"exposure": 0.25}
         mgr = _make_context_menu_manager()
         mgr.editor.comparison_manager.enabled = False
+        mgr.editor.raw_path = "/img/e.dng"
 
         mgr._set_carousel_comparison("/img/e.dng", "left")
 
@@ -149,3 +156,39 @@ class TestSetCarouselComparison:
             True
         )
         mgr.editor.comparison_manager.toggle_comparison.assert_called_once()
+
+    @patch(
+        "pynegative.ui.editor_managers.context_menu_manager.ContextMenuManager._load_comparison_pixmap"
+    )
+    @patch("pynegative.ui.editor_managers.context_menu_manager.pynegative")
+    def test_set_left_cross_photo_uses_pixmap(self, mock_core, mock_load_pixmap):
+        mock_core.load_sidecar.return_value = {"exposure": 1.0}
+        mock_pixmap = MagicMock()
+        mock_pixmap.isNull.return_value = False
+        mock_load_pixmap.return_value = mock_pixmap
+        mgr = _make_context_menu_manager()
+        mgr.editor.raw_path = "/img/current.dng"
+
+        mgr._set_carousel_comparison("/img/other.dng", "left")
+
+        mgr.editor.comparison_manager.set_left_pixmap.assert_called_once()
+        mgr.editor.comparison_manager.set_left_snapshot.assert_not_called()
+        mock_core.load_sidecar.assert_not_called()
+
+    @patch(
+        "pynegative.ui.editor_managers.context_menu_manager.ContextMenuManager._load_comparison_pixmap"
+    )
+    @patch("pynegative.ui.editor_managers.context_menu_manager.pynegative")
+    def test_set_right_cross_photo_uses_pixmap(self, mock_core, mock_load_pixmap):
+        mock_core.load_sidecar.return_value = {"contrast": 0.2}
+        mock_pixmap = MagicMock()
+        mock_pixmap.isNull.return_value = False
+        mock_load_pixmap.return_value = mock_pixmap
+        mgr = _make_context_menu_manager()
+        mgr.editor.raw_path = "/img/current.dng"
+
+        mgr._set_carousel_comparison("/img/other2.dng", "right")
+
+        mgr.editor.comparison_manager.set_right_pixmap.assert_called_once()
+        mgr.editor.comparison_manager.set_right_snapshot.assert_not_called()
+        mock_core.load_sidecar.assert_not_called()

@@ -160,6 +160,26 @@ class ComparisonManager(QtCore.QObject):
             self.comparison_overlay.setEditedPixmap(pixmap)
             self.editor.show_toast("Right comparison: snapshot")
 
+    def set_left_pixmap(self, pixmap, label: str | None = None):
+        """Use *pixmap* as the left comparison image."""
+        if pixmap is None or pixmap.isNull():
+            return
+        self._left_source = ComparisonSource.SNAPSHOT
+        self._left_snapshot_settings = None
+        self.comparison_overlay.setUneditedPixmap(pixmap)
+        if label:
+            self.editor.show_toast(f"Left comparison: {label}")
+
+    def set_right_pixmap(self, pixmap, label: str | None = None):
+        """Use *pixmap* as the right comparison image."""
+        if pixmap is None or pixmap.isNull():
+            return
+        self._right_source = ComparisonSource.SNAPSHOT
+        self._right_snapshot_settings = None
+        self.comparison_overlay.setEditedPixmap(pixmap)
+        if label:
+            self.editor.show_toast(f"Right comparison: {label}")
+
     def reset_sources(self):
         """Reset both sides to the default unedited / current pair."""
         self._left_source = ComparisonSource.UNEDITED
