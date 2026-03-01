@@ -1,0 +1,16 @@
+{
+	"hooks": {
+		"PostToolUse": [
+			{
+				"type": "command",
+				"command": "uv run ruff format . && uv run ruff check --fix ."
+			}
+		],
+		"Stop": [
+			{
+				"type": "command",
+				"command": "uv run ruff format . && uv run ruff check --fix ."
+			}
+		]
+	}
+}

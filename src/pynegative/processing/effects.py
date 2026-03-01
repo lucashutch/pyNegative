@@ -17,8 +17,13 @@ from ..utils.numba_kernels import (
 logger = logging.getLogger(__name__)
 
 
-def sharpen_image(img, radius, percent):
-    """Advanced sharpening that operates on NumPy float32 arrays."""
+def sharpen_image(img, radius, percent, method=None):
+    """Advanced sharpening that operates on NumPy float32 arrays.
+
+    The optional `method` parameter is accepted for backward compatibility
+    with callers that pass a processing method string (e.g. "High Quality").
+    It is currently unused.
+    """
     if img is None:
         return None
 

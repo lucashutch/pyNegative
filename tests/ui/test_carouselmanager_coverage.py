@@ -55,3 +55,44 @@ def test_carouselmanager_coverage(mock_start, qapp):
     manager._show_context_menu(QtCore.QPoint(0, 0))
 
     manager.clear()
+
+
+def test_show_context_menu_falls_back_to_hovered_item(qapp):
+    thread_pool = QtCore.QThreadPool()
+    manager = CarouselManager(thread_pool)
+    manager.set_images(["/tmp/img1.jpg"], "/tmp/img1.jpg")
+
+    item = manager.carousel.item(0)
+    manager.carousel.itemAt = MagicMock(return_value=None)
+    manager.carousel.get_hovered_item = MagicMock(return_value=item)
+
+    captured = []
+    manager.contextMenuRequested.connect(
+        lambda kind, data: captured.append((kind, data))
+    )
+
+    manager._show_context_menu(QtCore.QPoint(0, 0))
+
+    assert captured
+    assert captured[0][0] == "carousel"
+
+
+def test_show_context_menu_falls_back_to_current_item(qapp):
+    thread_pool = QtCore.QThreadPool()
+    manager = CarouselManager(thread_pool)
+    manager.set_images(["/tmp/img1.jpg"], "/tmp/img1.jpg")
+
+    item = manager.carousel.item(0)
+    manager.carousel.itemAt = MagicMock(return_value=None)
+    manager.carousel.get_hovered_item = MagicMock(return_value=None)
+    manager.carousel.currentItem = MagicMock(return_value=item)
+
+    captured = []
+    manager.contextMenuRequested.connect(
+        lambda kind, data: captured.append((kind, data))
+    )
+
+    manager._show_context_menu(QtCore.QPoint(0, 0))
+
+    assert captured
+    assert captured[0][0] == "carousel"

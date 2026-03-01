@@ -109,3 +109,23 @@ def test_editor_undo_redo(editor):
     editor.settings_manager.redo.return_value = state
     editor.shortcut_manager.redo()
     editor.settings_manager.redo.assert_called()
+
+
+def test_right_panel_tab_change_loads_metadata(editor):
+    editor.raw_path = "dummy.CR3"
+    with (
+        patch.object(editor.right_panel, "isVisible", return_value=True),
+        patch.object(editor, "_load_metadata") as mock_load,
+    ):
+        editor._on_right_panel_tab_changed(editor.right_panel.INFO_TAB)
+        mock_load.assert_called_once()
+
+
+def test_right_panel_tab_change_loads_history(editor):
+    editor.raw_path = "dummy.CR3"
+    with (
+        patch.object(editor.right_panel, "isVisible", return_value=True),
+        patch.object(editor, "_refresh_history_panel") as mock_refresh,
+    ):
+        editor._on_right_panel_tab_changed(editor.right_panel.HISTORY_TAB)
+        mock_refresh.assert_called_once()

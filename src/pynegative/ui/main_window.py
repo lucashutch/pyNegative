@@ -161,15 +161,15 @@ class MainWindow(QtWidgets.QMainWindow):
         filter_layout.addWidget(self.filter_rating_widget)
         bar_layout.addLayout(filter_layout)
 
-        # Metadata Panel Toggle
-        self.metadata_btn = QtWidgets.QToolButton()
-        self.metadata_btn.setText("ⓘ")
-        self.metadata_btn.setObjectName("MetadataButton")
-        self.metadata_btn.setToolTip("Metadata")
-        self.metadata_btn.setCheckable(True)
-        self.metadata_btn.setEnabled(False)
-        self.metadata_btn.clicked.connect(self._on_metadata_toggle)
-        bar_layout.addWidget(self.metadata_btn)
+        # Right-side panel toggle (single button for Info/History tabs)
+        self.side_panel_btn = QtWidgets.QToolButton()
+        self.side_panel_btn.setText("▤")
+        self.side_panel_btn.setObjectName("SidePanelButton")
+        self.side_panel_btn.setToolTip("Side Panel")
+        self.side_panel_btn.setCheckable(True)
+        self.side_panel_btn.setEnabled(False)
+        self.side_panel_btn.clicked.connect(self._on_side_panel_toggle)
+        bar_layout.addWidget(self.side_panel_btn)
 
         self.btn_open_folder = QtWidgets.QPushButton("Open Folder")
         self.btn_open_folder.setObjectName("OpenFolderButton")
@@ -190,17 +190,37 @@ class MainWindow(QtWidgets.QMainWindow):
         open_file_act.triggered.connect(self.open_single_file)
         file_menu.addAction(open_file_act)
 
-    def _on_metadata_toggle(self):
-        """Toggle metadata panel on the currently active view."""
-        visible = self.metadata_btn.isChecked()
+    def _on_side_panel_toggle(self):
+        """Toggle side panel on the currently active view."""
+        visible = self.side_panel_btn.isChecked()
         current = self.stack.currentWidget()
 
         if current == self.editor:
-            self.editor._metadata_panel_visible = visible
-            self.editor.settings.setValue("metadata_panel_visible", visible)
-            self.editor.metadata_panel.setVisible(visible)
+            self.editor.right_panel.setVisible(visible)
+            self.editor._metadata_panel_visible = (
+                visible
+                and self.editor.right_panel.currentIndex()
+                == self.editor.right_panel.INFO_TAB
+            )
+            self.editor._history_panel_visible = (
+                visible
+                and self.editor.right_panel.currentIndex()
+                == self.editor.right_panel.HISTORY_TAB
+            )
+            self.editor.settings.setValue(
+                "metadata_panel_visible", self.editor._metadata_panel_visible
+            )
+            self.editor.settings.setValue(
+                "history_panel_visible", self.editor._history_panel_visible
+            )
             if visible and self.editor.raw_path:
-                self.editor._load_metadata()
+                if (
+                    self.editor.right_panel.currentIndex()
+                    == self.editor.right_panel.INFO_TAB
+                ):
+                    self.editor._load_metadata()
+                else:
+                    self.editor._refresh_history_panel()
         elif current == self.gallery:
             if self.gallery._is_large_preview:
                 pw = self.gallery.preview_widget
@@ -210,35 +230,32 @@ class MainWindow(QtWidgets.QMainWindow):
                 if visible and pw.raw_path:
                     pw._load_metadata()
             else:
-                # Gallery grid view
                 self.gallery._gallery_metadata_visible = visible
                 self.gallery.settings.setValue("gallery_metadata_visible", visible)
                 self.gallery.gallery_metadata_panel.setVisible(visible)
                 if visible:
-                    # Trigger a selection update to populate metadata
                     self.gallery._on_gallery_selection_changed()
 
     def _sync_metadata_btn_state(self, *args):
-        """Sync the metadata button state with the active view."""
+        """Sync the side panel button state with the active view."""
         current = self.stack.currentWidget()
         if current == self.editor:
             has_image = self.editor.raw_path is not None
-            self.metadata_btn.setEnabled(has_image)
-            self.metadata_btn.setChecked(self.editor._metadata_panel_visible)
+            self.side_panel_btn.setEnabled(has_image)
+            self.side_panel_btn.setChecked(self.editor.right_panel.isVisible())
         elif current == self.gallery:
             if self.gallery._is_large_preview:
                 pw = self.gallery.preview_widget
                 has_image = pw.raw_path is not None
-                self.metadata_btn.setEnabled(has_image)
-                self.metadata_btn.setChecked(pw._metadata_panel_visible)
+                self.side_panel_btn.setEnabled(has_image)
+                self.side_panel_btn.setChecked(pw._metadata_panel_visible)
             else:
-                # Grid view - always enable, state depends on gallery setting
                 has_folder = self.gallery.current_folder is not None
-                self.metadata_btn.setEnabled(has_folder)
-                self.metadata_btn.setChecked(self.gallery._gallery_metadata_visible)
+                self.side_panel_btn.setEnabled(has_folder)
+                self.side_panel_btn.setChecked(self.gallery._gallery_metadata_visible)
         else:
-            self.metadata_btn.setEnabled(False)
-            self.metadata_btn.setChecked(False)
+            self.side_panel_btn.setEnabled(False)
+            self.side_panel_btn.setChecked(False)
 
     def switch_to_gallery(self):
         logger.info("Mode switch: GALLERY")

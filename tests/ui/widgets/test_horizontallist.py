@@ -127,3 +127,71 @@ def test_item_data_access(list_widget):
     """Test that items store and return correct data."""
     item = list_widget.item(0)
     assert item.data(QtCore.Qt.UserRole) == "/path/to/item_0.jpg"
+
+
+def test_right_click_does_not_change_selection(list_widget, qtbot):
+    """Right-click should not select a new item (context menu only)."""
+    list_widget.setCurrentRow(0)
+    first_item = list_widget.item(0)
+    target_item = list_widget.item(2)
+    assert first_item.isSelected()
+
+    target_rect = list_widget.visualItemRect(target_item)
+    qtbot.mouseClick(
+        list_widget.viewport(),
+        QtCore.Qt.RightButton,
+        pos=target_rect.center(),
+    )
+
+    assert first_item.isSelected()
+
+
+def test_right_click_emits_context_menu_signal(list_widget, qtbot):
+    """Right-click should still request a custom context menu."""
+    target_item = list_widget.item(1)
+    target_rect = list_widget.visualItemRect(target_item)
+
+    with qtbot.waitSignal(list_widget.customContextMenuRequested, timeout=1000):
+        qtbot.mouseClick(
+            list_widget.viewport(),
+            QtCore.Qt.RightButton,
+            pos=target_rect.center(),
+        )
+
+
+def test_right_click_on_empty_space_emits_context_menu(list_widget, qtbot):
+    """Right-click on padding/empty space should also emit the context menu signal."""
+    # Find a position where no item exists (below all items)
+    last_item = list_widget.item(list_widget.count() - 1)
+    last_rect = list_widget.visualItemRect(last_item)
+    empty_pos = QtCore.QPoint(last_rect.right() + 50, last_rect.center().y())
+
+    # Ensure no item is at this position (skip if viewport is too packed)
+    if list_widget.itemAt(empty_pos) is not None:
+        return
+
+    with qtbot.waitSignal(list_widget.customContextMenuRequested, timeout=1000):
+        qtbot.mouseClick(
+            list_widget.viewport(),
+            QtCore.Qt.RightButton,
+            pos=empty_pos,
+        )
+
+
+def test_context_menu_event_does_not_double_emit(list_widget, qtbot):
+    """contextMenuEvent should be suppressed to avoid double emission."""
+    from PySide6.QtGui import QContextMenuEvent
+
+    emissions = []
+    list_widget.customContextMenuRequested.connect(lambda p: emissions.append(p))
+
+    target_item = list_widget.item(1)
+    target_rect = list_widget.visualItemRect(target_item)
+    center = target_rect.center()
+
+    # Manually fire contextMenuEvent (which Qt would generate after the press)
+    ctx_event = QContextMenuEvent(QContextMenuEvent.Mouse, center)
+    list_widget.contextMenuEvent(ctx_event)
+
+    # Should NOT have added any emission
+    assert len(emissions) == 0

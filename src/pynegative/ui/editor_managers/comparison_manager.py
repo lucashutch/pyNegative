@@ -1,12 +1,32 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
+from enum import Enum
+
+
+class ComparisonSource(Enum):
+    """What is being shown on each side of the comparison split."""
+
+    UNEDITED = "unedited"
+    CURRENT = "current"
+    SNAPSHOT = "snapshot"
+
 
 class ComparisonManager(QtCore.QObject):
+    comparisonToggled = QtCore.Signal(bool)
+
     def __init__(self, editor):
         super().__init__(editor)
         self.editor = editor
         self.enabled = False
+
+        # Source tracking for left / right sides
+        self._left_source = ComparisonSource.UNEDITED
+        self._right_source = ComparisonSource.CURRENT
+        self._left_snapshot_settings: dict | None = None
+        self._right_snapshot_settings: dict | None = None
+        self._cached_default_left_pixmap = QtGui.QPixmap()
+        self._cached_default_left_image_id = -1
 
     def setup_ui(self, canvas_frame, view):
         self.canvas_frame = canvas_frame
@@ -75,7 +95,12 @@ class ComparisonManager(QtCore.QObject):
         if enabled:
             self.comparison_handle.show()
             self.update_handle_position()
-            unedited_pixmap = self.editor.image_processor.get_unedited_pixmap()
+            # Reset to default sources on fresh enable
+            self._left_source = ComparisonSource.UNEDITED
+            self._right_source = ComparisonSource.CURRENT
+            self._left_snapshot_settings = None
+            self._right_snapshot_settings = None
+            unedited_pixmap = self._default_left_pixmap()
             self.comparison_overlay.setUneditedPixmap(unedited_pixmap)
             if self.view._bg_item and self.view._bg_item.pixmap():
                 self.comparison_overlay.setEditedPixmap(self.view._bg_item.pixmap())
@@ -83,6 +108,8 @@ class ComparisonManager(QtCore.QObject):
         else:
             self.comparison_handle.hide()
             self.editor.show_toast("Comparison disabled")
+
+        self.comparisonToggled.emit(enabled)
 
     def update_handle_position(self):
         if hasattr(self, "comparison_handle") and hasattr(self, "comparison_overlay"):
@@ -102,7 +129,86 @@ class ComparisonManager(QtCore.QObject):
 
     def update_pixmaps(self, unedited=None, edited=None):
         if self.enabled and self.comparison_overlay:
-            if unedited:
-                self.comparison_overlay.setUneditedPixmap(unedited)
-            if edited:
+            if (
+                unedited
+                and not unedited.isNull()
+                and self._left_source == ComparisonSource.UNEDITED
+            ):
+                self.comparison_overlay.setUneditedPixmap(self._default_left_pixmap())
+            if edited and self._right_source == ComparisonSource.CURRENT:
                 self.comparison_overlay.setEditedPixmap(edited)
+
+    # ------------------------------------------------------------------
+    # Snapshot comparison
+    # ------------------------------------------------------------------
+
+    def set_left_snapshot(self, settings: dict):
+        """Render *settings* and use the result as the left comparison image."""
+        self._left_source = ComparisonSource.SNAPSHOT
+        self._left_snapshot_settings = settings
+        pixmap = self.editor.image_processor.render_snapshot_pixmap(settings)
+        if not pixmap.isNull():
+            self.comparison_overlay.setUneditedPixmap(pixmap)
+            self.editor.show_toast("Left comparison: snapshot")
+
+    def set_right_snapshot(self, settings: dict):
+        """Render *settings* and use the result as the right comparison image."""
+        self._right_source = ComparisonSource.SNAPSHOT
+        self._right_snapshot_settings = settings
+        pixmap = self.editor.image_processor.render_snapshot_pixmap(settings)
+        if not pixmap.isNull():
+            self.comparison_overlay.setEditedPixmap(pixmap)
+            self.editor.show_toast("Right comparison: snapshot")
+
+    def set_left_pixmap(self, pixmap, label: str | None = None):
+        """Use *pixmap* as the left comparison image."""
+        if pixmap is None or pixmap.isNull():
+            return
+        self._left_source = ComparisonSource.SNAPSHOT
+        self._left_snapshot_settings = None
+        self.comparison_overlay.setUneditedPixmap(pixmap)
+        if label:
+            self.editor.show_toast(f"Left comparison: {label}")
+
+    def set_right_pixmap(self, pixmap, label: str | None = None):
+        """Use *pixmap* as the right comparison image."""
+        if pixmap is None or pixmap.isNull():
+            return
+        self._right_source = ComparisonSource.SNAPSHOT
+        self._right_snapshot_settings = None
+        self.comparison_overlay.setEditedPixmap(pixmap)
+        if label:
+            self.editor.show_toast(f"Right comparison: {label}")
+
+    def reset_sources(self):
+        """Reset both sides to the default unedited / current pair."""
+        self._left_source = ComparisonSource.UNEDITED
+        self._right_source = ComparisonSource.CURRENT
+        self._left_snapshot_settings = None
+        self._right_snapshot_settings = None
+        if self.enabled:
+            unedited = self._default_left_pixmap()
+            self.comparison_overlay.setUneditedPixmap(unedited)
+            if self.view._bg_item and self.view._bg_item.pixmap():
+                self.comparison_overlay.setEditedPixmap(self.view._bg_item.pixmap())
+
+    def _default_left_pixmap(self):
+        """Render baseline (neutral settings) for left comparison side."""
+        image_id = getattr(self.editor.image_processor, "_current_image_id", -1)
+        if (
+            image_id == self._cached_default_left_image_id
+            and not self._cached_default_left_pixmap.isNull()
+        ):
+            return self._cached_default_left_pixmap
+
+        pixmap = self.editor.image_processor.render_snapshot_pixmap({})
+        if pixmap.isNull():
+            pixmap = self.editor.image_processor.get_unedited_pixmap()
+        self._cached_default_left_pixmap = pixmap
+        self._cached_default_left_image_id = image_id
+        return pixmap
+
+    def invalidate_default_left_cache(self):
+        """Invalidate cached baseline pixmap (call on image switch)."""
+        self._cached_default_left_pixmap = QtGui.QPixmap()
+        self._cached_default_left_image_id = -1

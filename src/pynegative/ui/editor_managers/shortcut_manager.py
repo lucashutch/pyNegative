@@ -56,6 +56,18 @@ class ShortcutManager:
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+-"), editor, editor.view.zoom_out)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+0"), editor, editor.view.reset_zoom)
 
+        # Snapshot / Version shortcuts
+        QtGui.QShortcut(
+            QtGui.QKeySequence("Ctrl+S"),
+            editor,
+            self.save_manual_snapshot,
+        )
+        QtGui.QShortcut(
+            QtGui.QKeySequence("Ctrl+Shift+S"),
+            editor,
+            self.save_tagged_version,
+        )
+
     def handle_copy_shortcut(self):
         from pathlib import Path
 
@@ -128,3 +140,25 @@ class ShortcutManager:
     def navigate_next(self):
         if self.editor.isVisible():
             self.editor.carousel_manager.select_next()
+
+    def save_manual_snapshot(self):
+        self.editor.version_manager.save_manual_snapshot()
+
+    def save_tagged_version(self):
+        from PySide6 import QtWidgets
+
+        editor = self.editor
+        if not editor.raw_path:
+            return
+        from ... import core as pynegative
+        import time
+
+        default_label = pynegative.format_snapshot_timestamp(time.time())
+        label, ok = QtWidgets.QInputDialog.getText(
+            editor,
+            "Save Version",
+            "Version name:",
+            text=default_label,
+        )
+        if ok:
+            editor.version_manager.save_tagged_version(label if label else None)

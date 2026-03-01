@@ -15,12 +15,15 @@ from .editor_managers import (
     CropManager,
     FloatingUIManager,
     ShortcutManager,
+    VersionManager,
 )
 from .imageprocessing import ImageProcessingPipeline
 from .loaders import RawLoader
 from .settingsmanager import SettingsManager
 from .widgets import (
+    HistoryPanel,
     MetadataPanel,
+    RightPanel,
     ZoomableGraphicsView,
     ZoomControls,
     PreviewStarRatingWidget,
@@ -70,6 +73,7 @@ class EditorWidget(QtWidgets.QWidget):
         self.floating_ui_manager = FloatingUIManager(self)
         self.shortcut_manager = ShortcutManager(self)
         self.context_menu_manager = ContextMenuManager(self)
+        self.version_manager = VersionManager(self)
 
     def _init_ui(self):
         """Initialize the user interface."""
@@ -124,14 +128,21 @@ class EditorWidget(QtWidgets.QWidget):
         self.canvas_splitter.addWidget(self.carousel_widget)
 
         self.metadata_panel = MetadataPanel()
-        self.main_content_splitter.addWidget(self.metadata_panel)
+        self.history_panel = HistoryPanel()
+        self.right_panel = RightPanel(self.metadata_panel, self.history_panel)
+        self.main_content_splitter.addWidget(self.right_panel)
         self.main_content_splitter.setSizes([1000, 280])
 
         self._metadata_panel_visible = self.settings.value(
             "metadata_panel_visible", False, type=bool
         )
+        self._history_panel_visible = self.settings.value(
+            "history_panel_visible", False, type=bool
+        )
         if self._metadata_panel_visible:
-            self.metadata_panel.setVisible(True)
+            self.right_panel.show_info_tab()
+        elif self._history_panel_visible:
+            self.right_panel.show_history_tab()
         self.carousel_widget.installEventFilter(self)
 
         self.canvas_splitter.setStretchFactor(0, 5)
@@ -252,6 +263,21 @@ class EditorWidget(QtWidgets.QWidget):
             self._on_preview_rating_changed
         )
 
+        # History panel signals
+        self.history_panel.snapshotSelected.connect(self._on_snapshot_selected)
+        self.history_panel.restoreRequested.connect(self._on_snapshot_restore)
+        self.history_panel.tagRequested.connect(self._on_snapshot_tag)
+        self.history_panel.deleteRequested.connect(self._on_snapshot_delete)
+        self.history_panel.setLeftComparison.connect(self._on_set_left_comparison)
+        self.history_panel.setRightComparison.connect(self._on_set_right_comparison)
+        self.version_manager.snapshotsChanged.connect(self._refresh_history_panel)
+        self.right_panel.currentChanged.connect(self._on_right_panel_tab_changed)
+
+        # Keep history panel comparison-menu state in sync
+        self.comparison_manager.comparisonToggled.connect(
+            self.history_panel.set_comparison_active
+        )
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if (
@@ -280,6 +306,8 @@ class EditorWidget(QtWidgets.QWidget):
         self.carousel_manager.clear()
         self.settings_manager.clear_clipboard()
         self.metadata_panel.clear()
+        self.history_panel.clear()
+        self.version_manager.stop()
 
     def update_rating_for_path(self, path, rating):
         if self.raw_path and str(self.raw_path) == path:
@@ -289,6 +317,9 @@ class EditorWidget(QtWidgets.QWidget):
     def load_image(self, path):
         path = Path(path)
         logger.info(f"Image selection changed: {path.name}")
+
+        if self.comparison_manager.enabled:
+            self.comparison_manager.invalidate_default_left_cache()
 
         # Ensure previous image settings are saved before switching
         if self.save_timer.isActive():
@@ -343,6 +374,9 @@ class EditorWidget(QtWidgets.QWidget):
 
         self.editing_controls.set_crop_checked(False)
         self.view.set_crop_mode(False)
+
+        # Stop version autosave for previous image
+        self.version_manager.stop()
 
         # 2. Start RAW loader
         loader = RawLoader(path)
@@ -558,11 +592,184 @@ class EditorWidget(QtWidgets.QWidget):
         self._request_update_from_view()
 
         if self.comparison_manager.enabled:
-            self.comparison_manager.comparison_overlay.setUneditedPixmap(
-                self.image_processor.get_unedited_pixmap(2048)
-            )
+            self.comparison_manager.reset_sources()
         if self._metadata_panel_visible:
             self.metadata_panel.load_for_path(self.raw_path, settings)
+
+        # Load history panel if visible
+        if self._history_panel_visible:
+            self._refresh_history_panel()
+
+        # Start version autosave timer for this image
+        self.version_manager.start()
+
+    def _load_metadata(self):
+        """Load metadata into the panel (called by MainWindow on toggle)."""
+        if self.raw_path:
+            current_settings = self.image_processor.get_current_settings()
+            self.metadata_panel.load_for_path(self.raw_path, current_settings)
+
+    def _on_right_panel_tab_changed(self, index: int):
+        """Keep panel state in sync and lazy-load tab contents when switched."""
+        if index == self.right_panel.INFO_TAB:
+            self._metadata_panel_visible = self.right_panel.isVisible()
+            self._history_panel_visible = False
+            self.settings.setValue(
+                "metadata_panel_visible", self._metadata_panel_visible
+            )
+            self.settings.setValue("history_panel_visible", False)
+            if self.right_panel.isVisible():
+                self._load_metadata()
+        elif index == self.right_panel.HISTORY_TAB:
+            self._metadata_panel_visible = False
+            self._history_panel_visible = self.right_panel.isVisible()
+            self.settings.setValue("metadata_panel_visible", False)
+            self.settings.setValue("history_panel_visible", self._history_panel_visible)
+            if self.right_panel.isVisible():
+                self._refresh_history_panel()
+
+    def _refresh_history_panel(self):
+        """Reload the history panel from disk snapshots."""
+        snapshots = self.version_manager.load_snapshots()
+        self.history_panel.set_snapshots(snapshots)
+
+    # ------------------------------------------------------------------
+    # Snapshot preview / restore
+    # ------------------------------------------------------------------
+
+    _stashed_settings: dict | None = None
+    _stashed_rating: int = 0
+
+    def _on_snapshot_selected(self, snapshot_id: str):
+        """Preview a snapshot (or cancel preview on empty id)."""
+        if not snapshot_id:
+            # Cancel — revert to stashed state
+            self._revert_preview()
+            return
+
+        snap = self.history_panel.get_snapshot_by_id(snapshot_id)
+        if snap is None:
+            return
+
+        # Stash current working state on first preview
+        if self._stashed_settings is None:
+            self._stashed_settings = self.image_processor.get_current_settings()
+            self._stashed_rating = self.editing_controls.star_rating_widget.rating()
+
+        # Apply snapshot settings to the editor
+        settings = snap["settings"]
+        self.editing_controls.apply_settings(settings)
+        self.image_processor.set_processing_params(**settings)
+        self._request_update_from_view()
+
+        rating = settings.get("rating", 0)
+        self.editing_controls.set_rating(rating)
+
+        self.history_panel.set_previewing(True)
+        self.show_toast("Previewing snapshot")
+
+    def _on_snapshot_restore(self, snapshot_id: str):
+        """Commit the previewed snapshot as the current working state."""
+        snap = self.history_panel.get_snapshot_by_id(snapshot_id)
+        if snap is None:
+            return
+
+        settings = snap["settings"]
+        rating = settings.get("rating", 0)
+
+        # Push an undo state so the user can revert
+        self.settings_manager.push_immediate_undo_state("Restore snapshot", settings)
+
+        # Persist as the current working sidecar
+        self.settings_manager.auto_save_sidecar(self.raw_path, settings, rating)
+
+        # Clear stash — this is now the current state
+        self._stashed_settings = None
+        self._stashed_rating = 0
+        self.history_panel.set_previewing(False)
+        self.show_toast("Snapshot restored")
+
+    def _revert_preview(self):
+        """Revert the editor to the stashed pre-preview state."""
+        if self._stashed_settings is None:
+            return
+        self.editing_controls.apply_settings(self._stashed_settings)
+        self.image_processor.set_processing_params(**self._stashed_settings)
+        self._request_update_from_view()
+        self.editing_controls.set_rating(self._stashed_rating)
+        self._stashed_settings = None
+        self._stashed_rating = 0
+        self.history_panel.set_previewing(False)
+
+    # ------------------------------------------------------------------
+    # Snapshot tagging / deletion
+    # ------------------------------------------------------------------
+
+    def _on_snapshot_tag(self, snapshot_id: str):
+        """Tag or untag a snapshot (toggle). Prompts for a label if tagging."""
+        if not self.raw_path:
+            return
+        snap = self.history_panel.get_snapshot_by_id(snapshot_id)
+        if snap is None:
+            return
+
+        if snap.get("is_tagged"):
+            # Untag
+            pynegative.update_snapshot(
+                self.raw_path, snapshot_id, is_tagged=False, label=None
+            )
+            self.show_toast("Version untagged")
+        else:
+            # Tag — prompt for a name
+            import time
+
+            default_label = pynegative.format_snapshot_timestamp(time.time())
+            label, ok = QtWidgets.QInputDialog.getText(
+                self, "Tag Version", "Version name:", text=default_label
+            )
+            if not ok:
+                return
+            pynegative.update_snapshot(
+                self.raw_path,
+                snapshot_id,
+                is_tagged=True,
+                label=label if label else default_label,
+            )
+            self.show_toast(f"Version tagged: {label or default_label}")
+
+        self._refresh_history_panel()
+
+    def _on_snapshot_delete(self, snapshot_id: str):
+        """Delete a snapshot from the history."""
+        if not self.raw_path:
+            return
+        pynegative.delete_snapshot(self.raw_path, snapshot_id)
+        self._refresh_history_panel()
+        self.show_toast("Snapshot deleted")
+
+    # ------------------------------------------------------------------
+    # Snapshot comparison
+    # ------------------------------------------------------------------
+
+    def _on_set_left_comparison(self, snapshot_id: str):
+        """Set a snapshot as the left side of the comparison overlay."""
+        snap = self.history_panel.get_snapshot_by_id(snapshot_id)
+        if snap is None:
+            return
+        if not self.comparison_manager.enabled:
+            self.comparison_manager.comparison_btn.setChecked(True)
+            self.comparison_manager.toggle_comparison()
+        self.comparison_manager.set_left_snapshot(snap["settings"])
+
+    def _on_set_right_comparison(self, snapshot_id: str):
+        """Set a snapshot as the right side of the comparison overlay."""
+        snap = self.history_panel.get_snapshot_by_id(snapshot_id)
+        if snap is None:
+            return
+        if not self.comparison_manager.enabled:
+            self.comparison_manager.comparison_btn.setChecked(True)
+            self.comparison_manager.toggle_comparison()
+        self.comparison_manager.set_right_snapshot(snap["settings"])
 
     def _request_update_from_view(self):
         if (

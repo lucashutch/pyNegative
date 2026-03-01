@@ -5,9 +5,11 @@ from .comparisonoverlay import ComparisonHandle, ComparisonOverlay
 from .galleryitemdelegate import GalleryItemDelegate
 from .gallerylistwidget import GalleryListWidget
 from .histogram import HistogramWidget
+from .history_panel import HistoryPanel
 from .horizontallist import HorizontalListWidget
 from .metadata_panel import MetadataPanel
 from .resetableslider import ResetableSlider
+from .right_panel import RightPanel
 from .starrating import StarRatingWidget
 from .toast import ToastWidget
 from .zoomablegraphicsview import ZoomableGraphicsView
@@ -31,6 +33,8 @@ __all__ = [
     "ComparisonOverlay",
     "ComparisonHandle",
     "MetadataPanel",
+    "HistoryPanel",
+    "RightPanel",
     "PreviewStarRatingWidget",
     "SelectivePasteDialog",
 ]

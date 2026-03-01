@@ -11,14 +11,19 @@ from .io.raw import (
 from .io.sidecar import (
     SIDECAR_DIR,
     THUMBNAIL_DIR,
+    delete_snapshot,
+    format_snapshot_timestamp,
     get_sidecar_mtime,
     get_sidecar_path,
     get_thumbnail_cache_dir,
     load_cached_thumbnail,
     load_sidecar,
+    load_snapshots,
     rename_sidecar,
     save_cached_thumbnail,
     save_sidecar,
+    save_snapshot,
+    update_snapshot,
 )
 from .processing.defringe import apply_defringe
 from .processing.effects import (
@@ -55,6 +60,11 @@ __all__ = [
     "load_sidecar",
     "rename_sidecar",
     "get_sidecar_mtime",
+    "save_snapshot",
+    "load_snapshots",
+    "delete_snapshot",
+    "update_snapshot",
+    "format_snapshot_timestamp",
     "get_exif_capture_date",
     "format_date",
     "apply_tone_map",

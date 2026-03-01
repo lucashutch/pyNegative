@@ -4,10 +4,19 @@ import time
 import numpy as np
 from PySide6 import QtCore, QtGui
 
+import cv2
+
 from .pipeline.worker import (
     ImageProcessorSignals,
     ImageProcessorWorker,
     TierGeneratorWorker,
+)
+from .pipeline.stages import (
+    process_denoise_stage,
+    process_heavy_stage,
+    get_fused_geometry,
+    resolve_vignette_params,
+    apply_fused_remap,
 )
 from .. import core as pynegative
 
@@ -164,6 +173,141 @@ class ImageProcessingPipeline(QtCore.QObject):
             )
             return QtGui.QPixmap.fromImage(qimage)
         except Exception:
+            return QtGui.QPixmap()
+
+    def render_snapshot_pixmap(
+        self, settings: dict, max_width: int = 1024
+    ) -> QtGui.QPixmap:
+        """Render arbitrary settings on the current image synchronously.
+
+        Uses the smallest tier that meets *max_width* and runs the full
+        processing pipeline (preprocess -> denoise -> geometry -> heavy ->
+        tonemap -> defringe) in the calling thread.  Returns a QPixmap
+        suitable for the comparison overlay.
+        """
+        if self.base_img_full is None:
+            return QtGui.QPixmap()
+
+        try:
+            full_h, full_w = self.base_img_full.shape[:2]
+
+            # Pick the smallest tier whose width >= max_width
+            source = self.base_img_full
+            selected_scale = 1.0
+            for s in sorted(self.tiers.keys()):
+                tier = self.tiers.get(s)
+                if tier is not None and tier.shape[1] >= max_width:
+                    source = tier
+                    selected_scale = s
+                    break
+
+            h_src, w_src = source.shape[:2]
+            res_key = f"tier_{selected_scale}"
+
+            # --- Extract settings ---
+            rotate_val = settings.get("rotation", 0.0)
+            flip_h = settings.get("flip_h", False)
+            flip_v = settings.get("flip_v", False)
+            crop_val = settings.get("crop", None)
+
+            heavy_params = {
+                "de_haze": settings.get("de_haze", 0) / 50.0,
+                "denoise_luma": settings.get("denoise_luma", 0),
+                "denoise_chroma": settings.get("denoise_chroma", 0) * 2,
+                "denoise_method": settings.get("denoise_method", "Bilateral"),
+                "sharpen_value": settings.get("sharpen_value", 0),
+                "sharpen_radius": settings.get("sharpen_radius", 0.5),
+                "sharpen_percent": settings.get("sharpen_percent", 0.0),
+            }
+
+            preprocess_settings = {
+                "temperature": settings.get("temperature", 0.0),
+                "tint": settings.get("tint", 0.0),
+                "exposure": settings.get("exposure", 0.0),
+            }
+
+            tone_map_settings = {
+                "contrast": settings.get("contrast", 0.0),
+                "blacks": settings.get("blacks", 0.0),
+                "whites": settings.get("whites", 0.0),
+                "shadows": settings.get("shadows", 0.0),
+                "highlights": settings.get("highlights", 0.0),
+                "saturation": settings.get("saturation", 0.0),
+            }
+
+            # --- Vignette ---
+            vig_params = resolve_vignette_params(
+                settings, self.lens_info, roi_offset=None, full_size=(w_src, h_src)
+            )
+            vig_k1, vig_k2, vig_k3, vig_cx, vig_cy, vig_fw, vig_fh = vig_params
+
+            # --- Preprocess ---
+            preprocessed = pynegative.apply_preprocess(
+                source,
+                temperature=preprocess_settings["temperature"],
+                tint=preprocess_settings["tint"],
+                exposure=preprocess_settings["exposure"],
+                vignette_k1=vig_k1,
+                vignette_k2=vig_k2,
+                vignette_k3=vig_k3,
+                vignette_cx=vig_cx,
+                vignette_cy=vig_cy,
+                full_width=vig_fw,
+                full_height=vig_fh,
+            )
+
+            # --- Denoise ---
+            denoised = process_denoise_stage(
+                preprocessed, res_key, heavy_params, selected_scale
+            )
+
+            # --- Geometry ---
+            fused_maps, o_w, o_h, _ = get_fused_geometry(
+                settings,
+                self.lens_info,
+                w_src,
+                h_src,
+                rotate_val,
+                crop_val,
+                flip_h,
+                flip_v,
+                ts_roi=selected_scale,
+            )
+
+            img_dest = apply_fused_remap(
+                denoised, fused_maps, o_w, o_h, cv2.INTER_LINEAR
+            )
+
+            # --- Heavy stage ---
+            dehaze_val = settings.get("de_haze", 0)
+            atmos_light = None
+            if dehaze_val and float(dehaze_val) > 0:
+                atmos_light = pynegative.estimate_atmospheric_light(source)
+
+            processed = process_heavy_stage(
+                img_dest,
+                res_key,
+                heavy_params,
+                selected_scale,
+                "de_haze",
+                atmos_light,
+            )
+
+            # --- Tonemap + defringe ---
+            output, _ = pynegative.apply_tone_map(
+                processed, **tone_map_settings, calculate_stats=False
+            )
+            output = pynegative.apply_defringe(output, settings)
+
+            # --- Convert to QPixmap ---
+            img_uint8 = pynegative.float32_to_uint8(output)
+            h_out, w_out = img_uint8.shape[:2]
+            qimage = QtGui.QImage(
+                img_uint8.data, w_out, h_out, 3 * w_out, QtGui.QImage.Format_RGB888
+            )
+            return QtGui.QPixmap.fromImage(qimage)
+        except Exception:
+            logger.error("Failed to render snapshot pixmap", exc_info=True)
             return QtGui.QPixmap()
 
     def set_histogram_enabled(self, enabled):
