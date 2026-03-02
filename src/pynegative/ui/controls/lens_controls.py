@@ -12,7 +12,7 @@ class LensControls(BaseControlWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(4)
 
-        self.section = CollapsibleSection("LENS", True, self)
+        self.section = CollapsibleSection("LENS", expanded=False)
         main_layout.addWidget(self.section)
 
         # Status and Auto Detect Row

@@ -133,9 +133,10 @@ class ExportWidget(QtWidgets.QWidget):
         self.preset_combo.setObjectName("ExportComboBox")
         self.settings_layout.addWidget(self.preset_combo)
 
-        self.save_preset_button = QtWidgets.QPushButton("Save Preset")
+        self.save_preset_button = QtWidgets.QPushButton()
         self.save_preset_button.setIcon(get_heroicon("arrow-up-tray", size=18))
         self.save_preset_button.setIconSize(QtCore.QSize(18, 18))
+        self.save_preset_button.setToolTip("Save Preset")
         self.save_preset_button.setObjectName("SavePresetButton")
         self.settings_layout.addWidget(self.save_preset_button)
 
@@ -167,9 +168,10 @@ class ExportWidget(QtWidgets.QWidget):
         self.settings_layout.addStretch()
 
         # Export button
-        self.export_button = QtWidgets.QPushButton("Export")
+        self.export_button = QtWidgets.QPushButton()
         self.export_button.setIcon(get_heroicon("photo", size=18))
         self.export_button.setIconSize(QtCore.QSize(18, 18))
+        self.export_button.setToolTip("Export")
         self.settings_layout.addWidget(self.export_button)
 
     def _setup_format_settings(self):
@@ -232,9 +234,10 @@ class ExportWidget(QtWidgets.QWidget):
         self.destination_layout.addWidget(self.dest_path_label)
 
         # Change button
-        self.change_dest_button = QtWidgets.QPushButton("Change...")
+        self.change_dest_button = QtWidgets.QPushButton()
         self.change_dest_button.setIcon(get_heroicon("folder-open", size=18))
         self.change_dest_button.setIconSize(QtCore.QSize(18, 18))
+        self.change_dest_button.setToolTip("Change Destination...")
         self.change_dest_button.clicked.connect(self._choose_export_destination)
         self.destination_layout.addWidget(self.change_dest_button)
 
@@ -280,9 +283,10 @@ class ExportWidget(QtWidgets.QWidget):
         rename_form_layout.addRow("Start #", self.rename_start_seq)
 
         # Preview button
-        self.rename_preview_button = QtWidgets.QPushButton("Preview Names...")
+        self.rename_preview_button = QtWidgets.QPushButton()
         self.rename_preview_button.setIcon(get_heroicon("eye", size=18))
         self.rename_preview_button.setIconSize(QtCore.QSize(18, 18))
+        self.rename_preview_button.setToolTip("Preview Names...")
         self.rename_preview_button.clicked.connect(self._show_rename_preview)
         rename_form_layout.addRow(self.rename_preview_button)
 

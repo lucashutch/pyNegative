@@ -2,6 +2,7 @@
 
 from PySide6 import QtWidgets
 
+from ..icons import get_heroicon
 
 class RightPanel(QtWidgets.QTabWidget):
     """QTabWidget hosting the MetadataPanel and HistoryPanel in tabs."""
@@ -28,8 +29,8 @@ class RightPanel(QtWidgets.QTabWidget):
         history_panel.setMinimumWidth(0)
         history_panel.setMaximumWidth(16777215)
 
-        self.addTab(metadata_panel, "ⓘ Info")
-        self.addTab(history_panel, "🕓 History")
+        self.addTab(metadata_panel, get_heroicon("information-circle", size=16), "Info")
+        self.addTab(history_panel, get_heroicon("clock", size=16), "History")
 
     def show_info_tab(self):
         """Activate the Info/metadata tab."""

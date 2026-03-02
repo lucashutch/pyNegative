@@ -26,16 +26,13 @@ class SnapshotItemWidget(QtWidgets.QWidget):
         # Icon column
         icon_label = QtWidgets.QLabel()
         if snapshot.get("is_tagged"):
-            icon_label.setText("★")
-            icon_label.setStyleSheet("color: #FFD700; font-size: 14px;")
+            icon_label.setPixmap(get_heroicon("star", size=14, variant="solid", color="#FFD700").pixmap(14, 14))
             icon_label.setToolTip("Tagged version")
         elif snapshot.get("is_auto"):
-            icon_label.setText("⏱")
-            icon_label.setStyleSheet("color: #888; font-size: 12px;")
+            icon_label.setPixmap(get_heroicon("clock", size=12, color="#888").pixmap(12, 12))
             icon_label.setToolTip("Auto-save")
         else:
-            icon_label.setText("💾")
-            icon_label.setStyleSheet("font-size: 12px;")
+            icon_label.setPixmap(get_heroicon("archive-box", size=12, color="#d4d4d8").pixmap(12, 12))
             icon_label.setToolTip("Manual save")
         icon_label.setFixedWidth(20)
         layout.addWidget(icon_label)
@@ -103,7 +100,7 @@ class HistoryPanel(QtWidgets.QWidget):
         action_bar = QtWidgets.QHBoxLayout()
         action_bar.setSpacing(4)
 
-        self.restore_btn = QtWidgets.QPushButton("Restore")
+        self.restore_btn = QtWidgets.QPushButton()
         self.restore_btn.setIcon(get_heroicon("arrow-uturn-left", size=18))
         self.restore_btn.setIconSize(QtCore.QSize(18, 18))
         self.restore_btn.setEnabled(False)
@@ -111,7 +108,7 @@ class HistoryPanel(QtWidgets.QWidget):
         self.restore_btn.clicked.connect(self._on_restore_clicked)
         action_bar.addWidget(self.restore_btn)
 
-        self.cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.cancel_btn = QtWidgets.QPushButton()
         self.cancel_btn.setIcon(get_heroicon("x-mark", size=18))
         self.cancel_btn.setIconSize(QtCore.QSize(18, 18))
         self.cancel_btn.setEnabled(False)

@@ -21,7 +21,7 @@ class GeometryControls(BaseControlWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.geometry_section = CollapsibleSection("GEOMETRY")
+        self.geometry_section = CollapsibleSection("GEOMETRY", expanded=False)
         self.geometry_section.resetClicked.connect(self.reset_section)
         layout.addWidget(self.geometry_section)
 

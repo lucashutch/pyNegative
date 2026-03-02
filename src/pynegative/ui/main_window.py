@@ -111,18 +111,36 @@ class MainWindow(QtWidgets.QMainWindow):
         bar_layout = QtWidgets.QHBoxLayout(bar_frame)
         bar_layout.setContentsMargins(10, 0, 10, 0)
 
+        # Open Folder Button on far left
+        self.btn_open_folder = QtWidgets.QPushButton()
+        self.btn_open_folder.setIcon(get_heroicon("folder-open", size=18))
+        self.btn_open_folder.setIconSize(QtCore.QSize(18, 18))
+        self.btn_open_folder.setToolTip("Open Folder")
+        self.btn_open_folder.setObjectName("OpenFolderButton")
+        self.btn_open_folder.clicked.connect(self.gallery.browse_folder)
+        bar_layout.addWidget(self.btn_open_folder)
+
+        # Stretch to push tabs to center
+        bar_layout.addStretch()
+
         # Buttongroup for exclusivity logic is manual here for styling flexibility
         self.btn_gallery = QtWidgets.QPushButton("GALLERY")
+        self.btn_gallery.setIcon(get_heroicon("photo", size=18))
+        self.btn_gallery.setIconSize(QtCore.QSize(18, 18))
         self.btn_gallery.setObjectName("TabButton")
         self.btn_gallery.setCheckable(True)
         self.btn_gallery.clicked.connect(self.switch_to_gallery)
 
         self.btn_edit = QtWidgets.QPushButton("EDIT")
+        self.btn_edit.setIcon(get_heroicon("adjustments-horizontal", size=18))
+        self.btn_edit.setIconSize(QtCore.QSize(18, 18))
         self.btn_edit.setObjectName("TabButton")
         self.btn_edit.setCheckable(True)
         self.btn_edit.clicked.connect(self.switch_to_edit)
 
         self.btn_export = QtWidgets.QPushButton("EXPORT")
+        self.btn_export.setIcon(get_heroicon("arrow-up-tray", size=18))
+        self.btn_export.setIconSize(QtCore.QSize(18, 18))
         self.btn_export.setObjectName("TabButton")
         self.btn_export.setCheckable(True)
         self.btn_export.clicked.connect(self.switch_to_export)
@@ -130,6 +148,8 @@ class MainWindow(QtWidgets.QMainWindow):
         bar_layout.addWidget(self.btn_gallery)
         bar_layout.addWidget(self.btn_edit)
         bar_layout.addWidget(self.btn_export)
+
+        # Stretch to push the rest to the right
         bar_layout.addStretch()
 
         # Filtering
@@ -172,11 +192,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.side_panel_btn.setEnabled(False)
         self.side_panel_btn.clicked.connect(self._on_side_panel_toggle)
         bar_layout.addWidget(self.side_panel_btn)
-
-        self.btn_open_folder = QtWidgets.QPushButton("Open Folder")
-        self.btn_open_folder.setObjectName("OpenFolderButton")
-        self.btn_open_folder.clicked.connect(self.gallery.browse_folder)
-        bar_layout.addWidget(self.btn_open_folder)
 
         parent_layout.addWidget(bar_frame)
 

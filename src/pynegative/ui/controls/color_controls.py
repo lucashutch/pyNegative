@@ -22,7 +22,7 @@ class ColorControls(BaseControlWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.color_section = CollapsibleSection("COLOR", expanded=True)
+        self.color_section = CollapsibleSection("COLOR", expanded=False)
         self.color_section.resetClicked.connect(self.reset_section)
         layout.addWidget(self.color_section)
 
