@@ -103,11 +103,13 @@ def extract_thumbnail(path):
         with rawpy.imread(path_str) as raw:
             try:
                 thumb = raw.extract_thumb()
-            except (rawpy.LibRawNoThumbnailError, Exception):
+            except Exception:
                 thumb = None
 
             # If we found a JPEG thumbnail
-            if thumb and thumb.format == rawpy.ThumbFormat.JPEG:
+            thumb_format = getattr(rawpy, "ThumbFormat", None)
+            jpeg_thumb_format = getattr(thumb_format, "JPEG", None)
+            if thumb and getattr(thumb, "format", None) == jpeg_thumb_format:
                 img = Image.open(BytesIO(thumb.data))
                 return ImageOps.exif_transpose(img)
 

@@ -309,7 +309,7 @@ def apply_lens_correction(
         map_x, map_y, zoom = get_lens_distortion_maps(
             w, h, settings, lens_info, roi_offset, full_size
         )
-        if map_x is not None:
+        if map_x is not None and map_y is not None:
             img = cv2.remap(img, map_x, map_y, cv2.INTER_CUBIC)
 
     # Vignette correction

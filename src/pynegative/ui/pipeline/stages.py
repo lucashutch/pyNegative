@@ -290,7 +290,7 @@ def get_fused_geometry(
             mx, my, zoom_factor = get_lens_distortion_maps(
                 w_src, h_src, settings, lens_info, roi_offset, full_size
             )
-            if mx is not None:
+            if mx is not None and my is not None:
                 if identity_affine:
                     fused_maps.append((mx, my))
                 else:

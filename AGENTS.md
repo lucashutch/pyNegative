@@ -14,6 +14,7 @@
 - ALWAYS ask for clarification when instructions are ambiguous
 - ALWAYS add tests when adding new code
 - ALWAYS write a plan to `.opencode/plans/<plan>.md`. Include a task list
+- ALWAYS check linting, formatting, and type checking before committing
 - NEVER commit to main or master
 - NEVER use "fixup" commits, amend the relevant commit instead
 - ALWAYS ensure you start a new feature based branch off main.
@@ -23,6 +24,9 @@
 - Install: `uv sync --all-groups`
 - Run Program: `uv run pynegative`
 - Run Tests: `uv run pytest`
+- Format: `uv run ruff format .`
+- Lint: `uv run ruff check --fix .`
+- Type Check: `uv run ty check`
 
 ## Project Architecture
 Refer to [CONTRIBUTING.md](CONTRIBUTING.md) for the full project architecture and directory layout.

@@ -6,7 +6,7 @@ def test_rename_preview_dialog(qtbot):
     dialog = RenamePreviewDialog()
     qtbot.addWidget(dialog)
 
-    preview_data = [
+    preview_data: list[tuple[str, str, str | None]] = [
         ("original1.ARW", "new1.jpg", None),
         ("original2.ARW", "new2.jpg", "Duplicate name generated"),
     ]

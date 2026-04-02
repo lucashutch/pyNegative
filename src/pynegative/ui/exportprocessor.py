@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pillow_heif
@@ -249,12 +250,16 @@ class ExportProcessor(QtCore.QRunnable):
             return "skipped"
 
         if bit_depth_str == "12-bit":
-            original_setting = pillow_heif.options.SAVE_HDR_TO_12_BIT
-            pillow_heif.options.SAVE_HDR_TO_12_BIT = True
+            original_setting = getattr(pillow_heif.options, "SAVE_HDR_TO_12_BIT")
+            setattr(pillow_heif.options, "SAVE_HDR_TO_12_BIT", True)
             try:
                 pil_img.save(str(dest_path), format="HEIF", quality=quality)
             finally:
-                pillow_heif.options.SAVE_HDR_TO_12_BIT = original_setting
+                setattr(
+                    pillow_heif.options,
+                    "SAVE_HDR_TO_12_BIT",
+                    cast(object, original_setting),
+                )
         elif bit_depth_str == "10-bit":
             # 16-bit images are saved as 10-bit by default
             pil_img.save(str(dest_path), format="HEIF", quality=quality)
