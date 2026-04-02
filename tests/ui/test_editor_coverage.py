@@ -118,6 +118,7 @@ def test_editor_widget_coverage(mock_start, qapp):
 
         carousel_mock = MagicMock()
         carousel_mock.get_selected_paths.return_value = ["/tmp/test.cr2"]
+        carousel_mock.mapToGlobal.return_value = QtCore.QPoint(0, 0)
         editor.context_menu_manager.handle_carousel_context_menu(
             "carousel", (QtCore.QPoint(0, 0), "/tmp/test.cr2", carousel_mock)
         )

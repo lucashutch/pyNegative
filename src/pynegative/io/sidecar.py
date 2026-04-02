@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 SIDECAR_DIR = ".pyNegative"
 THUMBNAIL_DIR = "thumbnails"
+_UNSET = object()
 
 
 def get_thumbnail_cache_dir(raw_path: str | Path) -> Path:
@@ -254,7 +255,7 @@ def update_snapshot(
     raw_path: str | Path,
     snapshot_id: str,
     *,
-    label: str | None = ...,
+    label: str | None | object = _UNSET,
     is_tagged: bool | None = None,
 ) -> bool:
     """Update mutable fields on an existing snapshot. Returns True on success."""
@@ -262,7 +263,7 @@ def update_snapshot(
     snapshots: list = data.get("snapshots", [])
     for snap in snapshots:
         if snap.get("id") == snapshot_id:
-            if label is not ...:
+            if label is not _UNSET:
                 snap["label"] = label
             if is_tagged is not None:
                 snap["is_tagged"] = is_tagged

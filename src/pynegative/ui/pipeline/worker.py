@@ -271,9 +271,10 @@ class ImageProcessorWorker(QtCore.QRunnable):
         crop_x, crop_y, crop_w, crop_h = 0, 0, w_src, h_src
         out_vx, out_vy, out_vw, out_vh = 0, 0, new_full_w, new_full_h
 
-        is_viewport_only = self.visible_scene_rect is not None
-        if is_viewport_only:
-            out_vx, out_vy, out_vw, out_vh = self.visible_scene_rect
+        visible_scene_rect = self.visible_scene_rect
+        is_viewport_only = visible_scene_rect is not None
+        if visible_scene_rect is not None:
+            out_vx, out_vy, out_vw, out_vh = visible_scene_rect
 
             # Map viewport back to source image to find raw crop bounds
             corners_processed = np.array(

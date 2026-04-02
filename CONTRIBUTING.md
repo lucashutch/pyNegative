@@ -114,8 +114,8 @@ uv run pytest tests/core/test_thumbnail_cache.py
 uv run pytest tests/core/test_tone_mapping.py::TestToneMapping::test_exposure
 ```
 
-### Linting & Formatting
-We use [Ruff](https://docs.astral.sh/ruff/) for linting and formatting (PEP 8).
+### Linting, Formatting & Type Checking
+We use [Ruff](https://docs.astral.sh/ruff/) for linting and formatting (PEP 8), and [ty](https://docs.astral.sh/ty/) for static type checking.
 
 ```bash
 # Check for issues
@@ -126,6 +126,9 @@ uv run ruff check --fix .
 
 # Format code
 uv run ruff format .
+
+# Type check the project
+uv run ty check
 ```
 
 ### Pre-Commit Checklist
@@ -133,6 +136,7 @@ Before pushing, always run:
 ```bash
 uv run ruff format .
 uv run ruff check . --fix
+uv run ty check
 uv run pytest
 ```
 

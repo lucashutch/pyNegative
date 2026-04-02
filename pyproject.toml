@@ -29,6 +29,7 @@ dependencies = [
 dev = []
 lint = [
     "ruff",
+    "ty",
 ]
 
 test = [
@@ -62,3 +63,55 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
 ]
+
+[tool.ty.environment]
+root = ["./src"]
+python-version = "3.10"
+
+[tool.ty.src]
+include = ["src", "tests", "scripts/generate_icons.py"]
+
+[[tool.ty.overrides]]
+include = ["src/pynegative/ui/**"]
+
+[tool.ty.overrides.analysis]
+replace-imports-with-any = ["PySide6.**"]
+
+[[tool.ty.overrides]]
+include = [
+    "src/pynegative/io/raw.py",
+    "src/pynegative/io/lens_metadata.py",
+    "src/pynegative/ui/renamesettingsmanager.py",
+    "src/pynegative/ui/widgets/metadata_panel.py",
+]
+
+[tool.ty.overrides.analysis]
+replace-imports-with-any = ["rawpy"]
+
+[[tool.ty.overrides]]
+include = ["src/pynegative/utils/numba_*.py"]
+
+[tool.ty.overrides.analysis]
+replace-imports-with-any = ["numba.**"]
+
+[[tool.ty.overrides]]
+include = ["src/pynegative/utils/_numba_base.py"]
+
+[tool.ty.overrides.analysis]
+allowed-unresolved-imports = ["numba.**"]
+replace-imports-with-any = ["numba.**"]
+
+[[tool.ty.overrides]]
+include = ["tests/**"]
+
+[tool.ty.overrides.analysis]
+replace-imports-with-any = ["PySide6.**", "rawpy"]
+
+[tool.ty.overrides.rules]
+all = "warn"
+
+[[tool.ty.overrides]]
+include = ["tests/performance/**"]
+
+[tool.ty.overrides.rules]
+all = "warn"

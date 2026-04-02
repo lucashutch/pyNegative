@@ -22,12 +22,14 @@ def test_undo_manager_basic():
     assert manager.get_undo_description() == "Adjust Exposure"
 
     state = manager.undo()
+    assert state is not None
     assert state["description"] == "Adjust Exposure"
     assert manager.can_undo() is False
     assert manager.can_redo() is True
     assert manager.get_redo_description() == "Adjust Blur"
 
     state = manager.redo()
+    assert state is not None
     assert state["description"] == "Adjust Blur"
 
 

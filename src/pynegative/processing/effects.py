@@ -118,6 +118,7 @@ def de_noise_image(
     img,
     luma_strength=0,
     chroma_strength=0,
+    method=None,
     zoom=None,
     tier=None,
 ):
